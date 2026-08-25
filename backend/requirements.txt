@@ -1,0 +1,44 @@
+# Runtime dependencies for the Django backend.
+#
+# Every entry here is imported by code in this repository. Nothing is listed
+# speculatively. If you add an import, add its package here in the same commit;
+# if you remove the last import of a package, remove it here.
+#
+# Install (from the repository root, with your virtualenv active):
+#     pip install -r backend/requirements.txt
+#     pip install -e ./ml
+#
+# The second command installs the local `labelextract` package in editable
+# mode. It is not listed below because a relative path in a requirements file
+# resolves against your current working directory, which silently breaks when
+# pip is run from anywhere else. An explicit second command fails loudly
+# instead of installing the wrong thing.
+#
+# Version strategy: pinned to a compatible minor range (>=x.y,<x.y+1). Patch
+# releases pick up security fixes automatically; a minor bump is a deliberate,
+# reviewed change. Python 3.11+ is required.
+
+# Web framework. LTS release.
+Django>=5.2,<5.3
+
+# REST layer: serializers, viewsets, versioning, throttling, exception handling.
+djangorestframework>=3.16,<3.17
+
+# CORS headers for the Vite dev server, which runs on a different origin.
+# Configured in config/settings.py (CORS_ALLOWED_ORIGINS).
+django-cors-headers>=4.9,<4.10
+
+# PostgreSQL driver. psycopg 3 with prebuilt binaries, so no local C toolchain
+# or libpq headers are needed - which matters for a six-person team on mixed
+# operating systems.
+psycopg[binary]>=3.2,<3.3
+
+# Reads and type-casts environment variables in config/settings.py.
+django-environ>=0.12,<0.13
+
+# Image decoding for upload validation and metadata (apps/images/validators.py).
+# Required, not speculative: validation works by actually decoding the file
+# rather than trusting its extension, and that needs a real image library.
+# This is NOT a machine-learning dependency - no OCR or ML framework is
+# installed at this stage.
+Pillow>=11.3,<12
