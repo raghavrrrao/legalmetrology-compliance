@@ -1,0 +1,34 @@
+{
+  "_comment_1": "TEMPLATE - copy to <code>.json to create a real rule.",
+  "_comment_2": "The loader reads *.json only, so this .example file is ignored.",
+  "_comment_3": "Keys starting with an underscore are stripped by the loader.",
+  "_comment_4": "Read rules/SCHEMA.md before filling this in.",
+
+  "code": "LM-PC-0000",
+  "title": "Replace with a short human-readable name",
+
+  "requirement": "Replace with what the package must declare, in plain language.",
+
+  "_comment_5": "Cite the provision EXACTLY as the authoritative text numbers it. If you are not certain, leave this empty and keep source_status as unverified. Never guess a rule number.",
+  "legal_reference": "",
+
+  "_comment_6": "verified requires source_note naming who checked it against what. Until then leave this as unverified - an unverified rule can flag a product for review but can never mark it non-compliant.",
+  "source_status": "unverified",
+  "source_note": "",
+
+  "_comment_7": "One of: info, minor, major, critical. Triage ranking only - it carries no legal weight.",
+  "severity": "major",
+
+  "_comment_8": "Names a validator in apps.rules.checks. The base ships field_presence.",
+  "check_type": "field_presence",
+  "parameters": {
+    "field_key": "net_quantity"
+  },
+
+  "_comment_9": "ProductCategory.code values. An EMPTY list means this applies to every commodity - only do that if it is actually true.",
+  "applies_to_category_codes": [],
+
+  "effective_from": null,
+  "effective_to": null,
+  "is_active": true
+}

@@ -1,0 +1,139 @@
+/*
+ * Minimal baseline styles.
+ *
+ * Deliberately small: this is a foundation, not the final design. Whoever
+ * takes feature/frontend-dashboard chooses the styling approach (plain CSS,
+ * CSS modules, Tailwind) - nothing here forecloses that choice, and no styling
+ * dependency has been added on their behalf.
+ */
+
+:root {
+  --colour-text: #1a1a1a;
+  --colour-muted: #5c5c5c;
+  --colour-border: #d8d8d8;
+  --colour-surface: #ffffff;
+  --colour-background: #f6f7f9;
+  --colour-success: #1b6b33;
+  --colour-warning: #8a5a00;
+  --colour-error: #a12727;
+  --radius: 6px;
+}
+
+* {
+  box-sizing: border-box;
+}
+
+body {
+  margin: 0;
+  font-family: system-ui, -apple-system, 'Segoe UI', Roboto, sans-serif;
+  line-height: 1.55;
+  color: var(--colour-text);
+  background: var(--colour-background);
+}
+
+.app-layout {
+  display: flex;
+  flex-direction: column;
+  min-height: 100vh;
+}
+
+.app-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 1rem;
+  padding: 1rem 1.5rem;
+  background: var(--colour-surface);
+  border-bottom: 1px solid var(--colour-border);
+}
+
+.app-header__title {
+  font-weight: 600;
+  font-size: 1.05rem;
+  color: inherit;
+  text-decoration: none;
+}
+
+.app-nav a {
+  color: var(--colour-muted);
+  text-decoration: none;
+}
+
+.app-main {
+  flex: 1;
+  width: 100%;
+  max-width: 60rem;
+  margin: 0 auto;
+  padding: 1.5rem;
+}
+
+.app-footer {
+  padding: 1rem 1.5rem;
+  border-top: 1px solid var(--colour-border);
+  background: var(--colour-surface);
+}
+
+.app-footer__disclaimer {
+  max-width: 60rem;
+  margin: 0 auto;
+  font-size: 0.85rem;
+  color: var(--colour-muted);
+}
+
+.panel {
+  padding: 0.85rem 1rem;
+  margin: 1rem 0;
+  background: var(--colour-surface);
+  border: 1px solid var(--colour-border);
+  border-radius: var(--radius);
+}
+
+.panel--warning {
+  border-left: 4px solid var(--colour-warning);
+}
+
+.panel--error {
+  border-left: 4px solid var(--colour-error);
+}
+
+.status-list {
+  display: grid;
+  grid-template-columns: auto 1fr;
+  gap: 0.4rem 1rem;
+  margin: 0;
+}
+
+.status-list dt {
+  font-weight: 600;
+  color: var(--colour-muted);
+}
+
+.status-list dd {
+  margin: 0;
+}
+
+.status-badge {
+  display: inline-block;
+  padding: 0.1rem 0.5rem;
+  font-size: 0.8rem;
+  border-radius: 999px;
+  background: #e9eaee;
+}
+
+.status-badge--success {
+  background: #dff0e2;
+}
+
+.status-badge--warning {
+  background: #fbeed3;
+}
+
+.status-badge--error {
+  background: #f7dcdc;
+}
+
+.panel__hint {
+  margin: 0.5rem 0 0;
+  font-size: 0.85rem;
+  color: var(--colour-muted);
+}

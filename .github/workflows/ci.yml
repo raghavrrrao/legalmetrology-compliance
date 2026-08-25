@@ -1,0 +1,146 @@
+# Continuous integration.
+#
+# Runs the same commands the README tells a developer to run locally. If CI
+# ever needs a command that is not in the README, one of the two is wrong.
+#
+# Deliberately minimal: three jobs, no matrix across Python/Node versions, no
+# caching beyond what setup-python and setup-node provide for free, no
+# deployment. A six-person hackathon team needs "did I break main?" answered in
+# under three minutes, not a build system to maintain.
+
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+# A new push to a PR cancels the previous run for that PR. Without this, a
+# branch pushed three times in a minute occupies three runners.
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  backend:
+    name: Backend (Django + PostgreSQL)
+    runs-on: ubuntu-latest
+
+    services:
+      postgres:
+        image: postgres:16
+        env:
+          # Throwaway credentials for an ephemeral container that exists only
+          # for this job and is never reachable from outside the runner. These
+          # are not secrets and must not be copied into any real environment.
+          POSTGRES_DB: legalmetrology_ci
+          POSTGRES_USER: postgres
+          POSTGRES_PASSWORD: postgres
+        ports:
+          - 5432:5432
+        # Without a health check the job races the database and fails
+        # intermittently, which is worse than failing consistently.
+        options: >-
+          --health-cmd pg_isready
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+
+    env:
+      DJANGO_SECRET_KEY: ci-only-key-not-used-outside-this-runner
+      DJANGO_DEBUG: "False"
+      DJANGO_ALLOWED_HOSTS: localhost,127.0.0.1
+      DATABASE_NAME: legalmetrology_ci
+      DATABASE_USER: postgres
+      DATABASE_PASSWORD: postgres
+      DATABASE_HOST: 127.0.0.1
+      DATABASE_PORT: "5432"
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          # Matches the minimum in README.md. Bump both together.
+          python-version: "3.11"
+          cache: pip
+          cache-dependency-path: backend/requirements-dev.txt
+
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r backend/requirements-dev.txt
+          pip install -e ./ml
+
+      - name: Django system checks
+        run: python backend/manage.py check
+
+      # Catches a model changed without its migration - the single most common
+      # way this project's main branch would break for everyone at once.
+      - name: Migrations are up to date
+        run: python backend/manage.py makemigrations --check --dry-run
+
+      - name: Apply migrations
+        run: python backend/manage.py migrate
+
+      - name: Rule loader runs
+        run: python backend/manage.py load_rules --dry-run
+
+      - name: Backend tests
+        working-directory: backend
+        run: pytest -q
+
+  ml:
+    name: ML contracts
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      # No database, no Django. This job passing while `backend` fails proves
+      # the ML boundary is intact - which is the point of the separate package.
+      - name: Install
+        run: |
+          python -m pip install --upgrade pip
+          pip install -e ./ml
+          pip install "pytest>=8.4,<9.0"
+
+      - name: ML tests
+        working-directory: ml
+        run: pytest -q
+
+  frontend:
+    name: Frontend (lint, test, build)
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: frontend
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          # Matches the engines field in frontend/package.json.
+          node-version: "20.19.0"
+          cache: npm
+          cache-dependency-path: frontend/package-lock.json
+
+      # `npm ci` not `npm install`: it installs exactly the committed lockfile
+      # and fails if package.json and the lockfile disagree, which is a real
+      # error worth catching rather than silently resolving.
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Lint
+        run: npm run lint
+
+      - name: Tests
+        run: npm test
+
+      - name: Production build
+        run: npm run build

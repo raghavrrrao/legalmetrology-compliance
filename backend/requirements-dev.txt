@@ -1,0 +1,21 @@
+# Development and test dependencies.
+#
+# Separate from requirements.txt so a deployment does not install a test
+# runner. This is the only justification for the split - do not add a third
+# requirements file without one.
+#
+# Install (from the repository root, with your virtualenv active):
+#     pip install -r backend/requirements-dev.txt
+#     pip install -e ./ml
+#
+# This file includes requirements.txt, so you do not need to install both.
+
+-r requirements.txt
+
+# Test runner. Chosen over Django's built-in runner for fixtures and
+# parametrisation, both of which the existing tests use.
+pytest>=8.4,<9.0
+
+# Django integration for pytest: database fixtures, settings handling,
+# the `db` and `client` fixtures. Configured in backend/pytest.ini.
+pytest-django>=4.11,<4.12
