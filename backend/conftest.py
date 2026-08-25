@@ -18,6 +18,30 @@ from apps.images.models import ProductImage
 from apps.rules.models import ComplianceRule
 
 
+@pytest.fixture(autouse=True)
+def _no_ssl_redirect_in_tests(settings):
+    """Stop SecurityMiddleware redirecting the test client to HTTPS.
+
+    `settings.SECURE_SSL_REDIRECT` is True whenever `DJANGO_DEBUG=False`, which
+    is how CI runs (deliberately - CI should exercise a production-like
+    configuration). Django's test client speaks plain HTTP unless every call
+    passes `secure=True`, so SecurityMiddleware answers *every* request with
+    `301 -> https://testserver/...` before it ever reaches a view. Locally,
+    where `.env` sets `DJANGO_DEBUG=True`, the setting is never applied and the
+    same tests pass - which is exactly how this reached CI unnoticed.
+
+    Disabling it here rather than in the CI workflow keeps the suite correct in
+    any environment, with DEBUG either way, instead of depending on a variable
+    someone must remember to set. It removes an environment artefact, not
+    coverage: the test client is not a browser and there is no TLS terminator
+    in front of it, so the redirect can only ever mask the response under test.
+
+    The production guarantee is not lost - it is asserted directly, and more
+    precisely, in apps/core/tests/test_https_redirect.py.
+    """
+    settings.SECURE_SSL_REDIRECT = False
+
+
 def make_png_bytes(width: int = 64, height: int = 64) -> bytes:
     """Build a genuinely decodable single-colour PNG.
 
