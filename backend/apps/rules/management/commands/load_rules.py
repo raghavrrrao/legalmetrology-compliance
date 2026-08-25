@@ -63,10 +63,11 @@ class Command(BaseCommand):
             )
             return
 
-        prefix = "[dry run] Would have" if dry_run else ""
+        lead = "[dry run] Would have " if dry_run else ""
+        verb = "created" if dry_run else "Created"
         self.stdout.write(
             self.style.SUCCESS(
-                f"{prefix} created {len(report.created)}, "
+                f"{lead}{verb} {len(report.created)}, "
                 f"updated {len(report.updated)} rule(s) from {directory}."
             )
         )
