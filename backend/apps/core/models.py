@@ -28,9 +28,9 @@ class UUIDPrimaryKeyModel(models.Model):
     """Uses a random UUID as the primary key.
 
     Used for anything whose identifier appears in a URL or an API response.
-    Sequential integer keys would leak how many recordings the system holds and
-    let one user enumerate another user's submissions by guessing neighbouring
-    IDs, which matters here because the rows point at voice recordings.
+    Sequential integer keys would leak how many objects the system holds and let
+    one user enumerate another user's submissions by guessing neighbouring IDs,
+    which matters here because these rows often represent user-submitted data.
 
     Internal tables that never surface an ID to a client keep the default
     BigAutoField - random UUID keys carry an index-locality cost that is not
