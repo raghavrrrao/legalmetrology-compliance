@@ -68,7 +68,18 @@ yarn.lock
 # they are in every clone forever. See ml/README.md for the storage strategy.
 /ml/artifacts/
 /ml/models/
-/ml/data/
+
+# Everything *inside* ml/data/ is ignored - photographs, datasets, annotations.
+# The empty directory scaffolding and its README are not, so a fresh clone
+# already knows where images go instead of inventing a layout. The three
+# negations re-include directories (so Git descends into them at all), the
+# README, and the .gitkeep placeholders - and nothing else. Any image dropped
+# into these folders still matches the first line and stays out of Git.
+# See ml/data/README.md.
+/ml/data/**
+!/ml/data/**/
+!/ml/data/README.md
+!/ml/data/**/.gitkeep
 *.pt
 *.pth
 *.onnx

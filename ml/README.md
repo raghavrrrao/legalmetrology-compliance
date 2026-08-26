@@ -229,7 +229,13 @@ of the *characters*. They are different axes: a perfectly recognised
 
 **No dataset, model weight, or label photograph is committed to this
 repository, and none is downloaded at runtime.** `.gitignore` blocks
-`ml/data/`, `ml/models/`, `ml/artifacts/` and every common weight extension.
+`ml/models/`, `ml/artifacts/`, every common weight extension, and everything
+under `ml/data/` except its README and the `.gitkeep` files holding the empty
+folders open.
+
+Local photographs for hand-running the pipeline go in `ml/data/raw/products/`.
+[`ml/data/README.md`](data/README.md) covers where images go, how to name them,
+what must not be in frame, and the exact CLI command.
 
 Tesseract's language data is installed by the OS package manager. There is
 nothing for this project to host, checksum or version.
