@@ -317,6 +317,31 @@ def test_the_config_argument_is_built_only_from_validated_integers():
     )
 
 
+def test_the_default_page_segmentation_mode_is_the_one_that_was_measured():
+    """3 (automatic segmentation), not 6 (one uniform block).
+
+    6 assumes the frame is already a cropped panel. People photograph a product
+    on a desk, and 6 then lets the desk take part in the line structure. The
+    modes were compared on the Product 001 set rather than reasoned about; see
+    the `page_segmentation_mode` docstring and ml/README.md.
+
+    Pinned because it is a default that silently changes results: nothing
+    fails, the numbers just get worse.
+    """
+    assert TesseractOptions().page_segmentation_mode == 3
+    assert TesseractOptions().config_argument == "--psm 3 --oem 3"
+
+
+def test_the_frozen_baseline_keeps_its_own_settings_whatever_the_defaults_do():
+    """0.1.0 exists to be compared against, so it must not drift with them."""
+    from labelextract.ocr import tesseract
+
+    baseline = tesseract.build_baseline_pipeline()
+
+    assert baseline.version == tesseract.BASELINE_VERSION == "0.1.0"
+    assert baseline.ocr_engine.options.page_segmentation_mode == 6
+
+
 def test_multiple_languages_are_joined_the_way_tesseract_expects():
     assert TesseractOptions(languages=("eng", "hin")).language_argument == "eng+hin"
 

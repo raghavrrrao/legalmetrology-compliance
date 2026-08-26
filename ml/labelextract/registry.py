@@ -88,6 +88,12 @@ def _register_builtin_pipelines() -> None:
         null_engine.NAME, null_engine.VERSION, null_engine.build_pipeline
     )
     register_pipeline(tesseract.NAME, tesseract.VERSION, tesseract.build_pipeline)
+    # The previous configuration, kept resolvable rather than replaced: a run
+    # recorded under 0.1.0 stays reproducible, and the two can be compared on
+    # the same image. See `tesseract.BASELINE_VERSION`.
+    register_pipeline(
+        tesseract.NAME, tesseract.BASELINE_VERSION, tesseract.build_baseline_pipeline
+    )
 
 
 _register_builtin_pipelines()

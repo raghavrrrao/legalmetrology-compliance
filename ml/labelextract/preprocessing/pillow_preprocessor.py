@@ -26,19 +26,51 @@ What is applied, and why each earns its place
    range. The cut-off stops one specular highlight from defining "white" and
    flattening the rest of the panel.
 
+4. **Upscaling small photographs** (`min_dimension` = `UPSCALE_TO_DIMENSION`,
+   capped by `max_upscale_factor`). Not a default of `PreprocessingConfig` -
+   the Tesseract pipeline factory turns it on, because that is the combination
+   that was measured.
+
+   Messaging apps re-encode a phone photo down to roughly 900x1600. At that
+   size the net-quantity and MRP block on a 120 ml can is 8-10 px tall, below
+   the ~20 px x-height Tesseract's LSTM recogniser is trained for. Upscaling 2x
+   with LANCZOS before recognition is what turns a confidently wrong reading
+   into a correct one - measured on Product 001, where it changed
+   `MRP: 8349.00` (the rupee sign read as an `8`, and reported as *certain*)
+   into `MRP EUR349.00` -> `349.00`. See ml/README.md.
+
+   Using it at all is only safe because `ExtractionPipeline` maps bounding
+   boxes back into source-image space. Before that, turning it on silently
+   moved every box the evidence overlay draws, which is why it stayed off.
+
 Deliberately NOT applied by default
 -----------------------------------
+Each of these was measured on the Product 001 set and each made the result
+worse or left it unchanged. They stay available (or absent) with the reason
+recorded, so nobody has to re-run the same experiment to find out.
+
 - **Denoising.** A median filter removes sensor noise and also removes the
   strokes of 6-point print - the size at which net quantity and batch number
-  are usually printed. Available as `denoise=True`, off until measured.
-- **Resizing.** Available via `max_dimension` / `min_dimension`, both off.
-  Enabling either makes bounding boxes land in preprocessed-image space, and
-  nothing yet maps them back onto the original for the UI's evidence overlay.
-  `ExtractionPipeline` records both sets of dimensions in run metadata so this
-  is detectable rather than silent.
+  are usually printed. Measured: no declaration was recovered that was not
+  already recovered without it, and it cost recognised characters. Available as
+  `denoise=True`.
+- **Sharpening** (unsharp mask). Measured: fewer declarations recovered on the
+  close-up than without it, at every page-segmentation mode tried. Not
+  implemented rather than implemented-and-defaulted-off, because an option
+  nobody should turn on is a maintenance cost with no user.
+- **Binarisation** (global Otsu). Measured: neutral-to-worse. A single global
+  threshold cannot serve a cylindrical can lit from one side, which is most
+  retail packaging photographed by hand. A *local* threshold might, and needs
+  numpy - see the limitation below rather than a bad approximation of it.
+- **Downscaling.** `max_dimension` remains available and off. Nothing measured
+  needs it, and it can only remove detail.
 - **Deskew and perspective correction.** Genuinely useful for photographs of
   curved and hand-held packaging, and genuinely not implementable well without
   numpy/OpenCV. Stated as a limitation rather than approximated badly.
+- **Cropping to the label.** The largest single failure on the Product 001 set
+  is that a full-frame photograph gives the declaration panel ~10% of the
+  pixels, and no tonal transform recovers it. The fix is region detection,
+  which is a component this package does not have and cannot fake.
 
 Safety
 ------
@@ -71,6 +103,16 @@ logger = logging.getLogger(__name__)
 
 NAME = "pillow-preprocessor"
 VERSION = "0.1.0"
+
+#: Longest side, in pixels, that the Tesseract pipeline upscales a small
+#: photograph up to before recognition. Named here rather than written into the
+#: pipeline factory so the number and the reasoning live together.
+#:
+#: 3200 doubles the ~1600 px longest side a messaging app produces, and leaves
+#: a full-resolution phone photo (3000-4000 px) untouched - a photo that large
+#: already has the print at a size the recogniser handles. See the module
+#: docstring for the measurement.
+UPSCALE_TO_DIMENSION = 3200
 
 #: What a caller may declare, mapped to the canonical name it means. `jpg` and
 #: `jpeg` are the same format spelled two ways, and a declaration of either
@@ -117,11 +159,23 @@ class PreprocessingConfig:
     #: 3x3 median filter. Off: it erases small print. See module docstring.
     denoise: bool = False
     #: Downscale so the longest side is at most this many pixels. None = never.
-    #: Enabling this moves bounding boxes into preprocessed-image space.
+    #: Off: nothing measured needs it, and it can only remove detail.
     max_dimension: int | None = None
     #: Upscale so the longest side is at least this many pixels. None = never.
-    #: Same bounding-box caveat.
+    #:
+    #: Off here, and switched on to `UPSCALE_TO_DIMENSION` by the Tesseract
+    #: pipeline factory, which is the configuration that was measured. The
+    #: default stays conservative for the same reason the rest of them do, and
+    #: because a non-None default here would contradict a caller who sets only
+    #: `max_dimension` to something smaller.
     min_dimension: int | None = None
+    #: Hard ceiling on how much `min_dimension` may enlarge an image.
+    #:
+    #: Upscaling invents no information: past a point it only costs time and
+    #: gives the recogniser more pixels of the same blur. 3x measured worse
+    #: than 2x on Product 001, and a 640x480 thumbnail would otherwise be
+    #: enlarged 6.7x to reach `min_dimension`.
+    max_upscale_factor: float = 2.0
 
     # --- budget, enforced before the image is decoded ---
     #: 10 MB, matching `MAX_IMAGE_UPLOAD_SIZE_MB`'s default in the backend.
@@ -142,6 +196,8 @@ class PreprocessingConfig:
             and self.min_dimension > self.max_dimension
         ):
             raise ValueError("min_dimension must not exceed max_dimension")
+        if self.max_upscale_factor < 1.0:
+            raise ValueError("max_upscale_factor must be at least 1.0")
         if self.max_bytes <= 0 or self.max_pixels <= 0:
             raise ValueError("max_bytes and max_pixels must be positive")
 
@@ -380,7 +436,12 @@ class PillowPreprocessor(ImagePreprocessor):
         elif (
             self.config.min_dimension is not None and longest < self.config.min_dimension
         ):
-            scale = self.config.min_dimension / longest
+            # Capped, because upscaling adds no information: past roughly 2x it
+            # buys nothing measurable and costs recognition time linearly in
+            # pixels. See `max_upscale_factor`.
+            scale = min(
+                self.config.min_dimension / longest, self.config.max_upscale_factor
+            )
 
         if scale == 1.0:
             return image

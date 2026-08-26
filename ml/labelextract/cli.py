@@ -100,8 +100,9 @@ def _parser() -> argparse.ArgumentParser:
     parser.add_argument(
         "--pipeline-version",
         default=None,
-        help="Registered pipeline version. Defaults to the only registered "
-             "version of the chosen pipeline.",
+        help="Registered pipeline version. Defaults to the newest registered "
+             "version of the chosen pipeline. Pass 0.1.0 to run the frozen "
+             "Tesseract baseline and compare.",
     )
     parser.add_argument(
         "--languages",
@@ -170,6 +171,14 @@ def _tesseract_with_languages(args: argparse.Namespace):
 
 
 def _only_version_of(name: str) -> str:
+    """The version to use when none was asked for: the newest registered one.
+
+    `available_pipelines()` yields sorted pairs, so the last version of a name
+    is the highest. That matters now that `tesseract` registers both its
+    current configuration and the frozen 0.1.0 baseline: a bare `--pipeline
+    tesseract` must run the current one, and the baseline must be asked for by
+    name.
+    """
     versions = [
         version for registered, version in registry.available_pipelines()
         if registered == name
