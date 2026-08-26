@@ -128,6 +128,52 @@ def test_upscaling_is_available_for_small_images(photo):
     assert (processed.width, processed.height) == (240, 120)
 
 
+def test_upscaling_is_capped_so_a_thumbnail_is_not_blown_up_absurdly(photo):
+    """Enlarging invents no detail; past a point it only costs recognition time.
+
+    Without the cap, `UPSCALE_TO_DIMENSION` would enlarge a 120px image by more
+    than 26x - tens of megapixels of the same blur.
+    """
+    config = PreprocessingConfig(min_dimension=3200, max_upscale_factor=2.0)
+    processed = PillowPreprocessor(config).process(photo(width=120, height=60))
+
+    assert (processed.width, processed.height) == (240, 120)
+
+
+def test_the_cap_does_not_interfere_when_the_target_is_within_reach(photo):
+    config = PreprocessingConfig(min_dimension=180, max_upscale_factor=2.0)
+    processed = PillowPreprocessor(config).process(photo(width=120, height=60))
+
+    assert (processed.width, processed.height) == (180, 90)
+
+
+def test_an_image_already_large_enough_is_not_upscaled(photo):
+    """A full-resolution phone photo has the print at a readable size already."""
+    config = PreprocessingConfig(min_dimension=100)
+    processed = PillowPreprocessor(config).process(photo(width=120, height=60))
+
+    assert (processed.width, processed.height) == (120, 60)
+
+
+def test_the_tesseract_pipeline_asks_for_upscaling(photo):
+    """The measured configuration lives in the pipeline factory, not the config.
+
+    A bare `PreprocessingConfig()` stays conservative - `min_dimension` is None
+    - so this asserts the wiring that actually runs, which is the thing that
+    would silently regress if someone "tidied up" the factory.
+    """
+    from labelextract.ocr import tesseract
+    from labelextract.preprocessing import UPSCALE_TO_DIMENSION
+
+    assert PreprocessingConfig().min_dimension is None
+
+    pipeline = tesseract.build_pipeline()
+    assert pipeline.preprocessor.config.min_dimension == UPSCALE_TO_DIMENSION
+
+    baseline = tesseract.build_baseline_pipeline()
+    assert baseline.preprocessor.config.min_dimension is None
+
+
 # --- refusals ---------------------------------------------------------------
 
 
@@ -222,6 +268,9 @@ def test_a_missing_pillow_is_reported_as_an_unavailable_engine(monkeypatch, phot
         {"min_dimension": 500, "max_dimension": 100},
         {"max_bytes": 0},
         {"max_pixels": 0},
+        # Below 1.0 would mean "shrink while upscaling", which is not a setting
+        # anyone means.
+        {"max_upscale_factor": 0.5},
     ],
 )
 def test_impossible_configuration_is_rejected_at_construction(kwargs):

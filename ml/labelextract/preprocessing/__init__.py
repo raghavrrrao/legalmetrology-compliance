@@ -12,8 +12,9 @@ on first use and raises `EngineNotAvailableError` if it is missing, so
 """
 
 from labelextract.preprocessing.pillow_preprocessor import (
+    UPSCALE_TO_DIMENSION,
     PillowPreprocessor,
     PreprocessingConfig,
 )
 
-__all__ = ["PillowPreprocessor", "PreprocessingConfig"]
+__all__ = ["UPSCALE_TO_DIMENSION", "PillowPreprocessor", "PreprocessingConfig"]

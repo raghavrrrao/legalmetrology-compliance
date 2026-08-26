@@ -7,8 +7,22 @@ these stages, so there is nothing worth subclassing.
     ImageRef
         -> ImagePreprocessor.process()   (optional)
         -> OcrEngine.recognise()         (required)
+        -> boxes mapped back to source-image space
         -> FieldExtractor.extract()      (optional)
         -> ExtractionResult
+
+Why the mapping step is here and not in a component
+---------------------------------------------------
+A preprocessor that resizes hands the engine a different coordinate system, so
+every box that comes back describes the *intermediate* rather than the
+photograph a reviewer is looking at. Neither component can fix that alone: the
+preprocessor never sees the boxes, and the engine never sees the original. This
+class is the only place that holds both, so the correction belongs here.
+
+It runs before field extraction, so an `ExtractedField` inherits an already
+corrected box and no consumer has to know a resize happened. `metadata` records
+the scale that was applied and which space the boxes are in, so a run stays
+interpretable without re-deriving it.
 
 Failure policy: a `LabelExtractError` from any stage is caught and turned into
 `ExtractionResult(status=FAILED, error_code=...)` rather than propagating. The
@@ -21,8 +35,10 @@ from __future__ import annotations
 
 import logging
 import time
+from dataclasses import replace
 
 from labelextract.contracts import (
+    BoundingBox,
     ExtractedField,
     ExtractionResult,
     ExtractionStatus,
@@ -80,11 +96,16 @@ class ExtractionPipeline:
         """Execute the pipeline and return a structured result."""
         started = time.perf_counter()
         source = image
+        scale: tuple[float, float] | None = None
         try:
             if self.preprocessor is not None:
                 source = self.preprocessor.process(image)
 
             ocr = self.ocr_engine.recognise(source)
+
+            # Before extraction, so fields inherit corrected geometry.
+            scale = _scale_to_source(original=image, processed=source)
+            ocr = _rescaled(ocr, scale, original=image)
 
             fields: tuple[ExtractedField, ...] = ()
             if self.field_extractor is not None:
@@ -107,7 +128,7 @@ class ExtractionPipeline:
             ocr=ocr,
             fields=fields,
             is_placeholder=self.is_placeholder,
-            metadata=self._metadata(image, source),
+            metadata=self._metadata(image, source, scale),
         )
 
     def _release(self, processed: ImageRef) -> None:
@@ -146,19 +167,32 @@ class ExtractionPipeline:
                 exc_info=True,
             )
 
-    def _metadata(self, image: ImageRef, source: ImageRef) -> dict:
+    def _metadata(
+        self,
+        image: ImageRef,
+        source: ImageRef,
+        scale: tuple[float, float] | None = None,
+    ) -> dict:
         """Which components ran, and what the image looked like on the way in.
 
         Persisted verbatim by the backend into `ExtractionRun.raw_output`. It
         records *how* a result was produced, which is what makes a
         disappointing run diagnosable months later without re-running it.
 
-        `preprocessed_dimensions` matters more than it looks: when it differs
-        from `source_dimensions`, bounding boxes are in preprocessed-image
-        space rather than source-image space, and anything drawing them over
-        the original must scale them.
+        `preprocessed_dimensions` differing from `source_dimensions` means the
+        preprocessor resized. `bounding_box_space` then says whether the boxes
+        were mapped back: "source" when the scale was known and applied,
+        "preprocessed" when the dimensions were not recorded and no honest
+        mapping was possible. A consumer drawing boxes over the original must
+        read that key rather than assume.
         """
         return {
+            "bounding_box_space": (
+                "preprocessed"
+                if source is not image and scale is None
+                else "source"
+            ),
+            "preprocessing_scale": list(scale) if scale is not None else None,
             "preprocessed": self.preprocessor is not None,
             "field_extraction_ran": self.field_extractor is not None,
             "source_image_format": image.image_format,
@@ -196,6 +230,87 @@ class ExtractionPipeline:
             error_code=exc.code,
             error_message=str(exc),
         )
+
+
+def _scale_to_source(
+    *, original: ImageRef, processed: ImageRef
+) -> tuple[float, float] | None:
+    """Factors that carry a preprocessed-space coordinate back to the source.
+
+    None means "not determinable, so nothing will be moved": either no
+    preprocessing ran, or one of the two images did not record its dimensions.
+    Guessing a scale would put every box in the wrong place while looking
+    exactly as authoritative as a correct one, so the honest outcome is to
+    leave the boxes alone and say so in `metadata["bounding_box_space"]`.
+    """
+    if processed is original:
+        return None
+    for value in (
+        original.width, original.height, processed.width, processed.height
+    ):
+        if not value:  # None, or a zero that would divide badly
+            return None
+    return (
+        original.width / processed.width,
+        original.height / processed.height,
+    )
+
+
+def _rescaled(
+    ocr: OcrResult, scale: tuple[float, float] | None, *, original: ImageRef
+) -> OcrResult:
+    """Return `ocr` with every block box expressed in source-image space.
+
+    The engine's `raw` diagnostics are deliberately left untouched. They are
+    documented as the engine's verbatim output, and rewriting coordinates
+    inside a structure whose shape is the engine's business would make this
+    orchestrator depend on which engine ran. Anything reading `raw` word
+    geometry is reading engine-space and `metadata["preprocessing_scale"]` is
+    what converts it.
+    """
+    if scale is None:
+        return ocr
+    scale_x, scale_y = scale
+    if scale_x == 1.0 and scale_y == 1.0:
+        return ocr
+    return replace(
+        ocr,
+        blocks=tuple(
+            replace(block, box=_scale_box(block.box, scale_x, scale_y, original))
+            for block in ocr.blocks
+        ),
+    )
+
+
+def _scale_box(
+    box: BoundingBox | None, scale_x: float, scale_y: float, original: ImageRef
+) -> BoundingBox | None:
+    """Scale one box, keeping it valid and inside the source image.
+
+    `BoundingBox` refuses a zero-width or negative-origin box, and rounding a
+    two-pixel box down can produce either. Clamping to a minimum of one pixel
+    keeps a real detection representable; dropping it would lose the evidence
+    the box exists to provide.
+    """
+    if box is None:
+        return None
+
+    x = max(0, round(box.x * scale_x))
+    y = max(0, round(box.y * scale_y))
+    width = max(1, round(box.width * scale_x))
+    height = max(1, round(box.height * scale_y))
+
+    # A box that rounds past the edge would describe pixels the reviewer cannot
+    # be shown. Pull it back inside rather than reporting a region that is not
+    # in the photograph.
+    if original.width:
+        x = min(x, original.width - 1)
+        width = min(width, original.width - x)
+    if original.height:
+        y = min(y, original.height - 1)
+        height = min(height, original.height - y)
+
+    return BoundingBox(x=x, y=y, width=max(1, width), height=max(1, height))
 
 
 def _elapsed_ms(started: float) -> int:

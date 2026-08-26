@@ -68,7 +68,22 @@ logger = logging.getLogger(__name__)
 #: the Tesseract binary, whose version is recorded per run in `OcrResult.raw`.
 #: Bump it whenever a change would make two runs incomparable.
 NAME = "tesseract"
-VERSION = "0.1.0"
+VERSION = "0.2.0"
+
+#: The original configuration, kept registered rather than replaced.
+#:
+#: 0.2.0 changed the page-segmentation mode and turned on upscaling, which
+#: makes its output incomparable with anything recorded under 0.1.0. Both are
+#: registered so a stored `ExtractionRun` from before the change is still
+#: reproducible, and so the improvement can be re-measured on any image rather
+#: than taken on trust:
+#:
+#:     python -m labelextract.cli LABEL.jpg --pipeline-version 0.1.0
+#:     python -m labelextract.cli LABEL.jpg --pipeline-version 0.2.0
+#:
+#: It is frozen. Nothing about it should be tuned again - that is what makes it
+#: a baseline.
+BASELINE_VERSION = "0.1.0"
 
 #: Tesseract language codes are passed to a subprocess argument. Only ISO 639-2
 #: style codes are accepted, so nothing else can be smuggled into the command
@@ -93,10 +108,25 @@ class TesseractOptions:
     #: an engine that fails on a machine without it would be worse than one
     #: that reads only the English on a bilingual panel. See ml/README.md.
     languages: tuple[str, ...] = ("eng",)
-    #: Page segmentation mode. 6 = "assume a single uniform block of text",
-    #: which suits a cropped label panel better than the default 3 (full page
-    #: with layout analysis) does on a photograph with no page structure.
-    page_segmentation_mode: int = 6
+    #: Page segmentation mode. 3 = "fully automatic page segmentation, no
+    #: orientation detection", i.e. let Tesseract find the text regions.
+    #:
+    #: This was 6 ("a single uniform block of text") until it was measured.
+    #: 6 is right for an already-cropped panel and wrong for a photograph of a
+    #: product on a desk, which is what people actually upload: it treats the
+    #: whole frame - can, table, laptop, window - as one block and lets
+    #: background clutter set the line structure. On Product 001's declaration
+    #: close-up, 3 read the MRP, the street number and the ten-digit customer
+    #: care number correctly where 6 misread all three.
+    #:
+    #: 3 is not universally better and the alternatives were not guessed at.
+    #: Modes 4, 6, 11 and 12 were run over the same six photographs; 11 and 12
+    #: ("sparse text") fragmented the declaration block into more than twice as
+    #: many lines and cost extracted fields, and 4 sat between the two. What
+    #: made 3 usable here is the upscaling that now precedes it - at the
+    #: original size, 3 found no text at all on two of the six images. The two
+    #: settings were chosen together and should be changed together.
+    page_segmentation_mode: int = 3
     #: OCR engine mode. 3 = "whichever of legacy/LSTM is available"; modern
     #: builds resolve this to the LSTM recogniser.
     engine_mode: int = 3
@@ -499,12 +529,50 @@ def build_pipeline() -> ExtractionPipeline:
     the registry, and run the whole test suite.
     """
     from labelextract.fields import RuleBasedFieldExtractor
-    from labelextract.preprocessing import PillowPreprocessor
+    from labelextract.preprocessing import (
+        UPSCALE_TO_DIMENSION,
+        PillowPreprocessor,
+        PreprocessingConfig,
+    )
 
     return ExtractionPipeline(
         name=NAME,
         version=VERSION,
         ocr_engine=TesseractOcrEngine(),
-        preprocessor=PillowPreprocessor(),
+        # Upscaling is asked for here rather than defaulted inside
+        # `PreprocessingConfig`, because it is *this pipeline* - this
+        # preprocessing plus this page-segmentation mode - that was measured.
+        # A bare `PillowPreprocessor()` stays conservative for anyone building
+        # something else out of these parts.
+        preprocessor=PillowPreprocessor(
+            PreprocessingConfig(min_dimension=UPSCALE_TO_DIMENSION)
+        ),
+        field_extractor=RuleBasedFieldExtractor(),
+    )
+
+
+def build_baseline_pipeline() -> ExtractionPipeline:
+    """The 0.1.0 configuration, registered alongside `build_pipeline`.
+
+    Every setting is written out here rather than inherited from a default, so
+    this pipeline keeps behaving as 0.1.0 did no matter what the defaults
+    become later. That is the whole point of it: a frozen reference to measure
+    a change against, and a way to reproduce a run recorded before the change.
+
+    Kept deliberately free of tuning. If it needs adjusting, the thing that
+    needs adjusting is 0.2.0.
+    """
+    from labelextract.fields import RuleBasedFieldExtractor
+    from labelextract.preprocessing import PillowPreprocessor, PreprocessingConfig
+
+    return ExtractionPipeline(
+        name=NAME,
+        version=BASELINE_VERSION,
+        ocr_engine=TesseractOcrEngine(
+            TesseractOptions(page_segmentation_mode=6, engine_mode=3)
+        ),
+        preprocessor=PillowPreprocessor(
+            PreprocessingConfig(min_dimension=None, max_dimension=None)
+        ),
         field_extractor=RuleBasedFieldExtractor(),
     )

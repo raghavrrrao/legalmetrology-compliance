@@ -11,6 +11,22 @@ def test_null_engine_is_registered():
     )
 
 
+def test_both_tesseract_versions_stay_resolvable():
+    """A stored run names its pipeline version; that name must keep resolving.
+
+    0.2.0 changed preprocessing and page segmentation, which makes its output
+    incomparable with 0.1.0's. Dropping 0.1.0 would leave every `ExtractionRun`
+    recorded under it un-reproducible, and would remove the only thing the
+    change can honestly be measured against.
+    """
+    from labelextract.ocr import tesseract
+
+    registered = list(registry.available_pipelines())
+    assert (tesseract.NAME, tesseract.VERSION) in registered
+    assert (tesseract.NAME, tesseract.BASELINE_VERSION) in registered
+    assert tesseract.VERSION != tesseract.BASELINE_VERSION
+
+
 def test_unknown_pipeline_raises():
     with pytest.raises(PipelineNotFoundError):
         registry.get_pipeline("does-not-exist", "9.9.9")

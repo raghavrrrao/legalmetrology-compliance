@@ -289,10 +289,12 @@ def test_metadata_names_every_component_that_ran(image_ref, tmp_path):
 def test_metadata_exposes_a_resize_that_would_move_bounding_boxes(
     image_ref, tmp_path
 ):
-    """When these differ, boxes are in preprocessed space, not source space.
+    """Both dimension sets are recorded whenever the preprocessor resized.
 
-    Recording both is what makes that detectable rather than a silent
-    mismatch between an evidence overlay and the photograph under it.
+    The boxes themselves are mapped back to source space (see the section
+    below), so this is no longer the only thing standing between an evidence
+    overlay and a silent mismatch - but it is what makes the resize visible in
+    a stored run months later.
     """
     metadata = ExtractionPipeline(
         name="stub", version="0.0.0",
@@ -311,6 +313,193 @@ def test_metadata_reports_no_preprocessed_dimensions_when_none_ran(image_ref):
 
     assert metadata["preprocessed"] is False
     assert metadata["preprocessed_dimensions"] is None
+
+
+# --- boxes come back in the coordinate system of the photograph -------------
+#
+# The preprocessor may resize, which puts every box the engine reports in the
+# intermediate's coordinate system. Nobody downstream knows that happened: the
+# UI draws boxes over the *original* photograph, and a reviewer checking a
+# disputed reading would be shown the wrong part of the package. These tests
+# pin the correction, because a wrong box looks exactly as authoritative as a
+# right one.
+
+
+def _boxed(*boxes: BoundingBox | None, confidence: float | None = 0.9) -> OcrResult:
+    return OcrResult(
+        blocks=tuple(
+            TextBlock(text=f"line {index}", box=box, confidence=confidence)
+            for index, box in enumerate(boxes)
+        )
+    )
+
+
+def test_boxes_are_mapped_back_into_source_space_after_a_resize(
+    image_ref, tmp_path
+):
+    """`_StubPreprocessor` halves a 4x4 image to 2x2, so boxes double."""
+    result = ExtractionPipeline(
+        name="stub", version="0.0.0",
+        ocr_engine=_StubOcrEngine(
+            _boxed(BoundingBox(x=1, y=1, width=1, height=1))
+        ),
+        preprocessor=_StubPreprocessor(tmp_path),
+    ).run(image_ref)
+
+    assert result.ocr.blocks[0].box.as_dict() == {
+        "x": 2, "y": 2, "width": 2, "height": 2
+    }
+    assert result.metadata["bounding_box_space"] == "source"
+    assert result.metadata["preprocessing_scale"] == [2.0, 2.0]
+
+
+def test_a_field_inherits_the_corrected_box(image_ref, tmp_path):
+    """Extraction runs after the mapping, so nothing downstream re-derives it."""
+
+    class _BoxCopying(FieldExtractor):
+        name, version = "box-copying", "0.0.0"
+
+        def extract(self, ocr, image):
+            return (
+                ExtractedField(
+                    key=LabelFieldKey.NET_QUANTITY,
+                    raw_value=ocr.blocks[0].text,
+                    box=ocr.blocks[0].box,
+                ),
+            )
+
+    result = ExtractionPipeline(
+        name="stub", version="0.0.0",
+        ocr_engine=_StubOcrEngine(
+            _boxed(BoundingBox(x=1, y=1, width=1, height=1))
+        ),
+        preprocessor=_StubPreprocessor(tmp_path),
+        field_extractor=_BoxCopying(),
+    ).run(image_ref)
+
+    assert result.fields[0].box.as_dict() == {
+        "x": 2, "y": 2, "width": 2, "height": 2
+    }
+
+
+def test_mapping_a_box_never_touches_its_confidence_or_text(image_ref, tmp_path):
+    """Geometry is the only thing being corrected. Confidence is a measurement."""
+    result = ExtractionPipeline(
+        name="stub", version="0.0.0",
+        ocr_engine=_StubOcrEngine(
+            _boxed(BoundingBox(x=1, y=1, width=1, height=1), confidence=0.42)
+        ),
+        preprocessor=_StubPreprocessor(tmp_path),
+    ).run(image_ref)
+
+    assert result.ocr.blocks[0].confidence == 0.42
+    assert result.ocr.blocks[0].text == "line 0"
+
+
+def test_a_block_without_a_box_survives_the_mapping(image_ref, tmp_path):
+    """None means "the engine reported no geometry" and must stay None."""
+    result = ExtractionPipeline(
+        name="stub", version="0.0.0",
+        ocr_engine=_StubOcrEngine(_boxed(None)),
+        preprocessor=_StubPreprocessor(tmp_path),
+    ).run(image_ref)
+
+    assert result.ocr.blocks[0].box is None
+
+
+def test_nothing_is_moved_when_no_preprocessing_ran(image_ref):
+    box = BoundingBox(x=1, y=1, width=2, height=2)
+    result = ExtractionPipeline(
+        name="stub", version="0.0.0", ocr_engine=_StubOcrEngine(_boxed(box)),
+    ).run(image_ref)
+
+    assert result.ocr.blocks[0].box == box
+    assert result.metadata["bounding_box_space"] == "source"
+    assert result.metadata["preprocessing_scale"] is None
+
+
+def test_boxes_are_left_alone_when_the_scale_cannot_be_known(image_ref, tmp_path):
+    """A preprocessor that does not report dimensions gets no guessed scale.
+
+    Inventing one would move every box by a made-up factor while looking just
+    as authoritative. Leaving them where the engine put them and saying so in
+    metadata is the honest outcome.
+    """
+
+    class _Undimensioned(_StubPreprocessor):
+        def process(self, image: ImageRef) -> ImageRef:
+            processed = super().process(image)
+            self.produced = ImageRef(
+                path=processed.path, image_format="png",
+                size_bytes=processed.size_bytes, width=None, height=None,
+            )
+            return self.produced
+
+    box = BoundingBox(x=1, y=1, width=1, height=1)
+    result = ExtractionPipeline(
+        name="stub", version="0.0.0",
+        ocr_engine=_StubOcrEngine(_boxed(box)),
+        preprocessor=_Undimensioned(tmp_path),
+    ).run(image_ref)
+
+    assert result.ocr.blocks[0].box == box
+    assert result.metadata["bounding_box_space"] == "preprocessed"
+    assert result.metadata["preprocessing_scale"] is None
+
+
+def test_a_box_that_would_round_away_keeps_at_least_one_pixel(image_ref, tmp_path):
+    """Scaling down must not delete a real detection.
+
+    `BoundingBox` refuses a zero width, so an unguarded round() would raise on
+    a thin box - losing the whole result over a rounding rule.
+    """
+
+    class _Enlarging(_StubPreprocessor):
+        def process(self, image: ImageRef) -> ImageRef:
+            processed = super().process(image)
+            self.produced = ImageRef(
+                path=processed.path, image_format="png",
+                size_bytes=processed.size_bytes, width=400, height=400,
+            )
+            return self.produced
+
+    # 400 -> 4 is a 0.01 scale: a 1px box would round to 0.
+    result = ExtractionPipeline(
+        name="stub", version="0.0.0",
+        ocr_engine=_StubOcrEngine(
+            _boxed(BoundingBox(x=10, y=10, width=1, height=1))
+        ),
+        preprocessor=_Enlarging(tmp_path),
+    ).run(image_ref)
+
+    box = result.ocr.blocks[0].box
+    assert box.width >= 1 and box.height >= 1
+
+
+def test_a_mapped_box_stays_inside_the_source_image(image_ref, tmp_path):
+    """A region outside the photograph cannot be shown to a reviewer."""
+
+    class _Enlarging(_StubPreprocessor):
+        def process(self, image: ImageRef) -> ImageRef:
+            processed = super().process(image)
+            self.produced = ImageRef(
+                path=processed.path, image_format="png",
+                size_bytes=processed.size_bytes, width=8, height=8,
+            )
+            return self.produced
+
+    # The engine reports a box filling the 8x8 intermediate; the source is 4x4.
+    result = ExtractionPipeline(
+        name="stub", version="0.0.0",
+        ocr_engine=_StubOcrEngine(
+            _boxed(BoundingBox(x=6, y=6, width=2, height=2))
+        ),
+        preprocessor=_Enlarging(tmp_path),
+    ).run(image_ref)
+
+    box = result.ocr.blocks[0].box
+    assert box.x + box.width <= image_ref.width
+    assert box.y + box.height <= image_ref.height
 
 
 # --- cleanup must never overrule the outcome it is cleaning up after --------

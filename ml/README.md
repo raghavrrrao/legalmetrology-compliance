@@ -92,30 +92,94 @@ Pillow rather than OpenCV: it is already a backend dependency, so this stage
 adds no install for anyone, and OpenCV's extra transforms are ones we cannot
 yet show are an improvement.
 
-Applied by default — all geometry-preserving except the rotation:
+### What the `tesseract` pipeline applies, in order
 
 1. **EXIF orientation.** Phone cameras store a landscape frame plus a rotation
    tag. Tesseract reads pixels and ignores the tag, so a portrait photo arrives
    sideways and recognition collapses. This is the transform that justifies the
    stage existing.
 2. **Grayscale.** Colour carries nothing for recognition.
-3. **Contrast normalisation** (`autocontrast`, 1% cut-off each end), so one
+3. **Upscale to a 3200 px longest side, capped at 2×** (`min_dimension`,
+   `max_upscale_factor`). Added in pipeline 0.2.0. Messaging apps re-encode a
+   phone photo down to roughly 900×1600, and at that size the declaration block
+   on a 120 ml can is 8–10 px tall — below the ~20 px x-height Tesseract's LSTM
+   recogniser expects. A full-resolution phone photo is already past 3200 px
+   and is left alone, so this only fires on the images that need it.
+4. **Contrast normalisation** (`autocontrast`, 1% cut-off each end), so one
    specular highlight cannot define "white" for the whole panel.
 
-Available and **off by default**, each for a stated reason:
+Upscaling is requested by `tesseract.build_pipeline()`, not defaulted inside
+`PreprocessingConfig` — a bare `PillowPreprocessor()` stays conservative,
+because it is this *combination* (these transforms plus `--psm 3`) that was
+measured, not the transform on its own.
 
-| Setting | Why it is off |
+### Bounding boxes come back in source-image space
+
+Resizing used to be unusable for exactly one reason: it moved every box into
+the intermediate's coordinate system, so an evidence overlay drawn on the
+original photograph would point at the wrong part of the package — and nothing
+would fail while it did.
+
+`ExtractionPipeline` now maps boxes back before field extraction runs, using
+the two dimension sets it already holds. `metadata["bounding_box_space"]` says
+which space the boxes are in (`"source"`, or `"preprocessed"` when a
+preprocessor did not report its dimensions and no honest mapping was possible)
+and `metadata["preprocessing_scale"]` records the factors applied. Consumers
+should read that key rather than assume.
+
+The engine's `raw` word geometry is deliberately left in engine space: `raw` is
+documented as verbatim engine output, and rewriting coordinates inside it would
+make the orchestrator depend on which engine ran.
+
+### Measured and rejected
+
+Each of these was run over the six Product 001 photographs and either made the
+result worse or changed nothing. They are recorded so nobody repeats the
+experiment:
+
+| Technique | Outcome |
 |---|---|
-| `denoise` | A median filter erases the strokes of 6-point print — the size at which net quantity and batch number are printed |
-| `max_dimension` / `min_dimension` | Resizing moves bounding boxes into preprocessed-image space, and nothing yet maps them back onto the original for the evidence overlay. The pipeline records both dimension sets in metadata so this is detectable, not silent |
+| **Sharpening** (unsharp mask) | Fewer declarations recovered on the close-up at every page-segmentation mode tried. Not implemented |
+| **Binarisation** (global Otsu) | Neutral to worse. One global threshold cannot serve a cylindrical can lit from one side. A *local* threshold might, and needs numpy |
+| **Denoising** (`denoise`, still available, off) | Recovered nothing new and cost recognised characters. It erases the strokes of 6-point print — the size at which net quantity and batch number are printed |
+| **3× upscaling** | Worse than 2×, and ~40% slower again. Enlarging invents no detail |
+| **RGB instead of grayscale** | Worse, and roughly 1.5× the time |
 
 Not implemented: **deskew and perspective correction.** Genuinely useful for
 hand-held photos of curved packaging, and not implementable well without
 numpy/OpenCV. Stated as a limitation rather than approximated badly.
 
+Not implemented: **cropping to the label.** The largest single failure on the
+Product 001 set is that a full-frame photograph gives the declaration panel
+~10% of the pixels, and no tonal transform recovers it. The fix is region
+detection — a component this package does not have and must not fake.
+
 Intermediates are written to a directory the preprocessor owns and deleted by
 `release()` as soon as the pipeline is done. The original is never modified —
 it is the evidence a disputed finding is checked against.
+
+## PAGE SEGMENTATION
+
+`--psm 3` (fully automatic segmentation) since pipeline 0.2.0, configurable via
+`TesseractOptions.page_segmentation_mode`.
+
+It was `--psm 6` ("a single uniform block of text"), which is right for an
+already-cropped panel and wrong for what people actually upload: a product
+standing on a desk, where mode 6 lets the desk, the laptop and the window take
+part in the line structure.
+
+**No mode is universally best, and these were compared rather than assumed.**
+Modes 3, 4, 6, 11 and 12 were each run over all six photographs:
+
+| Mode | What happened |
+|---|---|
+| 3 — automatic | Chosen. Best on the declaration close-up **once upscaling precedes it**. At the original size it found no text at all on two of the six images |
+| 4 — single column | Consistently between 3 and 6; never best at anything |
+| 6 — single block | The previous default. Reads more characters on cluttered frames, and more of them are wrong |
+| 11 / 12 — sparse text | Fragmented the declaration block into 2–3× as many lines and cost extracted fields |
+
+Mode 3 and the upscaling were chosen together and should be changed together —
+mode 3 on un-upscaled images is worse than what it replaced.
 
 ## FIELD EXTRACTION
 
@@ -249,10 +313,77 @@ number measured on one says nothing about performance on the other.
 
 ## METRICS
 
-**Nothing has been measured. No figure appears anywhere in this repository.**
+**No accuracy has been measured. There is no CER, WER, precision, recall or F1
+figure for this system, and none may be quoted.**
 [`docs/evaluation-strategy.md`](../docs/evaluation-strategy.md) defines what
-will be measured — CER, WER, per-field precision/recall/F1, uncertainty
-calibration, and latency — and the method.
+will be measured and the method: a frozen, annotated, held-out set, reported
+with its size and date.
+
+What exists today is a **development check on one product** — six photographs
+of one aerosol can, ground truth transcribed by hand. It was enough to choose
+between preprocessing options. It is not enough to support any claim about how
+well this system reads labels, and one product cannot be a measurement of a
+system meant for every packaged commodity sold in India.
+
+## PRODUCT 001 — what changed between 0.1.0 and 0.2.0
+
+Six photographs of one product: four full-frame views, one close-up of the
+declaration panel, one angled close-up with the panel clipped at the frame
+edge. All are 899×1599 (messaging-app re-encoded, ~1.4 MP).
+
+**Ground truth was transcribed by a human reading the images** — that is a
+manual assessment, not an annotation pipeline, and it covers one product.
+
+"Declarations" below counts how many of 17 hand-transcribed declaration
+fragments appear verbatim in the recognised text. "Fields" counts what
+`RuleBasedFieldExtractor` actually returned.
+
+| Image | Declarations before → after | Mean block confidence | Fields | Time (ms) |
+|---|---|---|---|---|
+| `01_front_clean` | 0/6 → 0/6 | 0.38 → **0.87** | 0 → 0 | 380 → 720 |
+| `02_back_clean` | 1/17 → 1/17 | 0.43 → 0.56 | 0 → 0 | 867 → 1429 |
+| `03_left_clean` | n/a (no declarations visible) | 0.28 → 0.33 | 0 → 0 | 312 → 780 |
+| `04_right_clean` | 0/17 → 0/17 | 0.36 → 0.52 | 0 → 0 | 545 → 907 |
+| `05_declaration_closeup` | 13/17 → 13/17 | 0.56 → **0.67** | **5 → 6** | 760 → 1300 |
+| `06_declaration_closeup_angled` | 0/17 → 0/17 | 0.53 → **0.75** | 0 → 0 | 573 → 988 |
+
+**The fragment count barely moves, and it is the wrong thing to look at.** What
+changed is whether the values are *right* — on `05`, the one image whose
+declarations are legible at all:
+
+| Declaration | 0.1.0 | 0.2.0 | Truth |
+|---|---|---|---|
+| MRP | `8349.00`, flagged **certain** | `349.00` | ₹349.00 |
+| Street number | `5/2` | `5/1` | 5/1 |
+| Customer care | `38671625` (8 digits) | `8867162397` (10 digits, one wrong) | 8867162337 |
+| Best before | not extracted | extracted, certain | 2 years from MFG. DT. |
+| Village | `MADANAYAKANAHALLL` | `MADANAYAKANAHALLI` | MADANAYAKANAHALLI |
+
+The MRP is the one that matters. 0.1.0 read the ₹ sign as an `8` and reported
+**₹8349.00 as a certain value** — a 24× error on the most legally significant
+number on the package, with nothing to signal it. At 2× the ₹ is recognised as
+a currency symbol rather than a digit, and the amount parses correctly.
+
+Two changes that the fragment count also misses, both manual assessment:
+
+- `01_front_clean` went from `- i / fy) [CLEANE? / Z N sovancl` (noise at 0.38)
+  to `ADVANCED FO / FORMULA / KILLS ODOUR / BACTERIA / SAFE FOR SK / LEAvEs A
+  PL / FRAGRANCE` (0.87). Readable, still truncated where the text curves round
+  the can — which is why the strict fragment count still scores it 0/6.
+- `03_left_clean` now reads `SHINE X PRO` off the vertical logo; before, noise.
+
+**The cost is time**: 3.4 s → 6.1 s for six images, ~78% slower, from
+recognising 4× the pixels. On a laptop, per uploaded image, that is 0.6 s →
+1.0 s.
+
+**What did not improve at all:** `02` and `04` still yield zero declarations.
+On a full-frame photo the declaration panel is ~10% of the image and its text
+is 8–10 px tall, curving round a cylinder. No preprocessing tried recovers it,
+and the honest answer for those photographs is that the panel needs to be
+photographed closer — which is what `EMPTY`/review exists to say.
+
+Reproduce any of this with the commands under
+[Evaluating Product 001](#evaluating-product-001).
 
 ## LATENCY
 
@@ -287,12 +418,51 @@ number with no provenance:
 - **One photograph shows one panel.** A declaration absent from a front-panel
   photo may be printed on the back. `ProductImage.view_type` exists so this can
   be reasoned about rather than reported as a violation.
-- **Bounding boxes are in source-image space only while resizing is off** (the
-  default). Turn on `max_dimension`/`min_dimension` and they move into
-  preprocessed space; run metadata makes that detectable.
+- **A declaration panel photographed from across the table cannot be read.**
+  Measured on Product 001: at ~10% of the frame and 8–10 px of text height,
+  every configuration tried returned zero declarations from the full-frame
+  views while happily returning the marketing paragraph above them. Nothing
+  warns the user that the *legally relevant* part of the label is the part that
+  was missed.
+- **The rupee sign is unreliable.** It has been read as `8` and as `€`. When it
+  is read as a digit the amount is wrong *and* certain, which is the worst
+  combination this system can produce. Nothing repairs OCR confusions by
+  design — see NORMALISATION — so a reviewer is the only guard.
+- **Bounding boxes are mapped back to source space** whenever the preprocessor
+  reports its dimensions; when it does not, they stay in preprocessed space and
+  `metadata["bounding_box_space"]` says so. The engine's `raw` word geometry is
+  always in engine space.
+- **Recognition cost scales with pixels.** Upscaling roughly doubles per-image
+  time. Measured on one laptop, on one product: ~0.6 s → ~1.0 s per image.
 - **Extraction confidence is not compliance confidence.** Reading `500 g`
   correctly says nothing about whether 500 g was declared correctly.
 - **The system assists a reviewer. It does not certify compliance.**
+
+## CONFIDENCE
+
+Unchanged by the 0.2.0 preprocessing work, and worth restating because it is
+what keeps a bad reading visible:
+
+- Every `TextBlock` carries the engine's score in `[0.0, 1.0]`, or `None` when
+  the engine reported none. **`None` means "not reported" and must never be
+  read as zero** — the contract and the database column are both nullable for
+  that reason.
+- A line's confidence is the mean of its words'. A line whose words all lack a
+  score stays `None` rather than being given a number nobody measured.
+- Mapping a box between coordinate systems never touches confidence. Geometry
+  is corrected; a measurement is not.
+- `minimum_word_confidence` stays **0** — everything Tesseract reported is kept.
+  Filtering low-confidence words would hide exactly the misreadings a reviewer
+  needs to see, and the score travels with each block anyway.
+- `confidence` (the engine's opinion of the *characters*) and `uncertain` (the
+  extractor's opinion of the *interpretation*) are different axes and are never
+  combined. A perfectly recognised `03/04/2025` is high-confidence and
+  uncertain at once.
+
+**Low confidence is never turned into a compliance finding, and no legal
+conclusion is drawn from a confidence value.** The compliance engine decides
+deterministically from normalised values and verified rules; recognition
+confidence is evidence shown to a reviewer, not an input to a verdict.
 
 ## INTEGRATION
 
@@ -309,11 +479,15 @@ Switching engines is two values in `.env` and no code change:
 
 ```
 DEFAULT_EXTRACTION_ENGINE_NAME=tesseract
-DEFAULT_EXTRACTION_ENGINE_VERSION=0.1.0
+DEFAULT_EXTRACTION_ENGINE_VERSION=0.2.0
 ```
 
 `/api/v1/health/` then reports `is_placeholder: false` and the UI's "no OCR
 engine is installed" notice disappears on its own.
+
+`0.1.0` still resolves and still works — it is the frozen baseline. Selecting
+it for a deployment would mean deliberately running the configuration that read
+₹349.00 as ₹8349.00.
 
 ---
 
@@ -375,6 +549,50 @@ python -m labelextract.cli label.jpg --pipeline null-engine
 ```
 
 Exit codes: `0` completed, `1` empty, `2` failed, `3` bad arguments.
+
+A bare `--pipeline tesseract` runs the **newest** registered version. Both are
+resolvable, so any change can be re-measured rather than taken on trust:
+
+```bash
+python -m labelextract.cli label.jpg --pipeline-version 0.1.0   # frozen baseline
+python -m labelextract.cli label.jpg --pipeline-version 0.2.0   # current
+```
+
+`0.1.0` is frozen on purpose and should not be tuned again — it is what a
+change is compared against, and it keeps runs recorded before 0.2.0
+reproducible.
+
+## Evaluating Product 001
+
+Put the photographs in `ml/data/raw/products/product_001/` (git-ignored — see
+[`ml/data/README.md`](data/README.md)) and run both versions over each one from
+the repository root:
+
+```bash
+for f in ml/data/raw/products/product_001/*.jpeg; do
+  echo "== $f"
+  python -m labelextract.cli "$f" --pipeline tesseract --pipeline-version 0.1.0
+  python -m labelextract.cli "$f" --pipeline tesseract --pipeline-version 0.2.0
+done
+```
+
+A single image, which is the usual case:
+
+```bash
+python -m labelextract.cli ml/data/raw/products/product_001/05_declaration_closeup.jpeg
+```
+
+What to compare — and what not to:
+
+- **Compare the `fields` array and the values inside it** against the physical
+  package. That is the output the compliance engine consumes.
+- **Do not compare character counts.** More recognised text is not better text;
+  the 0.1.0 run on `02_back_clean` returned the most characters of any run in
+  the set and zero declarations.
+- **`processing_ms` is a single timing on one machine**, not a benchmark.
+- **Nothing here produces an accuracy figure.** Reporting one needs the frozen
+  annotated set described in
+  [`docs/evaluation-strategy.md`](../docs/evaluation-strategy.md).
 
 Through Django, once `.env` selects the engine:
 
