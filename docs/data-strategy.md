@@ -168,7 +168,13 @@ files stay out of Git regardless of licence.
 Everything is **outside the repository**, in git-ignored directories:
 
 ```
-ml/data/                      git-ignored — nothing here is ever committed
+ml/data/                      no image or dataset here is ever committed
+├── README.md                 committed — how to use this directory
+├── raw/products/             kind D, unsorted: our own photographs
+├── evaluation/               kind D, sorted by *known* ground truth
+│   ├── compliant/
+│   ├── non_compliant/
+│   └── requires_review/
 ├── general-ocr/              kind A
 ├── product-labels/           kind B
 ├── indian-multilingual/      kind C
@@ -177,6 +183,17 @@ ml/data/                      git-ignored — nothing here is ever committed
     ├── annotations/          one JSON per image: declarations + boxes
     └── MANIFEST.json         committed? NO. See below.
 ```
+
+The `raw/` and `evaluation/` folders exist in a fresh clone — empty, held open
+by `.gitkeep` files, alongside a committed
+[`ml/data/README.md`](../ml/data/README.md). Those three kinds of file are the
+*only* thing under `ml/data/` that `.gitignore` lets through; every image,
+dataset and annotation below it stays ignored. The external-dataset directories
+are created by whoever downloads the dataset.
+
+An image belongs in `evaluation/` only when a person has established its
+ground-truth status. The folder name records a human's decision for a human's
+benefit — it is never read by code, and it is never a compliance finding.
 
 A developer obtains a dataset by downloading it from its source page, accepting
 that source's terms, and unpacking it into the matching directory. **There is
