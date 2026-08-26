@@ -172,6 +172,58 @@ class ExtractedField:
 
 
 @dataclass(frozen=True)
+class UnreadDeclaration:
+    """A declaration's keyword was recognised; no value could be read for it.
+
+    The case this exists for, seen on a real photograph: OCR returns the line
+    `MRP` and nothing else, because the rest of that line was too foreshortened
+    to recognise. The package plainly carries an MRP declaration - the keyword
+    is right there - but its value is unknown.
+
+    Without this, that outcome is indistinguishable from "this package declares
+    no MRP at all". They are opposite findings: one is "photograph the panel
+    again", the other is a potential violation. A compliance engine handed only
+    an empty `fields` tuple cannot tell them apart, and would have to guess.
+
+    **This is deliberately not an `ExtractedField`, and must never become one.**
+    A presence check passes on any extracted field regardless of its
+    uncertainty flag, so emitting a value-less field here would record the
+    package as having declared something nobody could read - turning a possible
+    violation into a pass. Absence of a field stays absence; this is a separate
+    observation alongside it.
+
+    It carries no value, because there is none. It makes no legal claim: that
+    a keyword was printed says nothing about whether the declaration was
+    required, correct, or complete.
+    """
+
+    key: LabelFieldKey
+    #: The recognised line the keyword was found on, exactly as read.
+    evidence_text: str
+    #: Where that line sits on the source image, when the engine reported it.
+    box: BoundingBox | None = None
+    #: The engine's confidence in the evidence line, or None if unreported.
+    confidence: float | None = None
+
+    def __post_init__(self) -> None:
+        _check_unit_interval("confidence", self.confidence)
+        if not self.evidence_text.strip():
+            # An observation with no evidence is not an observation. Reporting
+            # "an MRP keyword was seen" without being able to show the line it
+            # was seen on would be an unfalsifiable claim.
+            raise ValueError("UnreadDeclaration requires the evidence line")
+
+    def as_dict(self) -> dict[str, Any]:
+        """JSON-safe form, as persisted in run metadata."""
+        return {
+            "key": self.key.value,
+            "evidence_text": self.evidence_text,
+            "box": self.box.as_dict() if self.box else None,
+            "confidence": self.confidence,
+        }
+
+
+@dataclass(frozen=True)
 class ExtractionResult:
     """The complete structured result the backend persists.
 

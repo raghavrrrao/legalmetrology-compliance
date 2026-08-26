@@ -14,6 +14,7 @@ from labelextract.contracts import (
     LabelFieldKey,
     OcrResult,
     TextBlock,
+    UnreadDeclaration,
 )
 from labelextract.exceptions import (
     EngineNotAvailableError,
@@ -500,6 +501,177 @@ def test_a_mapped_box_stays_inside_the_source_image(image_ref, tmp_path):
     box = result.ocr.blocks[0].box
     assert box.x + box.width <= image_ref.width
     assert box.y + box.height <= image_ref.height
+
+
+# --- declarations named on the label but not read ---------------------------
+
+
+class _UnreadReporting(_StubFieldExtractor):
+    """An extractor that reports one declaration it could not read."""
+
+    def __init__(self, raises: Exception | None = None):
+        self._raises = raises
+
+    def unread_declarations(self, ocr, fields):
+        if self._raises is not None:
+            raise self._raises
+        return (
+            UnreadDeclaration(
+                key=LabelFieldKey.RETAIL_SALE_PRICE,
+                evidence_text="MRP",
+                box=BoundingBox(x=1, y=1, width=2, height=2),
+                confidence=0.93,
+            ),
+        )
+
+
+def test_unread_declarations_reach_the_persisted_metadata(image_ref):
+    """The backend stores `metadata` verbatim, so the signal survives a run.
+
+    Without it, "the MRP keyword is printed here and we could not read it" and
+    "this package declares no MRP" are the same empty `fields` tuple.
+    """
+    result = ExtractionPipeline(
+        name="stub", version="0.0.0",
+        ocr_engine=_StubOcrEngine(OcrResult(blocks=(TextBlock(text="MRP"),))),
+        field_extractor=_UnreadReporting(),
+    ).run(image_ref)
+
+    assert result.metadata["unread_declarations"] == [
+        {
+            "key": "retail_sale_price",
+            "evidence_text": "MRP",
+            "box": {"x": 1, "y": 1, "width": 2, "height": 2},
+            "confidence": 0.93,
+        }
+    ]
+
+
+def test_an_unread_declaration_never_becomes_an_extracted_field(image_ref):
+    """It must not raise the field count, or a presence check would pass."""
+    result = ExtractionPipeline(
+        name="stub", version="0.0.0",
+        ocr_engine=_StubOcrEngine(OcrResult(blocks=(TextBlock(text="MRP"),))),
+        field_extractor=_UnreadReporting(),
+    ).run(image_ref)
+
+    assert all(f.key is not LabelFieldKey.RETAIL_SALE_PRICE for f in result.fields)
+    assert result.field_for(LabelFieldKey.RETAIL_SALE_PRICE) is None
+
+
+def test_an_extractor_that_does_not_report_them_yields_an_empty_list(image_ref):
+    """The hook is optional, and its absence reads as "nothing to report".
+
+    The key is present on every run that got as far as extraction, so a
+    consumer never has to distinguish "no unread declarations" from "this
+    pipeline does not report them". A FAILED run carries no metadata at all -
+    that is pre-existing and unchanged.
+    """
+    result = ExtractionPipeline(
+        name="stub", version="0.0.0",
+        ocr_engine=_StubOcrEngine(OcrResult(blocks=(TextBlock(text="x"),))),
+        field_extractor=_StubFieldExtractor(),
+    ).run(image_ref)
+
+    assert result.metadata["unread_declarations"] == []
+
+
+def test_no_field_extractor_means_no_unread_declarations(image_ref):
+    result = ExtractionPipeline(
+        name="stub", version="0.0.0",
+        ocr_engine=_StubOcrEngine(OcrResult(blocks=(TextBlock(text="MRP"),))),
+    ).run(image_ref)
+
+    assert result.metadata["unread_declarations"] == []
+
+
+def test_an_unread_declaration_carries_a_source_space_box(image_ref, tmp_path):
+    """The evidence box must point at the photograph, not the intermediate.
+
+    An unread declaration exists to send a reviewer to look at a specific part
+    of the package. `_StubPreprocessor` halves the image, so an unmapped box
+    would be at half the coordinates and the reviewer would be shown the wrong
+    region - with nothing failing to indicate it.
+
+    The observation is built by the *real* extractor here rather than a stub,
+    because what is being checked is that it reads its geometry from the
+    already-rescaled `OcrResult` the pipeline hands it.
+    """
+    from labelextract.fields import RuleBasedFieldExtractor
+
+    result = ExtractionPipeline(
+        name="stub", version="0.0.0",
+        ocr_engine=_StubOcrEngine(
+            OcrResult(
+                blocks=(
+                    TextBlock(
+                        text="MRP",
+                        box=BoundingBox(x=1, y=1, width=1, height=1),
+                        confidence=0.93,
+                    ),
+                )
+            )
+        ),
+        preprocessor=_StubPreprocessor(tmp_path),
+        field_extractor=RuleBasedFieldExtractor(),
+    ).run(image_ref)
+
+    [observation] = result.metadata["unread_declarations"]
+    assert observation["key"] == "retail_sale_price"
+    # Doubled from the 2x2 intermediate back into the 4x4 source.
+    assert observation["box"] == {"x": 2, "y": 2, "width": 2, "height": 2}
+    assert observation["confidence"] == 0.93
+
+
+def test_an_extractor_without_the_optional_hook_is_not_treated_as_broken(
+    image_ref, caplog
+):
+    """"Not implemented" and "implemented and broken" are different.
+
+    An extractor that does not subclass `FieldExtractor` is out of contract but
+    functional. Logging a traceback for it on every image would bury the case
+    that genuinely needs attention.
+    """
+
+    class _DuckTyped:
+        name, version, is_placeholder = "duck", "0.0.0", False
+
+        def warmup(self):
+            pass
+
+        def extract(self, ocr, image):
+            return ()
+
+    with caplog.at_level(logging.WARNING):
+        result = ExtractionPipeline(
+            name="stub", version="0.0.0",
+            ocr_engine=_StubOcrEngine(OcrResult(blocks=(TextBlock(text="MRP"),))),
+            field_extractor=_DuckTyped(),
+        ).run(image_ref)
+
+    assert result.metadata["unread_declarations"] == []
+    assert caplog.text == ""
+
+
+def test_a_failure_reporting_them_does_not_cost_the_extracted_fields(
+    image_ref, caplog
+):
+    """A footnote about a result must not be able to destroy the result.
+
+    Same rule as `release()`: this is a secondary observation about work that
+    already succeeded, so a bug in it costs the observation and a log line.
+    """
+    with caplog.at_level(logging.WARNING):
+        result = ExtractionPipeline(
+            name="stub", version="0.0.0",
+            ocr_engine=_StubOcrEngine(OcrResult(blocks=(TextBlock(text="x"),))),
+            field_extractor=_UnreadReporting(raises=RuntimeError("boom")),
+        ).run(image_ref)
+
+    assert result.status is ExtractionStatus.COMPLETED
+    assert len(result.fields) == 1
+    assert result.metadata["unread_declarations"] == []
+    assert "unread declarations" in caplog.text
 
 
 # --- cleanup must never overrule the outcome it is cleaning up after --------

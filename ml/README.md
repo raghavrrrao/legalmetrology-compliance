@@ -289,6 +289,68 @@ determined".
 of the *characters*. They are different axes: a perfectly recognised
 `03/04/2025` is high-confidence and uncertain at once.
 
+### When a declaration is named but its value cannot be read
+
+There is a third outcome, and it is the one an empty `fields` tuple used to
+hide.
+
+On `04_right_clean` — the can photographed side-on — OCR returned the single
+line `MRP` and nothing else, because the rest of that line curves away from the
+camera and was never recognised. The extractor did the right thing and emitted
+no field: a keyword is not a price, and inventing `0` or guessing at the digits
+would be worse than saying nothing.
+
+But "no MRP field" then meant two opposite things at once:
+
+| What happened | What a rule engine sees today |
+|---|---|
+| The package carries no MRP at all | no `retail_sale_price` field |
+| The MRP is printed and we could not read it | no `retail_sale_price` field |
+
+The first is a potential violation. The second means *photograph the panel
+again*. Nothing in the output told them apart.
+
+`ExtractionResult.metadata["unread_declarations"]` now does. Each entry names
+the declaration, quotes the line the keyword was read from, and carries that
+line's box and confidence:
+
+```json
+"unread_declarations": [
+  {"key": "retail_sale_price", "evidence_text": "MRP",
+   "box": {"x": 513, "y": 1240, "width": 28, "height": 12}, "confidence": 0.93}
+]
+```
+
+**It carries no value, and it is deliberately not an `ExtractedField`.** A
+presence check passes on any extracted field regardless of its uncertainty
+flag, so a value-less field here would record the package as having declared an
+MRP nobody could read — turning a possible violation into a pass. Absence of a
+field stays absence; this is a separate observation alongside it.
+
+It reports **only what is unambiguous**, which costs recall on purpose:
+
+| Line | Reported? |
+|---|---|
+| `MRP` | yes — nothing else is phrased this way |
+| `Net Qty:`, `Best Before`, `Date of Import` | yes |
+| `NET` alone | **no** — the keyword needs a following word (`net qty`, `net weight`); `NET` on its own could begin any of them, or nothing |
+| `the quantity supplied may vary` | **no** — "quantity" is an ordinary English word and appears in prose. Extraction still reads `Quantity: 500 g`, because there a number and a unit are present; only *bare-keyword evidence* uses the stricter `NET_QUANTITY_ANCHOR` |
+| `Packed by BAZINGA MEDIA` | **no** — the packing-date keyword matches the bare stem `packed`, so reporting `date_of_packing` here would claim a declaration the label does not make |
+| `Manufactured by …` | **no** — same collision with `manufactured` |
+| `Customer Care` with no number | **no** — the extractor already emits a keyword-only field marked uncertain, so it is not unresolved |
+| `MANUPACTYD. is .` | **no** — misrecognised text names nothing |
+
+**This is a lower bound, not a list of everything that was missed.** It can only
+report a keyword that was itself recognised. On `02_back_clean` the MRP is
+printed on the package and the keyword was never read, so nothing is reported —
+the output is silent about a declaration that is genuinely there.
+
+Nothing here is a legal claim. That a keyword was printed says nothing about
+whether the declaration was required, or whether its value would have been
+correct. **No compliance rule consumes this yet**; it exists so that a
+deterministic engine can eventually distinguish "absent" from "unreadable"
+instead of guessing.
+
 ## DATA
 
 **No dataset, model weight, or label photograph is committed to this
@@ -418,6 +480,11 @@ number with no provenance:
 - **One photograph shows one panel.** A declaration absent from a front-panel
   photo may be printed on the back. `ProductImage.view_type` exists so this can
   be reasoned about rather than reported as a violation.
+- **Recognising a keyword is not reading a declaration.** `04_right_clean`
+  returns the lines `NET` and `MRP` and no values at all. `MRP` is reported in
+  `unread_declarations`; `NET` is not, because the bare word names nothing
+  unambiguously. Both are cases where the label plainly carries a declaration
+  and this system cannot report what it says.
 - **A declaration panel photographed from across the table cannot be read.**
   Measured on Product 001: at ~10% of the frame and 8–10 px of text height,
   every configuration tried returned zero declarations from the full-frame

@@ -25,7 +25,12 @@ from __future__ import annotations
 
 from abc import ABC, abstractmethod
 
-from labelextract.contracts import ExtractedField, ImageRef, OcrResult
+from labelextract.contracts import (
+    ExtractedField,
+    ImageRef,
+    OcrResult,
+    UnreadDeclaration,
+)
 
 
 class _Component(ABC):
@@ -129,3 +134,23 @@ class FieldExtractor(_Component):
     @abstractmethod
     def extract(self, ocr: OcrResult, image: ImageRef) -> tuple[ExtractedField, ...]:
         """Return the declarations found in `ocr`. May be empty."""
+
+    def unread_declarations(
+        self, ocr: OcrResult, fields: tuple[ExtractedField, ...]
+    ) -> tuple[UnreadDeclaration, ...]:
+        """Declarations whose keyword was recognised but whose value was not.
+
+        Optional, and empty by default so every existing implementation keeps
+        working unchanged. Implement it when the extractor can tell "this
+        keyword is printed here and I could not read what follows it" apart
+        from "this declaration is not on the label" - the two look identical in
+        an empty `fields` tuple, and they are opposite findings.
+
+        Takes the fields already extracted so an implementation can report only
+        what it did *not* resolve, without running its detectors twice.
+
+        Anything returned here is an observation, never a declaration. It must
+        not duplicate something already in `fields`, must carry no value, and
+        must make no claim about whether the declaration was required.
+        """
+        return ()
