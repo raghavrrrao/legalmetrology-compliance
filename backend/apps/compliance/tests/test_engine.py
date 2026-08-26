@@ -224,3 +224,178 @@ def test_a_broken_rule_does_not_crash_the_whole_check(completed_run, make_rule):
     assert check.status == ComplianceCheck.Status.COMPLETED
     assert check.rules_passed == 0
     assert check.result != ComplianceCheck.Result.COMPLIANT
+
+
+# --- guarantee 3, second half: a declaration named but not read -------------
+#
+# `empty_run` above covers the whole photograph being unreadable. This covers
+# the narrower and more common case: the photograph is fine, other declarations
+# were read from it, and one panel was caught edge-on so a single declaration's
+# value is illegible.
+#
+# Before unread declarations crossed into the check context this produced
+# NON_COMPLIANT with a violation on the record - the system telling a user
+# their package lacks a declaration that is printed on it, in a photograph they
+# can see. These tests exist so it cannot go back.
+#
+# The rules used here are the test fixture's own placeholder rules. Nothing in
+# this file states a requirement of the Legal Metrology (Packaged Commodities)
+# Rules, 2011; the repository ships no such rule, and this integration adds
+# none.
+
+
+def test_a_named_but_unread_declaration_yields_review_required(
+    completed_run, make_rule, make_unread_declaration
+):
+    """The outcome the whole integration exists to produce."""
+    make_rule("R-UNREAD", verified=True, field_key="retail_sale_price")
+    make_unread_declaration(
+        completed_run, "retail_sale_price", evidence_text="MRP"
+    )
+
+    check = engine.evaluate(completed_run)
+
+    assert check.result == ComplianceCheck.Result.REVIEW_REQUIRED
+    assert check.rules_inconclusive == 1
+
+
+def test_a_named_but_unread_declaration_is_never_non_compliant(
+    completed_run, make_rule, make_unread_declaration
+):
+    """The regression, stated as the thing that must not happen.
+
+    A verified rule and an absent field is normally NON_COMPLIANT - the test
+    directly above `guarantee 2` asserts exactly that. The only difference here
+    is the unread row.
+    """
+    make_rule("R-UNREAD", verified=True, field_key="retail_sale_price")
+    make_unread_declaration(
+        completed_run, "retail_sale_price", evidence_text="MRP"
+    )
+
+    check = engine.evaluate(completed_run)
+
+    assert check.result != ComplianceCheck.Result.NON_COMPLIANT
+    assert check.violations.count() == 0
+    assert check.rules_failed == 0
+
+
+def test_a_named_but_unread_declaration_is_never_compliant(
+    completed_run, make_rule, make_unread_declaration
+):
+    """The opposite error, which would be worse.
+
+    Suppressing the failure must not be mistaken for satisfying the rule. An
+    unread declaration is a reason to look again, never a pass.
+    """
+    make_rule("R-UNREAD", verified=True, field_key="retail_sale_price")
+    make_unread_declaration(
+        completed_run, "retail_sale_price", evidence_text="MRP"
+    )
+
+    check = engine.evaluate(completed_run)
+
+    assert check.result != ComplianceCheck.Result.COMPLIANT
+    assert check.rules_passed == 0
+
+
+def test_the_summary_explains_that_nothing_was_concluded(
+    completed_run, make_rule, make_unread_declaration
+):
+    """A user has to be told why there is no verdict, not just that there isn't."""
+    make_rule("R-UNREAD", verified=True, field_key="retail_sale_price")
+    make_unread_declaration(
+        completed_run, "retail_sale_price", evidence_text="MRP"
+    )
+
+    check = engine.evaluate(completed_run)
+
+    assert "could not be determined" in check.summary
+    assert "no compliance conclusion has been drawn" in check.summary
+
+
+def test_an_unread_declaration_alongside_a_real_failure_is_partially_compliant(
+    completed_run, make_rule, make_unread_declaration
+):
+    """One panel being illegible must not erase a violation found elsewhere.
+
+    The engine already routes failed + inconclusive to PARTIALLY_COMPLIANT.
+    This asserts an unread declaration feeds that path rather than short-
+    circuiting it, so a genuine finding still reaches the user.
+    """
+    make_rule("R-MISSING", verified=True, field_key="country_of_origin")
+    make_rule("R-UNREAD", verified=True, field_key="retail_sale_price")
+    make_unread_declaration(
+        completed_run, "retail_sale_price", evidence_text="MRP"
+    )
+
+    check = engine.evaluate(completed_run)
+
+    assert check.result == ComplianceCheck.Result.PARTIALLY_COMPLIANT
+    assert check.rules_failed == 1
+    assert check.rules_inconclusive == 1
+    assert check.violations.get().field_key == "country_of_origin"
+
+
+def test_a_declaration_that_was_read_still_passes_beside_an_unread_one(
+    completed_run,
+    make_rule,
+    make_extracted_field,
+    make_unread_declaration,
+):
+    """Per declaration, not per run - checked at the verdict level.
+
+    One illegible panel must not stop the system reporting what it did
+    establish about the rest of the label.
+    """
+    make_rule("R-READ", verified=True, field_key="net_quantity")
+    make_rule("R-UNREAD", verified=True, field_key="retail_sale_price")
+    make_extracted_field(completed_run, "net_quantity", "500 g")
+    make_unread_declaration(
+        completed_run, "retail_sale_price", evidence_text="MRP"
+    )
+
+    check = engine.evaluate(completed_run)
+
+    assert check.rules_passed == 1
+    assert check.rules_inconclusive == 1
+    assert check.rules_failed == 0
+    assert check.result == ComplianceCheck.Result.REVIEW_REQUIRED
+
+
+def test_an_unrelated_unread_declaration_does_not_rescue_a_missing_one(
+    completed_run, make_rule, make_unread_declaration
+):
+    """The suppression is keyed, and must not become a blanket amnesty.
+
+    An illegible MRP says nothing about the country of origin. If it did, a
+    single unread row anywhere would silence every rule on the label.
+    """
+    make_rule("R-MISSING", verified=True, field_key="country_of_origin")
+    make_unread_declaration(
+        completed_run, "retail_sale_price", evidence_text="MRP"
+    )
+
+    check = engine.evaluate(completed_run)
+
+    assert check.result == ComplianceCheck.Result.NON_COMPLIANT
+    assert check.violations.get().field_key == "country_of_origin"
+
+
+def test_an_unverified_rule_over_an_unread_declaration_is_still_review_required(
+    completed_run, make_rule, make_unread_declaration
+):
+    """Guarantee 2 and the new branch must compose, not fight.
+
+    Both routes lead to review. This pins that an unverified rule does not
+    somehow re-acquire the ability to fail a product through this path.
+    """
+    make_rule("R-UNVERIFIED", verified=False, field_key="retail_sale_price")
+    make_unread_declaration(
+        completed_run, "retail_sale_price", evidence_text="MRP"
+    )
+
+    check = engine.evaluate(completed_run)
+
+    assert check.result == ComplianceCheck.Result.REVIEW_REQUIRED
+    assert check.violations.count() == 0

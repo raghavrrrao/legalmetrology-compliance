@@ -6,7 +6,11 @@ from dataclasses import dataclass, field
 from enum import Enum
 from typing import Any, Mapping
 
-from apps.extraction.models import ExtractedLabelField, ExtractionRun
+from apps.extraction.models import (
+    ExtractedLabelField,
+    ExtractionRun,
+    UnreadLabelDeclaration,
+)
 from apps.images.models import ProductImage
 
 
@@ -37,14 +41,26 @@ class CheckStatus(str, Enum):
 class CheckContext:
     """Everything a validator is allowed to look at.
 
-    Deliberately narrow. A validator sees the extraction run and its fields; it
-    has no database session, no request, and no access to other products. That
-    keeps validators pure and trivially testable - a validator test needs no
-    database at all.
+    Deliberately narrow. A validator sees the extraction run, the declarations
+    read from it, and the declarations the label named that could not be read.
+    It has no database session, no request, and no access to other products.
+    That keeps validators pure and trivially testable - a validator test needs
+    no database at all.
+
+    The two collections are separate and must stay separate. `fields_by_key`
+    holds readings; `unread_by_key` holds observations that a declaration was
+    *named* and its value was not legible. Merging them would let a presence
+    check pass on the strength of something nobody could read.
     """
 
     run: ExtractionRun
     fields_by_key: Mapping[str, ExtractedLabelField]
+    #: Declarations named on the label whose values were not read, keyed the
+    #: same way. Defaults to empty so a `CheckContext` built by hand - in a
+    #: test, or by code written before this existed - keeps working unchanged.
+    unread_by_key: Mapping[str, UnreadLabelDeclaration] = field(
+        default_factory=dict
+    )
 
     @property
     def extraction_was_usable(self) -> bool:
@@ -71,15 +87,31 @@ class CheckContext:
     def field(self, key: str) -> ExtractedLabelField | None:
         return self.fields_by_key.get(key)
 
+    def unread(self, key: str) -> UnreadLabelDeclaration | None:
+        """The observation that `key` was named on the label but not read.
+
+        None means no such observation - which is *not* the same as the
+        declaration being absent. `field(key) is None and unread(key) is None`
+        is "we read the label and this declaration is not on it";
+        `field(key) is None and unread(key) is not None` is "the label names
+        this declaration and we could not read what it says". A validator that
+        treats those two the same reports bad photography as a violation.
+        """
+        return self.unread_by_key.get(key)
+
     @classmethod
     def from_run(cls, run: ExtractionRun) -> CheckContext:
-        """Build a context from a run, loading its fields once.
+        """Build a context from a run, loading its readings once.
 
         Called once per compliance check rather than per rule, so evaluating
-        fifty rules against one run is one query, not fifty.
+        fifty rules against one run is two queries, not a hundred.
+
+        A run recorded before unread declarations were persisted simply has
+        none, and every validator behaves for it exactly as it did before.
         """
         fields = {f.field_key: f for f in run.fields.all()}
-        return cls(run=run, fields_by_key=fields)
+        unread = {u.field_key: u for u in run.unread_declarations.all()}
+        return cls(run=run, fields_by_key=fields, unread_by_key=unread)
 
 
 @dataclass(frozen=True)

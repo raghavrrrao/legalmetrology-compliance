@@ -64,6 +64,10 @@ The end-to-end flow the whole system exists to serve:
         ▼
   ExtractionRun + ExtractedLabelField rows
         │                       readings, with confidence and bounding boxes
+        │  + UnreadLabelDeclaration rows
+        │                       declarations the label names whose values were
+        │                       not legible - kept apart from the readings so a
+        │                       presence check can never be satisfied by one
         ▼
   apps.compliance.services.engine
         │

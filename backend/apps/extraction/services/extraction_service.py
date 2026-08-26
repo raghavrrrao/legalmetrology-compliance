@@ -9,7 +9,8 @@ Responsibilities, in order:
     1. Turn a `ProductImage` row into a `labelextract.ImageRef`.
     2. Resolve the configured pipeline by name and version.
     3. Run it.
-    4. Persist the structured result as an `ExtractionRun` plus its fields.
+    4. Persist the structured result as an `ExtractionRun`, its fields, and
+       any declarations the label named that could not be read.
 
 Explicitly NOT its responsibility: deciding what the readings mean. That is
 `apps.compliance`.
@@ -33,7 +34,11 @@ from labelextract.contracts import (
 )
 from labelextract.exceptions import LabelExtractError
 
-from apps.extraction.models import ExtractedLabelField, ExtractionRun
+from apps.extraction.models import (
+    ExtractedLabelField,
+    ExtractionRun,
+    UnreadLabelDeclaration,
+)
 from apps.images.models import ProductImage
 
 logger = logging.getLogger(__name__)
@@ -171,6 +176,10 @@ def _persist_result(
     if fields:
         ExtractedLabelField.objects.bulk_create(fields)
 
+    unread = _unread_rows(run, result)
+    if unread:
+        UnreadLabelDeclaration.objects.bulk_create(unread)
+
     ProductImage.objects.filter(pk=image.pk).update(
         status=(
             ProductImage.Status.FAILED
@@ -206,3 +215,92 @@ def _validated_key(key: LabelFieldKey) -> str:
     if not isinstance(key, LabelFieldKey):
         raise ValueError(f"Not a LabelFieldKey: {key!r}")
     return key.value
+
+
+#: Key under which the ML layer reports declarations it named but could not
+#: read. Defined by `labelextract.pipeline.ExtractionPipeline._metadata`; the
+#: whole mapping is also stored verbatim in `raw_output` as diagnostics.
+_UNREAD_METADATA_KEY = "unread_declarations"
+
+#: The `labelextract.contracts.UnreadDeclaration.as_dict()` keys this reads.
+#: Anything else in an entry is ignored rather than rejected, so an engine that
+#: adds a diagnostic field does not break persistence.
+_UNREAD_REQUIRED_KEYS = ("key", "evidence_text")
+
+
+def _unread_rows(
+    run: ExtractionRun, result: ExtractionResult
+) -> list[UnreadLabelDeclaration]:
+    """Build the unread-declaration rows for `result`, skipping malformed ones.
+
+    This is the seam. The ML layer reports these in `metadata` rather than on
+    `ExtractionResult.fields`, deliberately and permanently - an unread
+    declaration is not a field, and `field_presence` passes on any field. Here
+    they become rows in their own table, which is the copy
+    `apps.rules.checks` reads.
+
+    Defensive on purpose, in three ways, because `metadata` is a mapping any
+    pipeline can populate and this is where an engine's mistake would otherwise
+    reach the compliance engine:
+
+    1. **A missing key is normal, not an error.** A pipeline with no field
+       extractor, or one predating the mechanism, reports nothing here.
+    2. **An unrecognised `key` is dropped.** Same guard as `_validated_key`
+       gives `ExtractedLabelField`: a key outside the ml/ vocabulary would
+       never match a rule, so writing it would be a row that silently does
+       nothing.
+    3. **An entry without evidence is dropped.** "An MRP keyword was seen",
+       with no line to show for it, is a claim a reviewer cannot check.
+
+    A skipped entry is logged and the run still records everything else. One
+    malformed observation must not cost the declarations that were read - the
+    same policy the pipeline itself applies one layer up.
+    """
+    raw = result.metadata.get(_UNREAD_METADATA_KEY) or []
+    if not isinstance(raw, (list, tuple)):
+        logger.warning(
+            "Engine %s reported %s as %s, not a list; ignoring it",
+            result.engine_name,
+            _UNREAD_METADATA_KEY,
+            type(raw).__name__,
+        )
+        return []
+
+    known_keys = {key.value for key in LabelFieldKey}
+    rows: list[UnreadLabelDeclaration] = []
+
+    for entry in raw:
+        if not isinstance(entry, dict) or not all(
+            entry.get(name) for name in _UNREAD_REQUIRED_KEYS
+        ):
+            logger.warning(
+                "Engine %s reported an unread declaration with no key or no "
+                "evidence; dropping it",
+                result.engine_name,
+            )
+            continue
+
+        field_key = entry["key"]
+        if field_key not in known_keys:
+            logger.warning(
+                "Engine %s reported an unread declaration for %r, which is not "
+                "in the labelextract vocabulary; dropping it",
+                result.engine_name,
+                field_key,
+            )
+            continue
+
+        evidence_text = str(entry["evidence_text"])
+        if not evidence_text.strip():
+            continue
+
+        rows.append(
+            UnreadLabelDeclaration(
+                run=run,
+                field_key=field_key,
+                evidence_text=evidence_text,
+                confidence=entry.get("confidence"),
+                bounding_box=entry.get("box"),
+            )
+        )
+    return rows

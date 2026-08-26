@@ -347,9 +347,17 @@ the output is silent about a declaration that is genuinely there.
 
 Nothing here is a legal claim. That a keyword was printed says nothing about
 whether the declaration was required, or whether its value would have been
-correct. **No compliance rule consumes this yet**; it exists so that a
-deterministic engine can eventually distinguish "absent" from "unreadable"
-instead of guessing.
+correct.
+
+**What consumes it.** `apps.extraction.services.extraction_service` copies each
+entry into an `UnreadLabelDeclaration` row - a table of its own, deliberately
+not `ExtractedLabelField` - and `apps.rules.checks.CheckContext.unread()` hands
+it to validators. `field_presence` returns INCONCLUSIVE rather than FAILED for
+a declaration the label names but whose value was not read, so the compliance
+engine reports REVIEW_REQUIRED instead of a violation. The mapping is still
+stored verbatim in `ExtractionRun.raw_output` as diagnostics; the rows are the
+copy a check queries. An unread declaration can stop a FAILED and can never
+produce a PASSED.
 
 ## DATA
 

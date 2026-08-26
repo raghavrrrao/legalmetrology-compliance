@@ -159,3 +159,289 @@ def test_context_exposes_the_source_image_for_visual_checks(completed_run):
     assert context.image.pk == completed_run.image_id
     assert context.image.width > 0
     assert context.image.height > 0
+
+
+# --- a declaration named on the label but not read --------------------------
+#
+# The second route to INCONCLUSIVE, and the one that used to be a violation.
+# A photograph of a curved can catches the panel edge-on: OCR returns the line
+# `MRP` and nothing after it. The extraction is usable - other declarations
+# were read from the same image - so the "image was unreadable" branch does not
+# apply, and before this existed the absent field was reported as FAILED.
+#
+# "The package declares no MRP" and "the MRP is printed and we could not read
+# it" are opposite findings. An absent ExtractedLabelField says both.
+
+
+def test_a_named_but_unread_declaration_is_inconclusive_not_failed(
+    completed_run, make_unread_declaration
+):
+    """The whole point of this integration, in one assertion."""
+    make_unread_declaration(completed_run, "retail_sale_price", evidence_text="MRP")
+    context = CheckContext.from_run(completed_run)
+
+    outcome = check_field_presence({"field_key": "retail_sale_price"}, context)
+
+    assert outcome.status is CheckStatus.INCONCLUSIVE
+    assert outcome.status is not CheckStatus.FAILED
+    assert outcome.status is not CheckStatus.PASSED
+
+
+def test_an_unread_declaration_can_never_satisfy_a_presence_check(
+    completed_run, make_unread_declaration
+):
+    """It stops a FAILED. It must never produce a PASSED.
+
+    A PASSED here would record the package as having declared something nobody
+    could read - the failure the separate table exists to make impossible,
+    checked at the level that would suffer from it.
+    """
+    make_unread_declaration(
+        completed_run, "net_quantity", evidence_text="NET QUANTITY :"
+    )
+    context = CheckContext.from_run(completed_run)
+
+    outcome = check_field_presence({"field_key": "net_quantity"}, context)
+
+    assert outcome.status is not CheckStatus.PASSED
+    assert context.field("net_quantity") is None, (
+        "an unread declaration must not appear among the extracted fields"
+    )
+
+
+def test_the_unread_outcome_says_the_declaration_is_named_not_missing(
+    completed_run, make_unread_declaration
+):
+    """The message is what a user reads. It must not say the declaration is gone.
+
+    Telling someone their package is missing an MRP that is printed on it, in a
+    photograph they can see, is worse than telling them nothing.
+    """
+    make_unread_declaration(completed_run, "retail_sale_price", evidence_text="MRP")
+    context = CheckContext.from_run(completed_run)
+
+    outcome = check_field_presence({"field_key": "retail_sale_price"}, context)
+
+    assert "names this declaration" in outcome.message
+    assert "not a finding that the declaration is missing" in outcome.message
+    assert "was not found" not in outcome.message
+
+
+def test_the_evidence_line_survives_into_the_outcome(
+    completed_run, make_unread_declaration
+):
+    """A reviewer has to be shown the line the keyword was read on.
+
+    Without it the finding is unfalsifiable: we saw an MRP keyword, and there
+    is nothing to check that against.
+    """
+    make_unread_declaration(
+        completed_run, "retail_sale_price", evidence_text="M.R.P. Rs"
+    )
+    context = CheckContext.from_run(completed_run)
+
+    outcome = check_field_presence({"field_key": "retail_sale_price"}, context)
+
+    assert outcome.evidence_excerpt == "M.R.P. Rs"
+    assert outcome.field_key == "retail_sale_price"
+    assert outcome.details["declaration_named_but_unread"] is True
+
+
+def test_the_bounding_box_and_confidence_survive_where_available(
+    completed_run, make_unread_declaration
+):
+    """So the UI can point at the panel that needs re-photographing."""
+    make_unread_declaration(
+        completed_run,
+        "retail_sale_price",
+        evidence_text="MRP",
+        bounding_box={"x": 513, "y": 1240, "width": 28, "height": 12},
+        confidence=0.93,
+    )
+    context = CheckContext.from_run(completed_run)
+
+    outcome = check_field_presence({"field_key": "retail_sale_price"}, context)
+
+    assert outcome.bounding_box == {"x": 513, "y": 1240, "width": 28, "height": 12}
+    assert outcome.details["evidence_confidence"] == 0.93
+
+
+def test_an_unreported_geometry_or_confidence_stays_absent(
+    completed_run, make_unread_declaration
+):
+    """None means the engine did not report it, and must not become a number."""
+    make_unread_declaration(completed_run, "retail_sale_price", evidence_text="MRP")
+    context = CheckContext.from_run(completed_run)
+
+    outcome = check_field_presence({"field_key": "retail_sale_price"}, context)
+
+    assert outcome.bounding_box is None
+    assert outcome.details["evidence_confidence"] is None
+
+
+def test_an_extracted_field_still_passes_when_another_is_unread(
+    completed_run, make_extracted_field, make_unread_declaration
+):
+    """The new branch is per declaration, not per run.
+
+    An unreadable MRP must not make a net quantity that *was* read stop
+    passing. That regression would turn one bad panel into a system-wide
+    refusal to say anything.
+    """
+    make_extracted_field(completed_run, "net_quantity", "500 g")
+    make_unread_declaration(completed_run, "retail_sale_price", evidence_text="MRP")
+    context = CheckContext.from_run(completed_run)
+
+    assert (
+        check_field_presence({"field_key": "net_quantity"}, context).status
+        is CheckStatus.PASSED
+    )
+    assert (
+        check_field_presence({"field_key": "retail_sale_price"}, context).status
+        is CheckStatus.INCONCLUSIVE
+    )
+
+
+def test_a_declaration_with_neither_a_field_nor_an_unread_row_still_fails(
+    completed_run, make_unread_declaration
+):
+    """Existing behaviour, asserted beside the new branch so it cannot drift.
+
+    The label was readable, and this declaration was neither read nor named.
+    That is still FAILED; narrowing it further would hide real violations.
+    """
+    make_unread_declaration(completed_run, "retail_sale_price", evidence_text="MRP")
+    context = CheckContext.from_run(completed_run)
+
+    outcome = check_field_presence({"field_key": "country_of_origin"}, context)
+
+    assert outcome.status is CheckStatus.FAILED
+    assert outcome.evidence_excerpt == completed_run.recognised_text
+
+
+def test_a_field_that_was_read_beats_an_unread_row_for_the_same_key(
+    completed_run, make_extracted_field, make_unread_declaration
+):
+    """Defensive: the ML layer promises these never overlap.
+
+    `RuleBasedFieldExtractor.unread_declarations` skips any key already in
+    `fields`. If a future engine breaks that promise, a reading must still win
+    - it carries a value, and the unread row by definition does not.
+    """
+    make_extracted_field(completed_run, "retail_sale_price", "MRP Rs. 349.00")
+    make_unread_declaration(completed_run, "retail_sale_price", evidence_text="MRP")
+    context = CheckContext.from_run(completed_run)
+
+    outcome = check_field_presence({"field_key": "retail_sale_price"}, context)
+
+    assert outcome.status is CheckStatus.PASSED
+    assert outcome.evidence_excerpt == "MRP Rs. 349.00"
+
+
+def test_several_unread_declarations_are_each_reachable(
+    completed_run, make_unread_declaration
+):
+    """A panel cut off by the frame names more than one declaration at once."""
+    make_unread_declaration(completed_run, "retail_sale_price", evidence_text="MRP")
+    make_unread_declaration(
+        completed_run, "net_quantity", evidence_text="NET QUANTITY : 1"
+    )
+    make_unread_declaration(
+        completed_run, "best_before", evidence_text="BEST BEFORE 2 YE"
+    )
+    context = CheckContext.from_run(completed_run)
+
+    assert set(context.unread_by_key) == {
+        "retail_sale_price",
+        "net_quantity",
+        "best_before",
+    }
+    for key in ("retail_sale_price", "net_quantity", "best_before"):
+        outcome = check_field_presence({"field_key": key}, context)
+        assert outcome.status is CheckStatus.INCONCLUSIVE, key
+        assert outcome.evidence_excerpt, key
+
+
+def test_an_unreadable_image_still_wins_over_an_unread_row(
+    empty_run, make_unread_declaration
+):
+    """Order of the two INCONCLUSIVE branches, pinned.
+
+    Both reach the same status, so this is about the *message*: telling someone
+    no readable text was extracted is more useful when their whole photograph
+    failed, and it is the branch that was there first.
+    """
+    make_unread_declaration(empty_run, "retail_sale_price", evidence_text="MRP")
+    context = CheckContext.from_run(empty_run)
+
+    outcome = check_field_presence({"field_key": "retail_sale_price"}, context)
+
+    assert outcome.status is CheckStatus.INCONCLUSIVE
+    assert "no readable text was extracted" in outcome.message
+
+
+# --- the context itself -----------------------------------------------------
+
+
+def test_a_run_with_no_unread_declarations_behaves_exactly_as_before(completed_run):
+    """Backward compatibility for every run recorded before this existed."""
+    context = CheckContext.from_run(completed_run)
+
+    assert context.unread_by_key == {}
+    assert context.unread("retail_sale_price") is None
+    assert (
+        check_field_presence({"field_key": "retail_sale_price"}, context).status
+        is CheckStatus.FAILED
+    )
+
+
+def test_a_context_built_without_unread_declarations_is_still_valid(completed_run):
+    """`CheckContext` is constructed directly in places. It must not break."""
+    context = CheckContext(run=completed_run, fields_by_key={})
+
+    assert context.unread_by_key == {}
+    assert context.unread("net_quantity") is None
+
+
+def test_the_context_keeps_readings_and_unread_observations_apart(
+    completed_run, make_extracted_field, make_unread_declaration
+):
+    """Merging them is the one mistake this design exists to prevent."""
+    make_extracted_field(completed_run, "net_quantity", "500 g")
+    make_unread_declaration(completed_run, "retail_sale_price", evidence_text="MRP")
+
+    context = CheckContext.from_run(completed_run)
+
+    assert set(context.fields_by_key) == {"net_quantity"}
+    assert set(context.unread_by_key) == {"retail_sale_price"}
+    assert set(context.fields_by_key).isdisjoint(context.unread_by_key)
+    assert context.unread("net_quantity") is None
+    assert context.field("retail_sale_price") is None
+
+
+def test_the_context_loads_unread_declarations_in_one_query(
+    completed_run, make_unread_declaration, django_assert_num_queries
+):
+    """Two queries per check, not two per rule - the guarantee fields have."""
+    make_unread_declaration(completed_run, "retail_sale_price", evidence_text="MRP")
+    make_unread_declaration(completed_run, "net_quantity", evidence_text="NET QTY")
+
+    with django_assert_num_queries(2):
+        context = CheckContext.from_run(completed_run)
+
+    assert len(context.unread_by_key) == 2
+
+
+def test_an_unread_row_cannot_hold_a_value(completed_run, make_unread_declaration):
+    """Asserted against the schema, not against a convention.
+
+    The reason this is a separate table is that a value-less field would pass a
+    presence check. If someone adds a `raw_value` column here, that protection
+    is gone and this fails.
+    """
+    unread = make_unread_declaration(completed_run, "retail_sale_price")
+    columns = {f.name for f in unread._meta.get_fields()}
+
+    assert "raw_value" not in columns
+    assert "normalized_value" not in columns
+    assert "value" not in columns

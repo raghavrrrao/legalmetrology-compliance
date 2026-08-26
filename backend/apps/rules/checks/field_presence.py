@@ -7,16 +7,37 @@ names this validator supplies that claim, sourced from verified legal material.
 Parameters:
     field_key (str, required): a `LabelFieldKey` value, e.g. "net_quantity".
 
-Three-way outcome, and why the third one exists:
+Three statuses, reached by four routes:
 
-    field found                          -> PASSED
-    field absent, extraction was usable  -> FAILED
-    field absent, extraction not usable  -> INCONCLUSIVE
+    field found                            -> PASSED
+    field absent, extraction not usable    -> INCONCLUSIVE
+    field absent, but the label named it   -> INCONCLUSIVE
+    field absent, extraction was usable    -> FAILED
 
-The last case is the whole reason this returns three values. A blurred, dark or
-badly framed photograph produces no declarations. Reporting that as FAILED
-would tell a user their product is non-compliant when the only thing we
-actually established is that we could not read their photo.
+INCONCLUSIVE is the whole reason this returns three values, and it is reached
+two different ways.
+
+The first is a blurred, dark or badly framed photograph, which produces no
+declarations at all. Reporting that as FAILED would tell a user their product
+is non-compliant when the only thing we actually established is that we could
+not read their photo.
+
+The second is narrower and was, until this check was extended, reported as a
+violation. A photograph of a curved can catches the declaration panel edge-on
+and OCR returns the single line `MRP` - the keyword, legibly, with nothing
+after it. The extraction is perfectly usable overall; other declarations were
+read from the same image. But for *this* declaration the label plainly says one
+thing and we cannot say what. `CheckContext.unread(field_key)` is how the ML
+layer reports that, and the difference it settles is:
+
+    the package declares no MRP          -> a potential violation
+    the MRP is printed and unreadable    -> re-photograph that panel
+
+Those are opposite findings, and an absent `ExtractedLabelField` says both.
+
+An unread declaration can therefore *stop* a FAILED, and can never produce a
+PASSED. It carries no value - the schema will not hold one - so there is
+nothing for a presence check to be satisfied by.
 """
 
 from __future__ import annotations
@@ -94,6 +115,32 @@ def check_field_presence(parameters: dict, context: CheckContext) -> CheckOutcom
                 "extraction_status": context.run.status,
                 "extraction_error_code": context.run.error_code or None,
                 "is_placeholder_engine": context.run.is_placeholder,
+            },
+        )
+
+    unread = context.unread(field_key)
+    if unread is not None:
+        # The label names this declaration and its value was not legible. That
+        # is not evidence of absence, and it is checked before the FAILED
+        # branch precisely so it cannot become one.
+        return CheckOutcome(
+            status=CheckStatus.INCONCLUSIVE,
+            message=(
+                f"Could not determine whether '{field_key}' is correctly "
+                f"declared: the label names this declaration but its value "
+                f"could not be read from this image. This is not a finding "
+                f"that the declaration is missing - try a clearer, straighter "
+                f"photograph of that panel."
+            ),
+            field_key=field_key,
+            # The line the keyword was read on, so a reviewer can see the
+            # declaration is there and judge the photograph for themselves.
+            evidence_excerpt=unread.evidence_text,
+            bounding_box=unread.bounding_box,
+            details={
+                "extraction_status": context.run.status,
+                "declaration_named_but_unread": True,
+                "evidence_confidence": unread.confidence,
             },
         )
 

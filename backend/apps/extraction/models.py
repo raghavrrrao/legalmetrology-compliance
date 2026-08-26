@@ -18,6 +18,12 @@ at individual readings. The one place JSON is used is `ExtractionRun.raw_output`
 - genuinely unstructured, engine-specific diagnostic output whose shape we
 cannot know in advance, kept so field extraction can be re-run without
 re-running OCR.
+
+**A declaration that was named but not read is also a row.**
+`UnreadLabelDeclaration` follows the same rule for the same reason: the
+compliance engine queries it by field key, so it is not diagnostics. It is
+deliberately a *separate table* from `ExtractedLabelField` rather than a flag
+on it - see its docstring.
 """
 
 from django.db import models
@@ -180,3 +186,80 @@ class ExtractedLabelField(TimeStampedModel):
 
     def __str__(self) -> str:
         return f"{self.field_key}={self.raw_value[:40]!r}"
+
+
+class UnreadLabelDeclaration(TimeStampedModel):
+    """A declaration whose keyword was recognised, but whose value was not.
+
+    The case this exists for, seen on a real photograph of a curved can: OCR
+    returns the line `MRP` and nothing else, because the rest of that line was
+    too foreshortened to recognise. The package plainly carries an MRP
+    declaration - the keyword is right there - but its value is unknown.
+
+    Without this row, that outcome is indistinguishable from "this package
+    declares no MRP at all". They are opposite findings: one is "photograph
+    that panel again", the other is a potential violation. `field_presence`
+    handed only an absent `ExtractedLabelField` cannot tell them apart, and
+    before this existed it reported the first as the second.
+
+    **A separate table from `ExtractedLabelField`, and it must stay separate.**
+    A presence check passes on any extracted field regardless of how uncertain
+    it is, so recording this as a value-less field would mark the package as
+    having declared something nobody could read - turning a possible violation
+    into a pass. There is deliberately no `raw_value` or `normalized_value`
+    column here: the schema itself makes carrying a value impossible.
+
+    This row makes no legal claim. That a keyword was printed says nothing
+    about whether the declaration was required, correct, or complete.
+
+    Written by `apps.extraction.services.extraction_service` from the ML
+    layer's `ExtractionResult.metadata["unread_declarations"]`, which is also
+    still stored verbatim in `ExtractionRun.raw_output` as diagnostics. These
+    rows are the copy the compliance engine reads.
+    """
+
+    run = models.ForeignKey(
+        ExtractionRun,
+        on_delete=models.CASCADE,
+        related_name="unread_declarations",
+    )
+    field_key = models.CharField(
+        max_length=64,
+        db_index=True,
+        help_text=(
+            "A labelextract.contracts.LabelFieldKey value, validated in the "
+            "service layer against the ml/ package's vocabulary - the same "
+            "guard ExtractedLabelField.field_key gets, for the same reason."
+        ),
+    )
+    evidence_text = models.TextField(
+        help_text=(
+            "The recognised line the keyword was found on, exactly as read. "
+            "Never blank: an observation nobody can check is an unfalsifiable "
+            "claim, so a row without it is refused at the service boundary."
+        )
+    )
+    confidence = models.FloatField(
+        null=True,
+        blank=True,
+        help_text=(
+            "Engine confidence in the evidence line, in [0, 1], or NULL when "
+            "the engine reported none. NULL means 'unknown' and must never be "
+            "read as zero."
+        ),
+    )
+    bounding_box = models.JSONField(
+        null=True,
+        blank=True,
+        help_text="{'x','y','width','height'} in source-image pixels, or null. "
+                  "Lets the UI point a reviewer at the panel to re-photograph.",
+    )
+
+    class Meta:
+        ordering = ["field_key"]
+        indexes = [
+            models.Index(fields=["run", "field_key"], name="unread_run_key_idx"),
+        ]
+
+    def __str__(self) -> str:
+        return f"{self.field_key} named but unread: {self.evidence_text[:40]!r}"

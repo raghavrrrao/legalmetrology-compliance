@@ -13,7 +13,11 @@ from django.contrib.auth import get_user_model
 from django.core.files.uploadedfile import SimpleUploadedFile
 
 from apps.catalog.models import Product, ProductCategory
-from apps.extraction.models import ExtractedLabelField, ExtractionRun
+from apps.extraction.models import (
+    ExtractedLabelField,
+    ExtractionRun,
+    UnreadLabelDeclaration,
+)
 from apps.images.models import ProductImage
 from apps.rules.models import ComplianceRule
 
@@ -186,6 +190,31 @@ def make_extracted_field(db):
     def _make(run: ExtractionRun, field_key: str, raw_value: str = "500 g", **kwargs):
         return ExtractedLabelField.objects.create(
             run=run, field_key=field_key, raw_value=raw_value, **kwargs
+        )
+
+    return _make
+
+
+@pytest.fixture
+def make_unread_declaration(db):
+    """A declaration the label named whose value the engine could not read.
+
+    Deliberately has no `raw_value` parameter and no way to supply one: the
+    whole point of the row is that there is no value. If this factory ever
+    grows one, the distinction it exists to preserve has been lost.
+    """
+
+    def _make(
+        run: ExtractionRun,
+        field_key: str,
+        evidence_text: str = "MRP",
+        **kwargs,
+    ) -> UnreadLabelDeclaration:
+        return UnreadLabelDeclaration.objects.create(
+            run=run,
+            field_key=field_key,
+            evidence_text=evidence_text,
+            **kwargs,
         )
 
     return _make
