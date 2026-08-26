@@ -24,9 +24,19 @@ The design goal is that a user can always ask *"why?"* and get a real answer.
 This branch is the **base structure**. It is honest about its own limits, and
 those limits are enforced by tests rather than only documented:
 
-- **There is no OCR engine installed.** The extraction pipeline is wiring only.
-  It reads no text from images. The API reports `is_placeholder: true` and the
-  UI says so on screen.
+- **The shipped default still reads no text.** An OCR engine (Tesseract 5) is
+  now implemented and selectable, but `null-engine` remains the default until a
+  developer installs the binary and switches two values in `.env` — so a fresh
+  clone reports `is_placeholder: true` and the UI says so on screen, rather than
+  appearing to have OCR it cannot actually run. See
+  [`ml/README.md`](ml/README.md).
+- **Installing an engine is not measuring one.** No accuracy, character error
+  rate or field-extraction F1 has been computed for it on any dataset, so none
+  is quoted anywhere.
+- **Field extraction is English-only and partial.** Product name, brand,
+  generic name, manufacturer address and unit sale price are **not** extracted.
+  The unsupported list is derived from the code rather than maintained by hand,
+  so it cannot drift away from what the system actually does.
 - **Zero compliance rules are loaded.** We ship none, because none have been
   verified against the authoritative text of the Rules. See
   [`rules/README.md`](rules/README.md).
@@ -46,8 +56,9 @@ those limits are enforced by tests rather than only documented:
 | Frontend | React 19, Vite 7, React Router, Vitest |
 | Backend | Python 3.11+, Django 5.2, Django REST Framework 3.16 |
 | Database | PostgreSQL 14+ |
-| Image handling | Pillow (validation and metadata) |
-| OCR / ML | `labelextract` package — interfaces and contracts only, no models yet |
+| Image handling | Pillow (upload validation, metadata, OCR preprocessing) |
+| OCR | Tesseract 5 via `pytesseract` — free, offline, CPU-only, no model weights |
+| Field extraction | Deterministic patterns in `labelextract.fields` — no LLM, no learned model |
 | Rules | JSON definitions in `rules/`, loaded into PostgreSQL |
 
 ## Repository structure
@@ -86,10 +97,18 @@ those limits are enforced by tests rather than only documented:
 │       └── compliance/  ComplianceCheck, violations, evidence, the engine
 │
 ├── ml/                OCR / ML boundary
-│   ├── pyproject.toml
-│   ├── README.md
-│   ├── labelextract/    contracts, interfaces, pipeline, registry
-│   └── tests/
+│   ├── pyproject.toml       no required dependencies; [ocr] extra for engines
+│   ├── README.md            what the OCR layer does, and what it does not
+│   └── labelextract/
+│       ├── contracts.py     the stable data boundary
+│       ├── interfaces.py    preprocessor / OCR engine / field extractor
+│       ├── pipeline.py      stage ordering and failure policy
+│       ├── registry.py      name+version -> pipeline
+│       ├── cli.py           run a pipeline over one local image
+│       ├── baseline/        the placeholder engine (reads no pixels)
+│       ├── preprocessing/   Pillow preparation
+│       ├── ocr/             Tesseract adapter
+│       └── fields/          patterns, normalisation, rule-based extraction
 │
 ├── rules/             compliance rules as reviewable data
 │   ├── README.md
@@ -171,10 +190,48 @@ pip install -e ./ml
 `requirements-dev.txt` includes `requirements.txt`, so this installs both the
 runtime and test dependencies. For a deployment, use `requirements.txt` alone.
 
+This is enough to run **every test in the repository**. It is deliberately not
+enough to run OCR: `labelextract` has no required dependencies, so a teammate
+who is not working on the ML layer installs nothing extra.
+
 The second command installs the local `labelextract` package in editable mode.
 **It is a separate command on purpose** — a relative path inside a requirements
 file resolves against your current directory, which silently installs the wrong
 thing when pip is run from elsewhere.
+
+### 3a. Install the OCR engine — only if you are running OCR
+
+Skip this unless you need to read text from images. Everything else, including
+the full test suite, works without it.
+
+```bash
+pip install -e "./ml[ocr]"
+```
+
+Then install the Tesseract binary and its language data, which are **not**
+Python packages and are not vendored here:
+
+| Platform | Command |
+|---|---|
+| Windows | [UB-Mannheim installer](https://github.com/UB-Mannheim/tesseract/wiki) — it does not add itself to `PATH`; add `C:\Program Files\Tesseract-OCR` yourself |
+| macOS | `brew install tesseract tesseract-lang` |
+| Debian / Ubuntu | `sudo apt install tesseract-ocr tesseract-ocr-hin` |
+
+Confirm with `tesseract --version`, then switch the backend over in `.env`:
+
+```
+DEFAULT_EXTRACTION_ENGINE_NAME=tesseract
+DEFAULT_EXTRACTION_ENGINE_VERSION=0.1.0
+```
+
+`/api/v1/health/` will then report `is_placeholder: false`, and the UI's "no OCR
+engine is installed" notice disappears on its own.
+
+To try it without a database or a web server:
+
+```bash
+python -m labelextract.cli path/to/label.jpg
+```
 
 ### 4. Install frontend dependencies
 
@@ -352,6 +409,10 @@ CI needs a command that is not documented here, one of the two is wrong.
 | `connection refused` on port 5432 | PostgreSQL is not running. |
 | `password authentication failed` | `DATABASE_PASSWORD` in `.env` does not match your PostgreSQL user. |
 | `ModuleNotFoundError: No module named 'labelextract'` | You skipped `pip install -e ./ml`. |
+| Extraction runs end `failed` with `engine_not_available` | Tesseract or `pytesseract` is missing. Run `pip install -e "./ml[ocr]"` and install the binary — see step 3a. On Windows, the installer does not add it to `PATH`. |
+| Extraction runs end `empty` on a photo that clearly has text | Expected on hard packaging: foil, curvature, glare, low light and small print all defeat Tesseract. `EMPTY` means "unreadable", and the compliance engine correctly treats it as inconclusive rather than as a missing declaration. Retake closer and flatter. |
+| Extraction runs end `failed` with `image_too_large` | The image is over 10 MB or 50 MP. Both limits are configurable (`MAX_IMAGE_UPLOAD_SIZE_MB`, `MAX_IMAGE_PIXELS`) and are enforced again inside `ml/`, which is also callable without Django. |
+| Text is recognised but no declarations are found | Most likely correct behaviour, not a bug. Declarations are matched only when an anchoring keyword is present, and several — product name, brand, address, unit price — are not extracted at all. See [`ml/README.md`](ml/README.md). |
 | Frontend shows "Could not reach the backend" | Django is not running, or `VITE_API_BASE_URL` is wrong. |
 | Browser console shows a CORS error | The Vite origin is not in `CORS_ALLOWED_ORIGINS`. Vite must be on port 5173. |
 | `Port 5173 is already in use` | Another Vite instance is running. `strictPort` is deliberate — a silent fallback port would fail CORS confusingly. |

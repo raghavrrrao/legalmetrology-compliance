@@ -1,7 +1,18 @@
-# Plugging in a real OCR engine
+# Plugging in an OCR engine
 
-How to replace the placeholder without touching Django. Read
-[`ml/README.md`](../ml/README.md) first for the package layout.
+How to add an engine without touching Django. Read
+[`ml/README.md`](../ml/README.md) first for the package layout and for what the
+engine that already ships does and does not do.
+
+> **One engine is already implemented.** `ml/labelextract/ocr/tesseract.py`
+> registers a `tesseract` / `0.1.0` pipeline: Pillow preprocessing, Tesseract 5
+> recognition, deterministic field extraction. This document is now about adding
+> a *second* engine alongside it - which is the point of a name-and-version
+> registry: two engines can be registered at once and compared on the same
+> images.
+>
+> The placeholder `null-engine` is still the shipped default and has not been
+> removed. Selecting Tesseract is step 5 below.
 
 ## The contract
 
@@ -24,8 +35,9 @@ values. No Django code, no migration.
 
 ### 1. Write the engine
 
-Create `ml/labelextract/tesseract/` (or whatever you are using) and subclass
-`OcrEngine`:
+Create `ml/labelextract/ocr/<your_engine>.py` and subclass `OcrEngine`.
+`tesseract.py` is a worked example of everything below; this sketch is the shape
+it has to take:
 
 ```python
 from labelextract.contracts import BoundingBox, ImageRef, OcrResult, TextBlock
@@ -42,6 +54,12 @@ class TesseractOcrEngine(OcrEngine):
         # at startup rather than on a user's first upload.
         if not shutil.which("tesseract"):
             raise EngineNotAvailableError("tesseract binary not found on PATH")
+
+    # Put the call into the engine itself behind a small injectable object -
+    # `TesseractRunner` in the shipped engine. Everything worth testing (parsing,
+    # grouping, confidence rescaling, error mapping) can then be exercised with a
+    # deterministic fake and no binary installed, which is what keeps the suite
+    # runnable on a fresh clone and offline.
 
     def recognise(self, image: ImageRef) -> OcrResult:
         ...
@@ -75,10 +93,37 @@ Rules that are not negotiable:
   recorded as "this image was unreadable".
 - **Leave `is_placeholder` alone.** It defaults to `False`, which is correct
   for a real engine.
+- **Import your dependencies lazily**, inside the method that needs them, and
+  raise `EngineNotAvailableError` on ImportError. That is what lets
+  `labelextract` install with no dependencies, the registry list every pipeline,
+  and the whole test suite run on a machine with no OCR stack at all.
+- **Validate anything that reaches a subprocess.** `TesseractOptions` accepts
+  only ISO-639-style language codes for exactly this reason, and a test asserts
+  it.
+
+### 1b. Preprocessing is a separate stage, with a lifecycle
+
+`ImagePreprocessor.process()` returns a *new* `ImageRef`; the original is
+evidence and must never be overwritten. Implement `release()` if you write an
+intermediate to disk - the pipeline calls it in a `finally`, on the success
+path, the recorded-failure path and the re-raised-bug path alike, so a
+long-running server does not accumulate a copy of every upload.
+
+`release()` must never raise, and must refuse to delete a path outside the
+directory it owns.
+
+Any transform that **resizes** moves bounding boxes into preprocessed-image
+space. `ExtractionPipeline` records `source_dimensions` and
+`preprocessed_dimensions` in run metadata so that is detectable rather than a
+silent mismatch between an evidence overlay and the photograph under it.
 
 ### 2. Write the field extractor
 
 `OcrEngine` reports characters. `FieldExtractor` decides what they mean.
+
+`ml/labelextract/fields/` already contains one: keyword-anchored patterns,
+English, covering a documented subset of `LabelFieldKey`. Reuse it unless your
+engine returns something structurally different.
 
 ```python
 from labelextract.contracts import ExtractedField, LabelFieldKey
@@ -92,6 +137,12 @@ class RegexFieldExtractor(FieldExtractor):
     def extract(self, ocr, image) -> tuple[ExtractedField, ...]:
         ...
 ```
+
+**Mark ambiguity instead of resolving it.** When a value has more than one valid
+reading, emit the field with `normalized_value["uncertain"] = True`, list the
+`candidates`, and omit the structured key you could not commit to. A guess
+presented as a value cannot later be told apart from a measurement. The
+normalisation rules are in [`ml/README.md`](../ml/README.md).
 
 **Never emit a field you did not actually locate.** A missing declaration is
 meaningful input to the compliance engine; inventing one to "complete the set"
@@ -108,20 +159,34 @@ In `ml/labelextract/registry.py`:
 ```python
 def _register_builtin_pipelines() -> None:
     from labelextract.baseline import null_engine
-    from labelextract.tesseract import build_pipeline as build_tesseract
+    from labelextract.ocr import tesseract, your_engine
 
     register_pipeline(null_engine.NAME, null_engine.VERSION,
                       null_engine.build_pipeline)
-    register_pipeline("tesseract", "5.3.0", build_tesseract)
+    register_pipeline(tesseract.NAME, tesseract.VERSION,
+                      tesseract.build_pipeline)
+    register_pipeline(your_engine.NAME, your_engine.VERSION,
+                      your_engine.build_pipeline)
 ```
+
+Import the *module*, not its runtime. The factory resolves Pillow, pytesseract
+or your framework when it is first called, so registration itself costs nothing
+and never fails on a machine without them.
 
 ### 4. Declare dependencies
 
-Add them to **both** `ml/pyproject.toml` and `backend/requirements.txt`, pinned
-to a compatible minor range.
+Add them to the **`[ocr]` optional extra** in `ml/pyproject.toml`, pinned to a
+compatible minor range - not to `dependencies`, and not to
+`backend/requirements.txt`. Keeping them optional is what lets CI, the health
+endpoint and the test suite run without them.
 
-A large OCR or ML framework is a team decision — it affects install time and
-disk for all six people. Raise it before installing it.
+```bash
+pip install -e "./ml[ocr]"
+```
+
+A large OCR or ML framework is a team decision - it affects install time and
+disk for all six people. Raise it before installing it. That constraint is the
+main reason the first engine is Tesseract rather than a neural one.
 
 ### 5. Switch the backend over
 
@@ -129,8 +194,13 @@ In `.env`:
 
 ```
 DEFAULT_EXTRACTION_ENGINE_NAME=tesseract
-DEFAULT_EXTRACTION_ENGINE_VERSION=5.3.0
+DEFAULT_EXTRACTION_ENGINE_VERSION=0.1.0
 ```
+
+The version here is the **pipeline's**, not the Tesseract binary's. The binary's
+version is recorded per run in `ExtractionRun.raw_output`, where it belongs: the
+pipeline version means "this combination of preprocessing, engine settings and
+patterns", which is what makes two runs comparable.
 
 That is the whole backend change. `/api/v1/health/` will then report
 `is_placeholder: false`, and the UI's "no OCR engine is installed" notice
@@ -142,9 +212,14 @@ disappears on its own.
 cd ml && pytest
 ```
 
-Use a small committed fixture image, never a downloaded dataset. Mirror the
-existing tests in `ml/tests/test_pipeline.py` — particularly the ones asserting
-that an unreadable image is not reported as readable.
+Use a fixture built in code, never a downloaded dataset, and **never make the
+suite depend on your engine being installed**. Inject a fake for the engine call
+and test your own parsing exhaustively; guard the one real end-to-end smoke test
+with `pytest.importorskip` plus a capability check, as
+`ml/tests/test_ocr_tesseract.py` does.
+
+Mirror the existing tests in `ml/tests/test_pipeline.py` - particularly the ones
+asserting that an unreadable image is not reported as readable.
 
 Then confirm the integration end to end:
 
@@ -163,6 +238,11 @@ different threshold. Register the new version alongside the old rather than
 mutating it, so a comparison across versions is possible.
 
 ## Model artifacts
+
+The Tesseract pipeline has **no artifacts at all**: language data is installed
+by the operating system's package manager into a system directory, so there is
+nothing to download, checksum or version. What follows applies to an engine that
+ships weights, not to that one.
 
 **Never commit weights.** `.gitignore` blocks `*.pt`, `*.onnx`, `*.h5`,
 `*.traineddata`, `ml/artifacts/`, `ml/models/`, `ml/data/`. A 200 MB file in

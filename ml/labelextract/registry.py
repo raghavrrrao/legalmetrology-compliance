@@ -73,14 +73,21 @@ def clear_cache() -> None:
 def _register_builtin_pipelines() -> None:
     """Register the pipelines shipped with this package.
 
-    Currently only the placeholder. Real engines register themselves here as
-    they are added, on their own feature branches.
+    Only names and factories are imported here - never Pillow, pytesseract or
+    any engine's runtime. A factory resolves its own dependencies when it is
+    first called, so importing `labelextract` on a machine with no OCR stack
+    installed still works, still lists both pipelines, and still runs the whole
+    test suite. Asking for a pipeline whose dependencies are missing raises
+    `EngineNotAvailableError`, which the backend records as a failed run with
+    an actionable error code.
     """
     from labelextract.baseline import null_engine
+    from labelextract.ocr import tesseract
 
     register_pipeline(
         null_engine.NAME, null_engine.VERSION, null_engine.build_pipeline
     )
+    register_pipeline(tesseract.NAME, tesseract.VERSION, tesseract.build_pipeline)
 
 
 _register_builtin_pipelines()

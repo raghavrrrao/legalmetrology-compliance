@@ -69,6 +69,26 @@ class ImagePreprocessor(_Component):
 
         Raises:
             InvalidImageError: the image cannot be decoded.
+            ImageTooLargeError: the image exceeds the processing budget.
+            PreprocessingError: a transform failed on a decodable image.
+        """
+
+    def release(self, processed: ImageRef) -> None:
+        """Discard an intermediate produced by `process`.
+
+        The pipeline calls this once recognition and field extraction are done,
+        so a long-running server does not accumulate a preprocessed copy of
+        every upload on disk. The original is never passed here.
+
+        Default is a no-op, for preprocessors that write nothing. An
+        implementation must never raise: failing to delete a temporary file is
+        an operational annoyance, not a reason to lose an extraction result.
+
+        `ExtractionPipeline` guards the call anyway and logs anything that
+        escapes, so a preprocessor that breaks this rule costs a leftover file
+        rather than a lost result. Treat that as a safety net for a bug, not as
+        permission to raise: only the implementation knows which failures are
+        worth reporting, and a swallowed exception is invisible to it.
         """
 
 

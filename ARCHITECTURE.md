@@ -198,16 +198,16 @@ Result states:
 Six developers, seven Django apps. Work inside your area; coordinate before
 touching shared files.
 
-| Area | Directory | Suggested branch |
-|---|---|---|
-| Product upload & catalog API | `backend/apps/catalog/`, `backend/apps/images/` | `feature/product-upload` |
-| Image preprocessing | `ml/labelextract/` (preprocessor) | `feature/image-processing` |
-| OCR engine | `ml/labelextract/` (engine) | `feature/ocr-processing` |
-| Field extraction | `ml/labelextract/` (extractor) | `feature/label-field-extraction` |
-| Rule dataset | `rules/definitions/` | `feature/legal-rules-dataset` |
-| Rule engine & validators | `backend/apps/rules/checks/`, `backend/apps/compliance/` | `feature/compliance-rule-engine` |
-| Frontend UI | `frontend/src/` | `feature/frontend-dashboard` |
-| Authentication | `backend/apps/accounts/` | `feature/authentication` |
+| Area | Directory | Suggested branch | Status |
+|---|---|---|---|
+| Product upload & catalog API | `backend/apps/catalog/`, `backend/apps/images/` | `feature/product-upload` | |
+| Image preprocessing | `ml/labelextract/preprocessing/` | `feature/image-processing` | First pass landed (orientation, grayscale, contrast). Deskew and perspective correction still open |
+| OCR engine | `ml/labelextract/ocr/` | `feature/ocr-processing` | Tesseract 5 landed. A second engine for hard packaging is open |
+| Field extraction | `ml/labelextract/fields/` | `feature/label-field-extraction` | English patterns landed. Layout-dependent declarations - name, brand, address - still open |
+| Rule dataset | `rules/definitions/` | `feature/legal-rules-dataset` | |
+| Rule engine & validators | `backend/apps/rules/checks/`, `backend/apps/compliance/` | `feature/compliance-rule-engine` | |
+| Frontend UI | `frontend/src/` | `feature/frontend-dashboard` | |
+| Authentication | `backend/apps/accounts/` | `feature/authentication` | |
 
 **Shared files — announce changes before editing:**
 `backend/config/settings.py`, `backend/config/api_v1.py`,
@@ -222,7 +222,8 @@ Things we did **not** build, and why. Revisit each when its trigger fires.
 
 | Not built | Why | Revisit when |
 |---|---|---|
-| Celery / Redis / task queue | Extraction runs synchronously and, with a placeholder engine, instantly. A queue would be infrastructure with no work to do. `run_extraction` is already the single place that would move behind one. | A real OCR engine makes requests exceed a few seconds. |
+| Celery / Redis / task queue | Extraction still runs synchronously. Tesseract is fast enough on a cropped panel that a queue would be infrastructure ahead of the problem, and `run_extraction` is already the single place that would move behind one. | Measured latency puts an upload request over a few seconds - which is likely as soon as full-resolution phone photos are the input. **This is now the closest of these triggers to firing.** |
+| Bounding-box mapping from preprocessed space back to source space | Preprocessing is geometry-preserving by default, so boxes already line up with the original. Building the mapping now would be code with no caller. | Resizing (`max_dimension`/`min_dimension`) is switched on, or a preprocessor that crops or deskews lands. Run metadata records both dimension sets so the mismatch is detectable rather than silent. |
 | Docker | Adds a toolchain every teammate must learn to solve a problem we do not yet have. The README setup is a handful of standard commands. | Deployment, or environment drift across the team. |
 | Token / JWT authentication | No endpoint in the base requires a user. Session auth plus deny-by-default permissions covers it safely. | `feature/authentication` adds real login. |
 | Cloud object storage | Local `MEDIA_ROOT` is configurable via `DJANGO_MEDIA_ROOT`; the storage backend is a Django setting. | Deployment across more than one server. |

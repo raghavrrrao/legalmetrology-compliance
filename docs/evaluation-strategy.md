@@ -23,11 +23,20 @@ image ──▶ OCR ──▶ field extraction ──▶ category ──▶ rule
 
 ## 1. OCR performance
 
-| Metric | Definition | Target |
+| Metric | Definition | Measured |
 |---|---|---|
-| Character error rate (CER) | Levenshtein distance / reference length | TBD |
-| Word error rate (WER) | Word-level equivalent | TBD |
-| Text-region recall | Proportion of printed text regions detected | TBD |
+| Character error rate (CER) | `Levenshtein(hypothesis, reference) / len(reference)`, over the concatenated declarations, case-sensitive, whitespace-normalised | **Not measured** |
+| Word error rate (WER) | The same at word level, after splitting on whitespace | **Not measured** |
+| Text-region recall | Proportion of printed text regions detected (IoU ≥ 0.5 against an annotated box) | **Not measured** |
+
+CER and WER are computed against **kind D** ground truth — our own annotated
+Indian packaging — and never against a general scene-text corpus. See
+[data-strategy.md](data-strategy.md) for why that distinction decides whether a
+number means anything.
+
+Both are computed on the **raw** OCR text, before normalisation. Normalising
+first would measure the normaliser as well as the engine and hide the engine's
+errors behind it.
 
 Report **per condition**, not just an average — an average over easy and hard
 images hides exactly the cases that matter:
@@ -49,6 +58,28 @@ quantity is at 98% and consumer-care contact is at 40%.
 | Recall | Of the declarations actually present, how many we found |
 | F1 | Harmonic mean |
 | Value accuracy | Of the declarations found, how many had the right *value* |
+
+Report **only the keys the extractor actually attempts.** The unsupported list
+is exported from the code as `labelextract.fields.UNSUPPORTED_KEYS`; including
+those keys in an aggregate would produce a recall figure that is really a
+measure of how many declarations we chose not to implement.
+
+### Uncertainty must be scored separately, not averaged away
+
+The extractor marks a reading `uncertain` when it cannot commit to an
+interpretation — an ambiguous `03/04/2025`, two different MRPs on one label, a
+company name that runs onto the next line. Scoring those as ordinary
+predictions would reward guessing.
+
+| Metric | Definition | Measured |
+|---|---|---|
+| Uncertain rate | Proportion of extracted fields flagged `uncertain` | **Not measured** |
+| Uncertainty precision | Of the fields flagged uncertain, how many really were wrong or ambiguous | **Not measured** |
+| Silent-error rate | Fields **not** flagged uncertain that were nonetheless wrong | **Not measured** |
+
+The last one is the number that matters. A confident wrong reading is the
+failure this whole design exists to avoid; an uncertain flag on a correct
+reading merely costs a reviewer a glance.
 
 **Precision and recall must be reported separately.** They fail in opposite
 directions here: low recall means we miss declarations that exist (producing
@@ -89,12 +120,17 @@ such**, not tuned away by loosening those guarantees.
 
 ## 5. Operational metrics
 
-| Metric | Definition | Target |
+| Metric | Definition | Measured |
 |---|---|---|
-| Processing time per image | Upload → verdict, wall clock | TBD |
-| OCR time | Time inside the extraction pipeline | TBD |
-| Extraction failure rate | Runs ending `FAILED` | TBD |
-| Empty extraction rate | Runs ending `EMPTY` (unreadable) | TBD |
+| Processing time per image | Upload → verdict, wall clock | **Not measured** |
+| OCR time | Time inside the extraction pipeline (`ExtractionRun.processing_ms`) | **Not measured** |
+| Preprocessing time | Share of the above spent before recognition | **Not measured** |
+| Extraction failure rate | Runs ending `FAILED`, broken down by `error_code` | **Not measured** |
+| Empty extraction rate | Runs ending `EMPTY` (unreadable) | **Not measured** |
+
+Report latency with the hardware and the image size. Tesseract is CPU-only, so
+a number from a developer laptop and a number from a server are different
+claims, and a 12 MP phone photo and a cropped panel are different workloads.
 
 `ExtractionRun.processing_ms` and `ComplianceCheck.processing_ms` already
 record timings, so this data accumulates from the first real run without extra
@@ -132,16 +168,27 @@ it is:
 
 | Layer | Status |
 |---|---|
-| OCR | **Not measured** — no engine installed |
-| Field extraction | **Not measured** — no extractor installed |
+| OCR | **Not measured.** Tesseract 5 is now installed and selectable, and no CER or WER for it has been computed on any dataset |
+| Field extraction | **Not measured.** A deterministic English extractor now exists; no precision, recall or F1 has been computed |
+| Uncertainty calibration | **Not measured.** Fields carry `uncertain` flags; nobody has checked whether they land on the right readings |
 | Classification | **Not measured** — not implemented |
 | Compliance findings | **Not measured** — zero verified rules loaded |
-| Operational | **Not measured** — timing fields exist and are populated, but no run has used a real engine |
+| Operational | **Not measured** — timing fields exist and are populated; no run against an evaluation set has been recorded |
+
+**An engine being installed is not an engine being measured.** The status above
+did not improve when Tesseract landed, and it will not until somebody runs the
+method in this document against an annotated set.
 
 What *is* measured today are the engineering properties, and those are real:
-211 automated tests (136 backend, 29 ML, 46 frontend); query-count regression
+433 automated tests (157 backend, 230 ML, 46 frontend); query-count regression
 bounds on the compliance engine; and a browser-to-database request path
 verified in a real browser.
 
+Of the ML tests, one needs the Tesseract binary and skips without it, and 35
+need the optional `[ocr]` extra. The remaining 194 pass on a clone with no
+dependencies installed at all, which CI checks by running the suite twice —
+once before the extra is installed and once after.
+
 That count is a fact about this branch on the date it was written, not a
-quality metric. Do not cite it as one.
+quality metric. Do not cite it as one. In particular it says nothing about how
+well the system reads a label: that is the row of **Not measured** above.

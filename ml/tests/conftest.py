@@ -58,3 +58,77 @@ def image_ref(png_path: Path) -> ImageRef:
         width=4,
         height=4,
     )
+
+
+@pytest.fixture
+def ocr_lines():
+    """Build an `OcrResult` from plain lines, as a line-oriented engine would.
+
+    The OCR engine is deliberately never involved in field-extraction tests: a
+    test that had to run Tesseract would fail on a machine without it and would
+    be measuring recognition rather than interpretation. Boxes are synthesised
+    on a regular grid so a test can still assert that geometry survives the
+    trip from a block to an extracted field.
+    """
+    from labelextract.contracts import BoundingBox, OcrResult, TextBlock
+
+    def _make(lines, *, confidence: float | None = 0.9) -> OcrResult:
+        return OcrResult(
+            blocks=tuple(
+                TextBlock(
+                    text=text,
+                    box=BoundingBox(x=1, y=1 + index * 20, width=300, height=18),
+                    confidence=confidence,
+                )
+                for index, text in enumerate(lines)
+            ),
+            raw={"fake": True},
+        )
+
+    return _make
+
+
+@pytest.fixture
+def tesseract_data():
+    """Build pytesseract-shaped word columns from (text, confidence) lines.
+
+    Mirrors `image_to_data(output_type=DICT)`: parallel lists, one row per
+    layout element, with -1 confidence on the rows that carry no text.
+    """
+
+    def _make(lines) -> dict:
+        columns = {
+            key: []
+            for key in (
+                "level", "page_num", "block_num", "par_num", "line_num",
+                "word_num", "left", "top", "width", "height", "conf", "text",
+            )
+        }
+
+        def row(**values):
+            for key in columns:
+                columns[key].append(values.get(key, 0))
+
+        # A page row, as Tesseract emits, with no text and no confidence.
+        row(level=1, page_num=1, conf=-1, text="", width=800, height=600)
+
+        for line_number, (text, confidence) in enumerate(lines, start=1):
+            top = line_number * 30
+            for word_number, word in enumerate(text.split(), start=1):
+                row(
+                    level=5,
+                    page_num=1,
+                    block_num=1,
+                    par_num=1,
+                    line_num=line_number,
+                    word_num=word_number,
+                    left=10 + (word_number - 1) * 60,
+                    top=top,
+                    width=55,
+                    height=20,
+                    conf=confidence,
+                    text=word,
+                )
+        return columns
+
+    return _make

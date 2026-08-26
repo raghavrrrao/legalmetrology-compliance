@@ -21,9 +21,14 @@ from labelextract.contracts import (
 )
 from labelextract.exceptions import (
     EngineNotAvailableError,
+    FieldExtractionError,
+    ImageTooLargeError,
     InvalidImageError,
     LabelExtractError,
+    OcrFailureError,
     PipelineNotFoundError,
+    PreprocessingError,
+    UnsupportedImageFormatError,
 )
 from labelextract.interfaces import FieldExtractor, ImagePreprocessor, OcrEngine
 from labelextract.pipeline import ExtractionPipeline
@@ -37,15 +42,20 @@ __all__ = [
     "ExtractionPipeline",
     "ExtractionResult",
     "ExtractionStatus",
+    "FieldExtractionError",
     "FieldExtractor",
     "ImagePreprocessor",
     "ImageRef",
+    "ImageTooLargeError",
     "InvalidImageError",
     "LabelExtractError",
     "LabelFieldKey",
     "OcrEngine",
+    "OcrFailureError",
     "OcrResult",
     "PipelineNotFoundError",
+    "PreprocessingError",
     "TextBlock",
+    "UnsupportedImageFormatError",
     "__version__",
 ]

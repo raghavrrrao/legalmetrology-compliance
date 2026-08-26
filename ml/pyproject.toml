@@ -7,13 +7,32 @@ name = "labelextract"
 version = "0.1.0"
 description = "Extraction contracts and OCR/ML interfaces for packaged-commodity label analysis."
 requires-python = ">=3.11"
-# Intentionally no runtime dependencies. This package currently defines
-# interfaces and data contracts only. A concrete OCR engine declares its own
-# dependencies when it is added - see ml/README.md.
+# Intentionally no *required* runtime dependencies. Contracts, interfaces, the
+# pipeline and the registry import nothing outside the standard library, so the
+# backend can depend on this package - and the whole test suite can run - on a
+# machine with no OCR stack installed at all.
+#
+# Concrete engines declare their dependencies in the `ocr` extra below and
+# import them lazily, so a missing one surfaces as EngineNotAvailableError (a
+# recorded, actionable failed run) rather than an ImportError at startup.
 dependencies = []
 
 [project.optional-dependencies]
 dev = ["pytest>=8.0,<9.0"]
+
+# Everything the Tesseract pipeline needs *on the Python side*. The Tesseract
+# binary itself and its language data are installed by the operating system's
+# package manager - see ml/README.md. Deliberately not weights: nothing here
+# downloads a model, so nothing can end up in Git or in a cache we have to
+# checksum.
+ocr = [
+    # Thin subprocess wrapper around the tesseract binary. Builds its own
+    # argument list and never invokes a shell.
+    "pytesseract>=0.3.13,<0.4",
+    # Preprocessing (ml/labelextract/preprocessing) and image decoding. The
+    # same range the backend pins, so one virtualenv resolves to one version.
+    "Pillow>=11.3,<12",
+]
 
 [tool.setuptools.packages.find]
 include = ["labelextract*"]
