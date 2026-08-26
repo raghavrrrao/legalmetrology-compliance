@@ -617,3 +617,119 @@ def test_an_unrelated_date_below_a_keyword_is_not_taken_as_fact(
 
     assert found is not None
     assert is_uncertain(found.normalized_value) is True
+
+
+# --- regression: a shelf life is not a date of manufacture ------------------
+#
+# Found by running Product 001's declaration close-up through the pipeline.
+# The panel prints `MFG. DT. :` with nothing legible after it, and the next
+# line reads `BEST BEFORE 2 YEARS FROM MFG. DT.`. That sentence contains the
+# manufacture keyword, so the extractor attributed the *duration* to
+# `date_of_manufacture` and emitted a field whose value was "2 years".
+#
+# Why that mattered rather than merely looking odd: `field_presence` in the
+# rules layer passes on any extracted field, whatever its uncertainty flag. A
+# package whose manufacture date nobody could read was therefore recorded as
+# having declared one. The whole point of this layer is that a value it cannot
+# read stays unread.
+
+
+def test_a_shelf_life_is_never_reported_as_a_date_of_manufacture(
+    extractor, ocr_lines, image_ref
+):
+    """The exact two lines that came off Product 001's declaration panel."""
+    fields = _extract(
+        extractor,
+        ocr_lines,
+        image_ref,
+        ["MFG. DT. :", "BEST BEFORE 2 YEARS FROM MFG. DT."],
+    )
+
+    assert _field(fields, LabelFieldKey.DATE_OF_MANUFACTURE) is None, (
+        "a duration is not a manufacture date; reporting one records an "
+        "unreadable declaration as a declared one"
+    )
+    best_before = _field(fields, LabelFieldKey.BEST_BEFORE)
+    assert best_before is not None
+    assert best_before.normalized_value["duration_value"] == 2
+    assert best_before.normalized_value["duration_unit"] == "years"
+
+
+def test_the_same_two_declarations_on_one_line_are_not_confused(
+    extractor, ocr_lines, image_ref
+):
+    """The single-line form, which was the worse half of the defect.
+
+    Merged onto one line - which OCR does routinely - the cross-line
+    uncertainty flag never applied, so `date_of_manufacture` came out
+    `uncertain: False`: a committed value that was not a date at all.
+    """
+    fields = _extract(
+        extractor, ocr_lines, image_ref, ["MFG. DT. : BEST BEFORE 2 YEARS FROM MFG. DT."]
+    )
+
+    assert _field(fields, LabelFieldKey.DATE_OF_MANUFACTURE) is None
+    assert _field(fields, LabelFieldKey.BEST_BEFORE) is not None
+
+
+@pytest.mark.parametrize(
+    ("lines", "key"),
+    [
+        (["PKD ON:", "USE WITHIN 6 MONTHS OF OPENING"], LabelFieldKey.DATE_OF_PACKING),
+        (["DATE OF IMPORT :", "SHELF LIFE 18 MONTHS"], LabelFieldKey.DATE_OF_IMPORT),
+        (["MANUFACTURED ON:", "GUARANTEED FOR 3 YEARS"], LabelFieldKey.DATE_OF_MANUFACTURE),
+    ],
+)
+def test_no_date_declaration_accepts_a_duration_as_its_value(
+    extractor, ocr_lines, image_ref, lines, key
+):
+    """`best_before` is the only declaration a length of time can answer.
+
+    No package declares the day it was packed, made or imported as "6 months".
+    """
+    assert _field(_extract(extractor, ocr_lines, image_ref, lines), key) is None
+
+
+def test_best_before_still_accepts_a_shelf_life(extractor, ocr_lines, image_ref):
+    """The narrowing must not cost the one case where a duration is correct."""
+    fields = _extract(
+        extractor, ocr_lines, image_ref, ["BEST BEFORE 9 MONTHS FROM PACKAGING"]
+    )
+    found = _field(fields, LabelFieldKey.BEST_BEFORE)
+
+    assert found is not None
+    assert found.normalized_value["duration_value"] == 9
+    assert found.normalized_value["duration_unit"] == "months"
+    assert is_uncertain(found.normalized_value) is False
+
+
+def test_a_real_date_is_still_read_when_a_duration_shares_the_panel(
+    extractor, ocr_lines, image_ref
+):
+    """The regression guard: the fix must not suppress dates that are printed."""
+    fields = _extract(
+        extractor,
+        ocr_lines,
+        image_ref,
+        ["MFG. DT. : 12/2024", "BEST BEFORE 2 YEARS FROM MFG. DT."],
+    )
+    manufactured = _field(fields, LabelFieldKey.DATE_OF_MANUFACTURE)
+
+    assert manufactured is not None
+    assert manufactured.normalized_value["year_month"] == "2024-12"
+    assert is_uncertain(manufactured.normalized_value) is False
+    assert _field(fields, LabelFieldKey.BEST_BEFORE) is not None
+
+
+def test_a_printed_date_beats_a_duration_on_the_same_line(
+    extractor, ocr_lines, image_ref
+):
+    """Where both are allowed, the date is the better reading and wins."""
+    fields = _extract(
+        extractor, ocr_lines, image_ref, ["BEST BEFORE 12/2026 - 24 MONTHS FROM MFG"]
+    )
+    found = _field(fields, LabelFieldKey.BEST_BEFORE)
+
+    assert found is not None
+    assert found.normalized_value["year_month"] == "2026-12"
+    assert "duration_value" not in found.normalized_value

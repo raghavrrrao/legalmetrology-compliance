@@ -431,7 +431,11 @@ class RuleBasedFieldExtractor(FieldExtractor):
                         break
                     source = lines[position + offset]
                     normalized = _date_value(
-                        source.text, after=keyword if offset == 0 else None
+                        source.text,
+                        after=keyword if offset == 0 else None,
+                        # A shelf life is a valid reading of `best before`
+                        # and of nothing else here. See `_date_value`.
+                        allow_duration=key is LabelFieldKey.BEST_BEFORE,
                     )
                     if normalized is None:
                         continue
@@ -703,7 +707,9 @@ def _mark_uncertain(normalized: dict, reason: str) -> dict:
     return {**normalized, UNCERTAIN_KEY: True, REASONS_KEY: reasons}
 
 
-def _date_value(text: str, *, after: re.Pattern[str] | None) -> dict | None:
+def _date_value(
+    text: str, *, after: re.Pattern[str] | None, allow_duration: bool = True
+) -> dict | None:
     """Read a date or a shelf life from `text`, or None if there is neither.
 
     When `after` is given, only the portion of the line following that keyword
@@ -715,6 +721,17 @@ def _date_value(text: str, *, after: re.Pattern[str] | None) -> dict | None:
 
     `after=None` is the next-line lookahead: the keyword was on the previous
     line, so the whole of this one is fair game.
+
+    `allow_duration=False` is what stops a shelf life being reported as the
+    value of a date declaration. "BEST BEFORE 2 YEARS FROM MFG. DT." is a
+    duration, and a duration is a valid reading of `best_before` alone: no
+    package declares its date of manufacture, packing or import as a length of
+    time. The two collide constantly on a real label, because that sentence
+    contains the manufacture keyword - so with durations allowed for every
+    date key, a panel printing `MFG. DT. :` with nothing after it produced a
+    `date_of_manufacture` field whose value was "2 years". A presence check
+    passes on any extracted field, so an unreadable manufacture date was
+    recorded as a declared one. Seen on Product 001's declaration close-up.
     """
     source = text
     if after is not None:
@@ -722,10 +739,16 @@ def _date_value(text: str, *, after: re.Pattern[str] | None) -> dict | None:
         if match is None:
             return None
         source = text[match.end():]
-    return _first_date_in(source)
+    return _first_date_in(source, allow_duration=allow_duration)
 
 
-def _first_date_in(text: str) -> dict | None:
+def _first_date_in(text: str, *, allow_duration: bool = True) -> dict | None:
+    """The first date in `text`, or a shelf life when `allow_duration`.
+
+    The duration branch is last, so a line carrying both a real date and a
+    period of time still yields the date. `allow_duration=False` removes the
+    branch entirely rather than reordering it - see `_date_value`.
+    """
     iso = P.ISO_DATE.search(text)
     if iso is not None:
         return normalise_date(
@@ -753,6 +776,9 @@ def _first_date_in(text: str) -> dict | None:
         return normalise_date(
             first=month_year.group("first"), year=month_year.group("year")
         )
+
+    if not allow_duration:
+        return None
 
     duration = P.DURATION.search(text)
     if duration is not None:

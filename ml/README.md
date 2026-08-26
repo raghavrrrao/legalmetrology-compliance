@@ -198,10 +198,10 @@ would be unexplainable in a tool whose output is meant to be evidence.
 | Net quantity | `net_quantity` | `{quantity, unit, base_quantity, base_unit, measure, pack_count?}` |
 | MRP / retail sale price | `retail_sale_price` | `{amount (exact decimal string), currency, inclusive_of_all_taxes?}` — read from the text the MRP keyword introduces, skipping quantities |
 | Batch / lot number | `batch_number` | `{batch_number}` |
-| Date of manufacture | `date_of_manufacture` | `{date}` or `{year_month}` |
-| Date of packing | `date_of_packing` | `{date}` or `{year_month}` |
-| Date of import | `date_of_import` | `{date}` or `{year_month}` |
-| Best before / use by / expiry | `best_before` | `{date}`, `{year_month}`, or `{duration_value, duration_unit}` |
+| Date of manufacture | `date_of_manufacture` | `{date}` or `{year_month}` — never a duration |
+| Date of packing | `date_of_packing` | `{date}` or `{year_month}` — never a duration |
+| Date of import | `date_of_import` | `{date}` or `{year_month}` — never a duration |
+| Best before / use by / expiry | `best_before` | `{date}`, `{year_month}`, or `{duration_value, duration_unit}` — the only declaration a shelf life can answer |
 | Consumer care contact | `consumer_care_contact` | `{emails[], phones[]}` |
 | Country of origin | `country_of_origin` | `{country_text}` — certain only from an explicit "Country of Origin" declaration |
 | Manufacturer name | `manufacturer_name` | `{name}` — always flagged uncertain |
@@ -484,17 +484,39 @@ number with no provenance:
   returns the lines `NET` and `MRP` and no values at all. `MRP` is reported in
   `unread_declarations`; `NET` is not, because the bare word names nothing
   unambiguously. Both are cases where the label plainly carries a declaration
-  and this system cannot report what it says.
+  and this system cannot report what it says. `BATCH:` and `MFG. DT. :`, which
+  Product 001 prints with nothing legible after them, are reported neither as
+  values nor as unread — the reasoning for each exclusion is in
+  `rule_based._KEYWORD_ANCHORS`, and it is a real gap rather than a solved case.
+- **Nothing yet consumes `unread_declarations`.** The pipeline emits them and
+  `ExtractionRun.raw_output` stores them, and no rule check reads them.
+  `field_presence` sees only "field found" or "field absent", so a package
+  whose MRP was printed and unreadable is reported today as **FAILED — not
+  found**, which is the exact inversion this mechanism was built to prevent.
+  Wiring it into `CheckContext` is the outstanding half of the work.
+- **There is no image-condition evaluator.** Nothing in this package judges
+  whether a photograph was good enough to draw conclusions from. An upside-down
+  photograph of a readable panel recognises four lines of gibberish at a mean
+  confidence of 0.20 and reports `COMPLETED` with zero declarations — which
+  downstream is indistinguishable from a sharp, well-lit photograph of a
+  package that declares nothing. The per-word confidence needed to tell them
+  apart is measured and then discarded; `ExtractionResult` carries no aggregate
+  quality signal, and `extraction_was_usable` in the rules layer is a boolean
+  derived from the status alone.
 - **A declaration panel photographed from across the table cannot be read.**
   Measured on Product 001: at ~10% of the frame and 8–10 px of text height,
   every configuration tried returned zero declarations from the full-frame
   views while happily returning the marketing paragraph above them. Nothing
   warns the user that the *legally relevant* part of the label is the part that
   was missed.
-- **The rupee sign is unreliable.** It has been read as `8` and as `€`. When it
-  is read as a digit the amount is wrong *and* certain, which is the worst
-  combination this system can produce. Nothing repairs OCR confusions by
-  design — see NORMALISATION — so a reviewer is the only guard.
+- **A misread digit is a wrong value that looks certain.** The rupee sign has
+  been read as `8` and as `€`; on a five-degree rotation of a synthetic panel,
+  `120 GRAMS` reads as `420 GRAMS` at 0.79 confidence and comes out flagged
+  `uncertain: false`. The interpretation layer cannot know a character was
+  wrong, and nothing repairs OCR confusions by design — see NORMALISATION — so
+  a reviewer is the only guard. **This is the most damaging output this system
+  can produce**, because a wrong declared value is harder to notice downstream
+  than a missing one.
 - **Bounding boxes are mapped back to source space** whenever the preprocessor
   reports its dimensions; when it does not, they stay in preprocessed space and
   `metadata["bounding_box_space"]` says so. The engine's `raw` word geometry is
@@ -678,11 +700,70 @@ cd ml && pytest                       # contracts, preprocessing, OCR, fields, C
 cd backend && pytest apps/extraction  # the Django seam
 ```
 
-**No test requires Tesseract, network access, or a downloaded dataset.** The
-OCR adapter is tested through an injected fake runner, and field extraction is
-given text directly — so the suite measures *our* logic rather than someone
-else's recognition, and runs identically on a fresh clone. One smoke test
-exercises the real binary and skips when it is absent.
+**Nothing in the suite needs network access or a downloaded dataset**, and the
+whole of it runs on a fresh clone with no OCR stack installed at all. What each
+tier needs, and what it therefore proves, differs — and the difference matters
+when you read a green run.
+
+### Four tiers
+
+| Tier | Files | Needs | Skips when |
+|---|---|---|---|
+| **Unit** | `test_contracts`, `test_normalisation`, `test_field_extraction`, `test_registry`, `test_ocr_tesseract`, `test_pipeline` | nothing | never |
+| **Integration** | `test_preprocessing`, `test_cli`, `test_downstream_contract`, `test_data_layout` | Pillow (`[ocr]` extra) for some | Pillow absent |
+| **Real OCR** | `test_image_conditions`, `test_label_conditions_matrix` | Pillow + the Tesseract binary | the binary is not on `PATH` |
+| **Real image** | `test_real_product_images` | the above, plus local photographs | `ml/data/raw/products/` is empty |
+
+The OCR adapter is tested through an injected fake runner and field extraction
+is given text directly, so the unit tier measures *our* logic rather than
+someone else's recognition. The real-OCR tier renders synthetic labels with
+Pillow and runs the actual binary over them.
+
+### Running the tiers that skip
+
+The Tesseract binary is not on `PATH` by default on Windows:
+
+```bash
+# Windows, from ml/
+PATH="/c/Program Files/Tesseract-OCR:$PATH" pytest -q
+pytest -q -rs        # list what skipped and why
+```
+
+**CI does not install the Tesseract binary and therefore runs no real OCR.**
+That is deliberate — CI results must not depend on an apt package — but it
+means the real-OCR and real-image tiers are only ever exercised locally. Run
+them before opening a PR that touches preprocessing, page segmentation, or the
+patterns.
+
+### Real product images
+
+`test_real_product_images.py` runs the pipeline over the photographs in
+`ml/data/raw/products/`. Those are gitignored by design (see
+[`data/README.md`](data/README.md)) and no image ships with this repository, so
+these tests skip on a fresh clone and in CI, and run only on the machine that
+holds the pictures. They are the only automated check against an actual
+photograph rather than a Pillow rendering.
+
+### What a green run does *not* prove
+
+- **Not accuracy.** No test asserts a character error rate, a precision or an
+  F1, and no number from the suite may be quoted as one. The synthetic panels
+  are bitmap-font renderings, not photographs. See
+  [`docs/evaluation-strategy.md`](../docs/evaluation-strategy.md).
+- **Not legal compliance.** Nothing in `ml/` decides whether a declaration was
+  required. These tests check that a declaration printed on a label is located
+  and structured; whether it was mandatory, and whether its value is correct,
+  is the `rules` layer's question and is answered against verified source text.
+- **Not that a degraded photograph is detected as degraded.** There is no
+  image-condition evaluator in this package. A sideways or badly lit photograph
+  that recognises gibberish is reported as a *completed* run with no
+  declarations found, which is indistinguishable downstream from a readable
+  photograph of a package that declares nothing. See LIMITATIONS.
+- **Not that the readings are right.** OCR misreads glyphs, and a misread digit
+  produces a confidently wrong value — `120 GRAMS` reads as `420 GRAMS` on a
+  five-degree rotation, at 0.79 confidence and flagged certain, because the
+  interpretation layer has no way to know a character was wrong. The tests pin
+  behaviour and structure; they cannot pin truth.
 
 ## Adding an engine
 

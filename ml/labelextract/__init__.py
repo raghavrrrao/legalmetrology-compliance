@@ -18,6 +18,7 @@ from labelextract.contracts import (
     LabelFieldKey,
     OcrResult,
     TextBlock,
+    UnreadDeclaration,
 )
 from labelextract.exceptions import (
     EngineNotAvailableError,
@@ -56,6 +57,7 @@ __all__ = [
     "PipelineNotFoundError",
     "PreprocessingError",
     "TextBlock",
+    "UnreadDeclaration",
     "UnsupportedImageFormatError",
     "__version__",
 ]
