@@ -13,8 +13,12 @@ from labelextract.contracts import (
     OcrResult,
     TextBlock,
 )
-from labelextract.exceptions import EngineNotAvailableError, InvalidImageError
-from labelextract.interfaces import FieldExtractor, OcrEngine
+from labelextract.exceptions import (
+    EngineNotAvailableError,
+    InvalidImageError,
+    PreprocessingError,
+)
+from labelextract.interfaces import FieldExtractor, ImagePreprocessor, OcrEngine
 from labelextract.pipeline import ExtractionPipeline
 
 
@@ -159,3 +163,149 @@ def test_unexpected_exceptions_are_not_swallowed(image_ref):
     )
     with pytest.raises(ZeroDivisionError):
         pipeline.run(image_ref)
+
+
+# --- preprocessing is a separate stage with its own lifecycle ---------------
+
+
+class _StubPreprocessor(ImagePreprocessor):
+    """Writes a real file, so the pipeline's cleanup can actually be observed."""
+
+    name = "stub-preprocessor"
+    version = "0.0.0"
+
+    def __init__(self, tmp_path, raises: Exception | None = None):
+        self._tmp_path = tmp_path
+        self._raises = raises
+        self.released: list[ImageRef] = []
+        self.produced: ImageRef | None = None
+
+    def process(self, image: ImageRef) -> ImageRef:
+        if self._raises is not None:
+            raise self._raises
+        path = self._tmp_path / "prepared.png"
+        path.write_bytes(image.path.read_bytes())
+        self.produced = ImageRef(
+            path=path, image_format="png", size_bytes=path.stat().st_size,
+            width=2, height=2,
+        )
+        return self.produced
+
+    def release(self, processed: ImageRef) -> None:
+        self.released.append(processed)
+        processed.path.unlink(missing_ok=True)
+
+
+def test_the_ocr_engine_receives_the_preprocessed_image(image_ref, tmp_path):
+    """Otherwise the preparation work is silently discarded."""
+    seen = {}
+
+    class _Recording(_StubOcrEngine):
+        def recognise(self, image):
+            seen["path"] = image.path
+            return OcrResult()
+
+    preprocessor = _StubPreprocessor(tmp_path)
+    ExtractionPipeline(
+        name="stub", version="0.0.0",
+        ocr_engine=_Recording(), preprocessor=preprocessor,
+    ).run(image_ref)
+
+    assert seen["path"] == preprocessor.produced.path
+
+
+def test_the_intermediate_is_released_after_a_successful_run(image_ref, tmp_path):
+    """A long-running server must not accumulate a copy of every upload."""
+    preprocessor = _StubPreprocessor(tmp_path)
+    ExtractionPipeline(
+        name="stub", version="0.0.0",
+        ocr_engine=_StubOcrEngine(), preprocessor=preprocessor,
+    ).run(image_ref)
+
+    assert len(preprocessor.released) == 1
+    assert not preprocessor.produced.path.exists()
+
+
+def test_the_intermediate_is_released_after_a_failed_run(image_ref, tmp_path):
+    preprocessor = _StubPreprocessor(tmp_path)
+    result = ExtractionPipeline(
+        name="stub", version="0.0.0",
+        ocr_engine=_StubOcrEngine(raises=InvalidImageError("bad")),
+        preprocessor=preprocessor,
+    ).run(image_ref)
+
+    assert result.status is ExtractionStatus.FAILED
+    assert len(preprocessor.released) == 1
+
+
+def test_the_original_image_is_never_released(image_ref):
+    """`release` deletes files. Handing it the evidence would destroy it."""
+
+    class _PassThrough(_StubPreprocessor):
+        def process(self, image: ImageRef) -> ImageRef:
+            return image
+
+    preprocessor = _PassThrough(None)
+    ExtractionPipeline(
+        name="stub", version="0.0.0",
+        ocr_engine=_StubOcrEngine(), preprocessor=preprocessor,
+    ).run(image_ref)
+
+    assert preprocessor.released == []
+    assert image_ref.path.exists()
+
+
+def test_a_preprocessing_failure_is_recorded_not_raised(image_ref, tmp_path):
+    preprocessor = _StubPreprocessor(tmp_path, raises=PreprocessingError("no"))
+    result = ExtractionPipeline(
+        name="stub", version="0.0.0",
+        ocr_engine=_StubOcrEngine(), preprocessor=preprocessor,
+    ).run(image_ref)
+
+    assert result.status is ExtractionStatus.FAILED
+    assert result.error_code == "preprocessing_failed"
+
+
+# --- metadata records how a result was produced -----------------------------
+
+
+def test_metadata_names_every_component_that_ran(image_ref, tmp_path):
+    """So a disappointing run is diagnosable later without re-running it."""
+    pipeline = ExtractionPipeline(
+        name="stub", version="0.0.0",
+        ocr_engine=_StubOcrEngine(OcrResult(blocks=(TextBlock(text="x"),))),
+        preprocessor=_StubPreprocessor(tmp_path),
+        field_extractor=_StubFieldExtractor(),
+    )
+    metadata = pipeline.run(image_ref).metadata
+
+    assert metadata["preprocessor_name"] == "stub-preprocessor"
+    assert metadata["ocr_engine_name"] == "stub-ocr"
+    assert metadata["field_extractor_name"] == "stub-fields"
+
+
+def test_metadata_exposes_a_resize_that_would_move_bounding_boxes(
+    image_ref, tmp_path
+):
+    """When these differ, boxes are in preprocessed space, not source space.
+
+    Recording both is what makes that detectable rather than a silent
+    mismatch between an evidence overlay and the photograph under it.
+    """
+    metadata = ExtractionPipeline(
+        name="stub", version="0.0.0",
+        ocr_engine=_StubOcrEngine(),
+        preprocessor=_StubPreprocessor(tmp_path),
+    ).run(image_ref).metadata
+
+    assert metadata["source_dimensions"] == [4, 4]
+    assert metadata["preprocessed_dimensions"] == [2, 2]
+
+
+def test_metadata_reports_no_preprocessed_dimensions_when_none_ran(image_ref):
+    metadata = ExtractionPipeline(
+        name="stub", version="0.0.0", ocr_engine=_StubOcrEngine()
+    ).run(image_ref).metadata
+
+    assert metadata["preprocessed"] is False
+    assert metadata["preprocessed_dimensions"] is None

@@ -12,14 +12,25 @@ model deciding legality produces a confident legal claim nobody can audit.
 
 ## What AI does
 
-| Responsibility | Status | Owner |
+| Responsibility | Status | Implementation |
 |---|---|---|
-| Image preprocessing (deskew, denoise, contrast) | Interface defined, no implementation | `feature/image-processing` |
-| OCR — recognise characters and their position | Interface defined, no implementation | `feature/ocr-processing` |
-| Field extraction — map recognised text to declarations | Interface defined, no implementation | `feature/label-field-extraction` |
+| Image preprocessing (orientation, grayscale, contrast) | **Implemented** | `ml/labelextract/preprocessing/` — Pillow |
+| Image preprocessing (deskew, perspective) | Not implemented; stated as a limitation | needs numpy/OpenCV |
+| OCR — recognise characters and their position | **Implemented** | `ml/labelextract/ocr/` — Tesseract 5 via pytesseract |
+| Field extraction — map recognised text to declarations | **Implemented, English, partial** | `ml/labelextract/fields/` — deterministic patterns |
 | Product/category classification | Not started; no interface yet | `feature/product-classification` |
 
 These are **perception** tasks. They answer "what is printed here, and where?"
+
+The placeholder `null-engine` has not been removed and is still the shipped
+default. Switching to Tesseract is a deliberate two-line `.env` change made
+once the binary is installed — never a silent default that fails on a
+teammate's first upload. Both pipelines stay registered, and `ExtractionRun`
+records which one produced each result.
+
+Everything the OCR layer promises, refuses, and cannot yet do is set out in
+[`../ml/README.md`](../ml/README.md), including the full list of declarations
+that are **not** extracted.
 
 ## What AI does not do
 
@@ -27,7 +38,9 @@ These are **perception** tasks. They answer "what is printed here, and where?"
   Violations come from a `ComplianceRule` row whose legal text a named person
   verified against the authoritative source.
 - **It does not interpret the law.** No LLM is asked "is this package legal?"
-  There is no LLM in this system at all.
+  There is no LLM in this system at all. The extraction layer is Tesseract plus
+  deterministic regular expressions — every decision it makes is one a person
+  can read in the source and disagree with.
 - **It does not fill in missing declarations.** A field extractor that did not
   find a declaration reports nothing. Inventing one to complete a set would
   silently turn a non-compliant package into a compliant one.
@@ -74,6 +87,33 @@ Rules the contracts enforce structurally, not by convention:
   percentage by mistake fails immediately rather than silently skewing results.
 - **Confidence is not comparable across engines.** Two engines' 0.8 mean
   different things. Never threshold on it without calibrating that engine.
+  Tesseract's 0–100 score is rescaled to `[0, 1]` at the adapter boundary and
+  its `-1` sentinel becomes `None`, never `0.0`.
+- **Low-confidence words are kept, not filtered.** Discarding them would hide
+  exactly the misreadings a reviewer needs to see. The confidence travels with
+  the block instead.
+
+### Uncertainty of *interpretation* is a separate axis
+
+`confidence` is the OCR engine's opinion of the **characters**. It says nothing
+about whether we read the right *meaning* into them. So every value the field
+extractor normalises carries its own flag:
+
+```json
+{ "uncertain": true,
+  "uncertainty_reasons": ["both DD/MM and MM/DD are valid readings of this date"],
+  "candidates": ["2025-04-03", "2025-03-04"] }
+```
+
+A perfectly recognised `03/04/2025` is high-confidence and uncertain at the same
+time. Committing to 3 April because that is the Indian convention would produce
+a date that looks measured, flows into a compliance finding, and cannot later be
+told apart from one that was genuinely unambiguous. When a value cannot be
+committed to, the structured key is **absent** rather than present-and-wrong.
+
+Uncertainty survives into `ExtractedLabelField.normalized_value` unflattened,
+and a backend test asserts it — if it were lost at the persistence layer, an
+ambiguous date would reach the UI looking exactly like a confident one.
 
 ### The placeholder is labelled at every layer
 
@@ -97,12 +137,24 @@ the difference between telling a user "your package is illegal" and "retake the
 photo", and it is enforced in `apps/rules/checks/field_presence.py` and tested
 in `test_engine.py::test_unreadable_image_is_never_reported_as_a_missing_declaration`.
 
+## Precision over recall, and why that direction
+
+The field extractor reports most declarations **only when an anchoring keyword
+is present**. A bare `500 g` is not reported as a net quantity, because that
+string also appears in the nutrition panel beside `per 100 g`.
+
+This costs recall, deliberately. A declaration wrongly reported as *present*
+makes `field_presence` PASS and hides a real violation. A declaration we fail to
+find produces a review flag. The second failure is recoverable by a human; the
+first is invisible. See [evaluation-strategy.md](evaluation-strategy.md).
+
 ## Metrics to be measured later
 
 **No metric values exist yet, and none are published anywhere in this
-repository.** The list below is what will be measured once a real engine lands,
-not a claim about anything. See [evaluation-strategy.md](evaluation-strategy.md)
-for how.
+repository — including for the Tesseract engine that now ships.** Installing an
+engine is not the same as measuring one. The list below is what will be
+measured, not a claim about anything. See
+[evaluation-strategy.md](evaluation-strategy.md) for how.
 
 - OCR: character error rate, word error rate
 - Field extraction: per-field precision, recall, F1
@@ -119,7 +171,19 @@ them is more credible than a round number with no provenance:
   surfaces, low contrast, decorative fonts and multilingual labels all degrade
   recognition.
 - **Indian packaging is multilingual.** English, Hindi and regional scripts
-  frequently appear on the same panel. Engine choice must account for this.
+  frequently appear on the same panel. Tesseract recognises Devanagari when
+  `tesseract-ocr-hin` is installed, but **the field extractor matches English
+  only** — so a Hindi-only declaration is recognised as text and then not
+  interpreted.
+- **Several declarations are not extracted at all.** Product and brand name,
+  generic name, manufacturer address and unit sale price need layout
+  understanding this layer does not have. The unsupported list is derived from
+  the code, not maintained by hand, so it cannot drift.
+- **Tesseract is weaker than the neural engines on hard packaging** — foil,
+  curved surfaces, decorative type. It was chosen for being free, offline,
+  weightless and installable by six people on three operating systems, with the
+  intention of measuring it and adding a second engine alongside if the numbers
+  justify one.
 - **One photograph shows one panel.** A declaration absent from a front-panel
   photo may be printed on the back. `ProductImage.view_type` exists so the
   engine can reason about this rather than reporting a framing choice as a

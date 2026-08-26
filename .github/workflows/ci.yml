@@ -103,13 +103,31 @@ jobs:
 
       # No database, no Django. This job passing while `backend` fails proves
       # the ML boundary is intact - which is the point of the separate package.
-      - name: Install
+      #
+      # Two installs, in two steps, because the difference is the point:
+      # `labelextract` must remain installable and importable with no
+      # dependencies at all, and the whole suite must pass that way. The `[ocr]`
+      # extra is added afterwards so the preprocessing tests - which need Pillow
+      # - actually run rather than silently skipping.
+      #
+      # The Tesseract *binary* is deliberately not installed. Every test uses an
+      # injected fake runner; the one real smoke test skips when the binary is
+      # absent, and it should keep skipping here so CI cannot start depending on
+      # an apt package for its results.
+      - name: Install (contracts only - must work with zero dependencies)
         run: |
           python -m pip install --upgrade pip
           pip install -e ./ml
           pip install "pytest>=8.4,<9.0"
 
-      - name: ML tests
+      - name: ML tests without any OCR stack installed
+        working-directory: ml
+        run: pytest -q
+
+      - name: Install the optional OCR extra
+        run: pip install -e "./ml[ocr]"
+
+      - name: ML tests with Pillow available
         working-directory: ml
         run: pytest -q
 

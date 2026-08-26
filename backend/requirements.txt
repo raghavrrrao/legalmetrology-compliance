@@ -40,5 +40,21 @@ django-environ>=0.12,<0.13
 # Required, not speculative: validation works by actually decoding the file
 # rather than trusting its extension, and that needs a real image library.
 # This is NOT a machine-learning dependency - no OCR or ML framework is
-# installed at this stage.
+# installed by this file.
 Pillow>=11.3,<12
+
+# --- OCR is deliberately NOT listed here -----------------------------------
+#
+# The Tesseract pipeline's Python dependency (pytesseract) lives in the `ocr`
+# extra of ml/pyproject.toml, and the Tesseract binary is installed by your
+# operating system's package manager. Neither belongs in this file:
+#
+#   * The backend imports `labelextract`, never an engine. Which engine runs is
+#     resolved at runtime from DEFAULT_EXTRACTION_ENGINE_NAME, so a deployment
+#     that uses the placeholder must not be made to install an OCR stack.
+#   * pytesseract without the binary is useless, and pip cannot install the
+#     binary. Listing it here would imply an install that pip cannot complete.
+#
+# To run OCR:
+#     pip install -e "./ml[ocr]"
+# plus the binary for your platform - see ml/README.md.

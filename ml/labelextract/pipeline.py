@@ -76,8 +76,8 @@ class ExtractionPipeline:
     def run(self, image: ImageRef) -> ExtractionResult:
         """Execute the pipeline and return a structured result."""
         started = time.perf_counter()
+        source = image
         try:
-            source = image
             if self.preprocessor is not None:
                 source = self.preprocessor.process(image)
 
@@ -88,6 +88,13 @@ class ExtractionPipeline:
                 fields = self.field_extractor.extract(ocr, source)
         except LabelExtractError as exc:
             return self._failure(exc, started)
+        finally:
+            # Runs on the success path, the recorded-failure path and the
+            # re-raised-bug path alike: an intermediate file must not survive
+            # any of them. `source is not image` is the test for "the
+            # preprocessor created this", so the original is never touched.
+            if self.preprocessor is not None and source is not image:
+                self.preprocessor.release(source)
 
         return ExtractionResult(
             status=self._status_for(ocr, fields),
@@ -97,12 +104,34 @@ class ExtractionPipeline:
             ocr=ocr,
             fields=fields,
             is_placeholder=self.is_placeholder,
-            metadata={
-                "preprocessed": self.preprocessor is not None,
-                "field_extraction_ran": self.field_extractor is not None,
-                "source_image_format": image.image_format,
-            },
+            metadata=self._metadata(image, source),
         )
+
+    def _metadata(self, image: ImageRef, source: ImageRef) -> dict:
+        """Which components ran, and what the image looked like on the way in.
+
+        Persisted verbatim by the backend into `ExtractionRun.raw_output`. It
+        records *how* a result was produced, which is what makes a
+        disappointing run diagnosable months later without re-running it.
+
+        `preprocessed_dimensions` matters more than it looks: when it differs
+        from `source_dimensions`, bounding boxes are in preprocessed-image
+        space rather than source-image space, and anything drawing them over
+        the original must scale them.
+        """
+        return {
+            "preprocessed": self.preprocessor is not None,
+            "field_extraction_ran": self.field_extractor is not None,
+            "source_image_format": image.image_format,
+            "source_dimensions": _dimensions(image),
+            "preprocessed_dimensions": (
+                _dimensions(source) if source is not image else None
+            ),
+            "preprocessor_name": _component_name(self.preprocessor),
+            "ocr_engine_name": self.ocr_engine.name,
+            "ocr_engine_version": self.ocr_engine.version,
+            "field_extractor_name": _component_name(self.field_extractor),
+        }
 
     def _status_for(
         self, ocr: OcrResult, fields: tuple[ExtractedField, ...]
@@ -132,3 +161,14 @@ class ExtractionPipeline:
 
 def _elapsed_ms(started: float) -> int:
     return int((time.perf_counter() - started) * 1000)
+
+
+def _dimensions(image: ImageRef) -> list[int] | None:
+    """[width, height], or None when either was never measured."""
+    if image.width is None or image.height is None:
+        return None
+    return [image.width, image.height]
+
+
+def _component_name(component: object | None) -> str | None:
+    return None if component is None else getattr(component, "name", None)
