@@ -44,6 +44,7 @@ from labelextract.contracts import (
     ExtractionStatus,
     ImageRef,
     OcrResult,
+    UnreadDeclaration,
 )
 from labelextract.exceptions import LabelExtractError
 from labelextract.interfaces import FieldExtractor, ImagePreprocessor, OcrEngine
@@ -97,6 +98,7 @@ class ExtractionPipeline:
         started = time.perf_counter()
         source = image
         scale: tuple[float, float] | None = None
+        unread: tuple[UnreadDeclaration, ...] = ()
         try:
             if self.preprocessor is not None:
                 source = self.preprocessor.process(image)
@@ -110,6 +112,7 @@ class ExtractionPipeline:
             fields: tuple[ExtractedField, ...] = ()
             if self.field_extractor is not None:
                 fields = self.field_extractor.extract(ocr, source)
+                unread = self._unread_declarations(ocr, fields)
         except LabelExtractError as exc:
             return self._failure(exc, started)
         finally:
@@ -128,8 +131,43 @@ class ExtractionPipeline:
             ocr=ocr,
             fields=fields,
             is_placeholder=self.is_placeholder,
-            metadata=self._metadata(image, source, scale),
+            metadata=self._metadata(image, source, scale, unread),
         )
+
+    def _unread_declarations(
+        self, ocr: OcrResult, fields: tuple[ExtractedField, ...]
+    ) -> tuple[UnreadDeclaration, ...]:
+        """Ask the extractor what it saw named but could not read.
+
+        Optional on the interface, so an extractor that does not implement it
+        contributes nothing and nothing changes for it.
+
+        Guarded, and for the same reason `_release` is: this is a *secondary*
+        observation about a result that is already complete. An extractor
+        raising here must not cost the caller the declarations that were
+        successfully read - that would trade a whole result for a footnote
+        about it.
+
+        "Not implemented" and "implemented and broken" are separated on
+        purpose. `FieldExtractor` supplies a default, so a subclass always has
+        the method; an extractor that does not subclass it is out of contract
+        but perfectly functional, and logging a traceback for it on every
+        single image would bury the case that actually needs attention.
+        """
+        reporter = getattr(self.field_extractor, "unread_declarations", None)
+        if reporter is None:
+            return ()
+
+        try:
+            return tuple(reporter(ocr, fields))
+        except Exception:
+            logger.warning(
+                "Field extractor %r failed to report unread declarations; "
+                "continuing with the fields it did extract",
+                getattr(self.field_extractor, "name", self.field_extractor),
+                exc_info=True,
+            )
+            return ()
 
     def _release(self, processed: ImageRef) -> None:
         """Discard a preprocessing intermediate without ever failing the run.
@@ -172,6 +210,7 @@ class ExtractionPipeline:
         image: ImageRef,
         source: ImageRef,
         scale: tuple[float, float] | None = None,
+        unread: tuple[UnreadDeclaration, ...] = (),
     ) -> dict:
         """Which components ran, and what the image looked like on the way in.
 
@@ -185,8 +224,17 @@ class ExtractionPipeline:
         "preprocessed" when the dimensions were not recorded and no honest
         mapping was possible. A consumer drawing boxes over the original must
         read that key rather than assume.
+
+        `unread_declarations` is the exception to "nothing here is an
+        extraction result": it is an observation *about* the extraction -
+        declarations named on the label whose values could not be read. It
+        rides here rather than on `ExtractionResult.fields` because it is
+        explicitly not a field (see `contracts.UnreadDeclaration`), and
+        because the backend already persists this whole mapping verbatim, so
+        the signal reaches a stored run with no change on that side.
         """
         return {
+            "unread_declarations": [item.as_dict() for item in unread],
             "bounding_box_space": (
                 "preprocessed"
                 if source is not image and scale is None

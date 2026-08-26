@@ -68,6 +68,28 @@ NET_QUANTITY_KEYWORD = re.compile(
     _I,
 )
 
+#: The part of `NET_QUANTITY_KEYWORD` that is strong enough to stand alone.
+#:
+#: `NET_QUANTITY_KEYWORD` ends in a bare `\bquantity\b`, and that is correct
+#: where it is used: a *number and a unit* have to be on the same line before
+#: anything is emitted, so `Quantity: 500 g` is read and prose is harmless.
+#:
+#: It is not correct as evidence *by itself*. "quantity" is an ordinary English
+#: word - `the quantity supplied may vary`, `quantity surveyor` - so a line
+#: carrying the word and nothing else is not a declaration, and reporting one
+#: as a net quantity nobody could read would be a claim about a label that
+#: never made it.
+#:
+#: Used only where a keyword with no value has to be reported as an
+#: observation. Every string this matches is also matched by
+#: `NET_QUANTITY_KEYWORD`; a test asserts that, so the two cannot drift into
+#: disagreeing about what a net-quantity keyword is.
+NET_QUANTITY_ANCHOR = re.compile(
+    r"\bnet\s*(?:qty|quantity|wt|weight|content|contents|vol|volume)\b"
+    r"|\bnet\s*(?:qty|wt|vol)\.?\s*[:\-]",
+    _I,
+)
+
 #: Lines that contain a quantity which is definitely *not* the net quantity.
 #: The nutrition panel is the dominant source of false positives on a real
 #: label - it is full of `per 100 g` and `2.5 g` - and this is what keeps them

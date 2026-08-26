@@ -48,6 +48,7 @@ from labelextract.contracts import (
     ImageRef,
     LabelFieldKey,
     OcrResult,
+    UnreadDeclaration,
 )
 from labelextract.fields import patterns as P
 from labelextract.fields.normalisation import (
@@ -97,6 +98,45 @@ SUPPORTED_KEYS: frozenset[LabelFieldKey] = frozenset(
 #: In `LabelFieldKey` and NOT attempted here. Exported so the documentation and
 #: a test can assert the two lists agree, rather than the docs drifting.
 UNSUPPORTED_KEYS: frozenset[LabelFieldKey] = frozenset(LabelFieldKey) - SUPPORTED_KEYS
+
+#: Declarations a *bare keyword* can be reported unread for, and the pattern
+#: that names each. The same objects the detectors anchor on, so the two cannot
+#: drift apart.
+#:
+#: The membership rule is narrow on purpose, and has two halves. A keyword
+#: qualifies only if it **cannot also be the opening of a different declaration
+#: in this pattern set**, and only if it is **a label marker rather than an
+#: ordinary English word**. An unread observation is a positive claim about
+#: what the label says. Getting it wrong sends a reviewer to look for something
+#: that was never printed, and the point of the whole mechanism is to stop
+#: guessing.
+#:
+#: The second half is why net quantity anchors on `NET_QUANTITY_ANCHOR` rather
+#: than on `NET_QUANTITY_KEYWORD`: the latter ends in a bare `\bquantity\b`,
+#: which is right when a number and a unit are on the same line and wrong as
+#: evidence on its own. `the quantity supplied may vary` is prose.
+#:
+#: Deliberately excluded, each for a reason that would otherwise produce a
+#: wrong claim:
+#:
+#: - `date_of_manufacture` and `date_of_packing`. Their keywords match the bare
+#:   stems `manufactured` and `packed`, which is also how the *manufacturer*
+#:   and *packer name* declarations begin. On `Packed by BAZINGA MEDIA` the
+#:   date keyword matches and there is no packing date anywhere - reporting one
+#:   as unread would invent a declaration. `extract()` is unaffected: it needs
+#:   an actual date before it emits anything.
+#: - `consumer_care_contact`. The detector already emits a keyword-only field
+#:   marked uncertain when it finds the keyword and no contact details, so
+#:   there is nothing left unresolved to report.
+#: - `manufacturer_name`, `packer_name`, `importer_name`, `other`,
+#:   `batch_number`, `country_of_origin`. Their patterns capture keyword *and*
+#:   value together, so a keyword with nothing after it never matches at all.
+_KEYWORD_ANCHORS: tuple[tuple[LabelFieldKey, re.Pattern[str]], ...] = (
+    (LabelFieldKey.NET_QUANTITY, P.NET_QUANTITY_ANCHOR),
+    (LabelFieldKey.RETAIL_SALE_PRICE, P.MRP_KEYWORD),
+    (LabelFieldKey.BEST_BEFORE, dict(P.DATE_KEYWORDS)["best_before"]),
+    (LabelFieldKey.DATE_OF_IMPORT, dict(P.DATE_KEYWORDS)["date_of_import"]),
+)
 
 
 @dataclass(frozen=True)
@@ -168,6 +208,66 @@ class RuleBasedFieldExtractor(FieldExtractor):
                     getattr(detector, "__name__", detector),
                 )
         return _resolve(candidates)
+
+    def unread_declarations(
+        self, ocr: OcrResult, fields: tuple[ExtractedField, ...]
+    ) -> tuple[UnreadDeclaration, ...]:
+        """Keywords that were recognised but produced no field.
+
+        The case this was written for, from a real photograph of a curved can:
+        OCR returned the single line `MRP` because the rest of that line was
+        too foreshortened to read. `extract()` correctly emitted nothing - a
+        keyword is not a price - but "no MRP field" then means two opposite
+        things at once, and a compliance engine cannot tell which.
+
+        The rule: a keyword in `_KEYWORD_ANCHORS` was recognised somewhere, and
+        no field for that key came out anywhere. Per *line* would be more
+        precise and would also flag a keyword whose value was correctly read
+        from a different line, which is noise. This reports the one thing that
+        is unambiguous - **we saw this declaration named and produced nothing
+        for it.**
+
+        `_KEYWORD_ANCHORS` is a deliberately short list, and the reasoning for
+        every declaration left out of it is recorded there. The short version:
+        an unread observation is a positive claim about what the label says,
+        and several keywords in this pattern set are also the opening of a
+        *different* declaration - `Packed by BAZINGA MEDIA` matches the
+        packing-date keyword and carries no date. Reporting that would send a
+        reviewer looking for something the package never printed.
+
+        No value is inferred, no line is guessed at, and nothing here is a
+        legal claim: that a keyword was printed says nothing about whether the
+        declaration was required or whether its value would have been correct.
+        """
+        lines = _lines_from(ocr)
+        if not lines:
+            # Nothing was recognised at all. That is `EMPTY` - inconclusive
+            # about every declaration - and reporting individual keywords as
+            # unread would add nothing to it.
+            return ()
+
+        extracted_keys = {extracted.key for extracted in fields}
+        unread: list[UnreadDeclaration] = []
+
+        for key, keyword in _KEYWORD_ANCHORS:
+            if key in extracted_keys:
+                continue
+            for line in lines:
+                if not keyword.search(line.text):
+                    continue
+                unread.append(
+                    UnreadDeclaration(
+                        key=key,
+                        evidence_text=line.text,
+                        box=line.box,
+                        confidence=line.confidence,
+                    )
+                )
+                # One observation per declaration. A second line naming the
+                # same unread declaration is the same finding, not a new one.
+                break
+
+        return tuple(unread)
 
     def _detectors(self) -> tuple[Callable[[list[_Line]], Iterable[_Candidate]], ...]:
         return (
