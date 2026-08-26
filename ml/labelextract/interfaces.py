@@ -83,6 +83,12 @@ class ImagePreprocessor(_Component):
         Default is a no-op, for preprocessors that write nothing. An
         implementation must never raise: failing to delete a temporary file is
         an operational annoyance, not a reason to lose an extraction result.
+
+        `ExtractionPipeline` guards the call anyway and logs anything that
+        escapes, so a preprocessor that breaks this rule costs a leftover file
+        rather than a lost result. Treat that as a safety net for a bug, not as
+        permission to raise: only the implementation knows which failures are
+        worth reporting, and a swallowed exception is invisible to it.
         """
 
 

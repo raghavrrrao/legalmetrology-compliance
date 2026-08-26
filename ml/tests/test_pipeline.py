@@ -1,5 +1,7 @@
 """Pipeline behaviour, including the guarantees that keep extraction honest."""
 
+import logging
+
 import pytest
 
 from labelextract import registry
@@ -309,3 +311,94 @@ def test_metadata_reports_no_preprocessed_dimensions_when_none_ran(image_ref):
 
     assert metadata["preprocessed"] is False
     assert metadata["preprocessed_dimensions"] is None
+
+
+# --- cleanup must never overrule the outcome it is cleaning up after --------
+
+
+class _HostilePreprocessor(_StubPreprocessor):
+    """A preprocessor whose `release` raises, in breach of its own contract.
+
+    `ImagePreprocessor.release` is documented as never raising. This stands in
+    for the implementation that gets it wrong - a future engine, or a
+    third-party one - and pins down what that costs: a log line, not a result.
+    """
+
+    def release(self, processed: ImageRef) -> None:
+        self.released.append(processed)
+        raise RuntimeError("cleanup exploded")
+
+
+def test_a_failing_release_does_not_turn_a_success_into_a_crash(image_ref, tmp_path):
+    """`release` is called from a `finally`, so an escape would replace the return.
+
+    The extraction was already complete and correct at that point; losing it to
+    a temporary-file problem would be the worst possible trade.
+    """
+    preprocessor = _HostilePreprocessor(tmp_path)
+    result = ExtractionPipeline(
+        name="stub",
+        version="0.0.0",
+        ocr_engine=_StubOcrEngine(OcrResult(blocks=(TextBlock(text="Net Qty 500 g"),))),
+        preprocessor=preprocessor,
+        field_extractor=_StubFieldExtractor(),
+    ).run(image_ref)
+
+    assert result.status is ExtractionStatus.COMPLETED
+    assert result.field_for(LabelFieldKey.NET_QUANTITY).raw_value == "500 g"
+    # It really did try, and really did raise.
+    assert len(preprocessor.released) == 1
+
+
+def test_a_failing_release_does_not_mask_a_recorded_extraction_failure(
+    image_ref, tmp_path
+):
+    """The `error_code` explaining the real problem must still reach the caller.
+
+    An exception from `finally` would discard the `return` mid-flight, so the
+    operator would be told about a temporary file instead of about the
+    unreadable image.
+    """
+    result = ExtractionPipeline(
+        name="stub",
+        version="0.0.0",
+        ocr_engine=_StubOcrEngine(raises=InvalidImageError("unreadable")),
+        preprocessor=_HostilePreprocessor(tmp_path),
+    ).run(image_ref)
+
+    assert result.status is ExtractionStatus.FAILED
+    assert result.error_code == "invalid_image"
+
+
+def test_a_failing_release_does_not_mask_a_bug_in_an_engine(image_ref, tmp_path):
+    """The loud failure stays loud, and stays the *original* failure.
+
+    An engine bug must still surface as itself rather than as `RuntimeError:
+    cleanup exploded`, which would send whoever debugs it to the wrong file.
+    """
+    pipeline = ExtractionPipeline(
+        name="stub",
+        version="0.0.0",
+        ocr_engine=_StubOcrEngine(raises=ZeroDivisionError("bug in engine")),
+        preprocessor=_HostilePreprocessor(tmp_path),
+    )
+
+    with pytest.raises(ZeroDivisionError):
+        pipeline.run(image_ref)
+
+
+def test_a_failing_release_is_logged_rather_than_silently_dropped(
+    image_ref, tmp_path, caplog
+):
+    """Swallowed exceptions have to leave a trace, or the bug is undiscoverable."""
+    with caplog.at_level(logging.WARNING, logger="labelextract.pipeline"):
+        ExtractionPipeline(
+            name="stub",
+            version="0.0.0",
+            ocr_engine=_StubOcrEngine(),
+            preprocessor=_HostilePreprocessor(tmp_path),
+        ).run(image_ref)
+
+    assert any(
+        "failed to release" in record.message for record in caplog.records
+    )

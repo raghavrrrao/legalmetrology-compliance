@@ -19,6 +19,7 @@ should surface loudly rather than be recorded as "this image was unreadable".
 
 from __future__ import annotations
 
+import logging
 import time
 
 from labelextract.contracts import (
@@ -30,6 +31,8 @@ from labelextract.contracts import (
 )
 from labelextract.exceptions import LabelExtractError
 from labelextract.interfaces import FieldExtractor, ImagePreprocessor, OcrEngine
+
+logger = logging.getLogger(__name__)
 
 
 class ExtractionPipeline:
@@ -94,7 +97,7 @@ class ExtractionPipeline:
             # any of them. `source is not image` is the test for "the
             # preprocessor created this", so the original is never touched.
             if self.preprocessor is not None and source is not image:
-                self.preprocessor.release(source)
+                self._release(source)
 
         return ExtractionResult(
             status=self._status_for(ocr, fields),
@@ -106,6 +109,42 @@ class ExtractionPipeline:
             is_placeholder=self.is_placeholder,
             metadata=self._metadata(image, source),
         )
+
+    def _release(self, processed: ImageRef) -> None:
+        """Discard a preprocessing intermediate without ever failing the run.
+
+        `release()` is called from a `finally`, which is the most dangerous
+        place in this class for an exception to escape. Raising there would
+        replace whatever the block was doing:
+
+        - a successful extraction would become a crash, losing a result that
+          was already complete and correct;
+        - a recorded `FAILED` result would be discarded mid-`return`, so the
+          `error_code` explaining the real problem never reaches the caller;
+        - a genuine bug propagating out of an engine would be masked by a
+          message about a temporary file.
+
+        In every case the caller would be told about the wrong thing. Cleanup
+        is housekeeping: it cannot be allowed to overrule the outcome of the
+        work it is cleaning up after.
+
+        `ImagePreprocessor.release` is documented as never raising, and the one
+        implementation here honours that. This guard is for the ones that do
+        not - a future engine, or a third-party preprocessor - so their bug
+        costs a leftover file and a log line instead of a lost extraction.
+        """
+        try:
+            self.preprocessor.release(processed)
+        except Exception:
+            # Logged with a traceback so the faulty implementation is
+            # findable, then deliberately dropped.
+            logger.warning(
+                "Preprocessor %r failed to release %s; continuing so the "
+                "extraction result is not lost",
+                getattr(self.preprocessor, "name", self.preprocessor),
+                processed.path,
+                exc_info=True,
+            )
 
     def _metadata(self, image: ImageRef, source: ImageRef) -> dict:
         """Which components ran, and what the image looked like on the way in.

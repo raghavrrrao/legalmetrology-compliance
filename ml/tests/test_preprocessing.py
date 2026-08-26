@@ -354,3 +354,189 @@ def test_a_decode_failure_is_still_an_invalid_image(tmp_path):
 
     with pytest.raises(InvalidImageError):
         PillowPreprocessor().process(ref)
+
+
+# --- the declared format and the decoded format must agree ------------------
+
+
+def test_a_matching_declaration_is_accepted(photo):
+    """The ordinary case: the caller's record of the file is correct."""
+    preprocessor = PillowPreprocessor()
+    processed = preprocessor.process(photo(image_format="png"))
+
+    assert processed.path.exists()
+
+
+def test_jpg_and_jpeg_are_the_same_declaration(photo, tmp_path):
+    """Two spellings of one format must not read as a mismatch."""
+    source = photo(image_format="jpeg")
+    as_jpg = ImageRef(
+        path=source.path,
+        image_format="jpg",
+        size_bytes=source.size_bytes,
+        width=source.width,
+        height=source.height,
+    )
+
+    preprocessor = PillowPreprocessor()
+    assert preprocessor.process(as_jpg).path.exists()
+
+
+def test_a_declared_format_that_contradicts_the_bytes_is_rejected(photo):
+    """Declared WebP, decodes as PNG.
+
+    Both formats are individually supported, which is exactly why checking each
+    side against the allowlist separately let this through. The disagreement
+    means the caller's record of the file is wrong, and everything derived from
+    that record - the stored `image_format`, the API response, what a reviewer
+    is shown - is wrong with it.
+    """
+    source = photo(image_format="png")
+    mislabelled = ImageRef(
+        path=source.path,
+        image_format="webp",
+        size_bytes=source.size_bytes,
+        width=source.width,
+        height=source.height,
+    )
+
+    with pytest.raises(UnsupportedImageFormatError) as raised:
+        PillowPreprocessor().process(mislabelled)
+
+    assert "mismatch" in str(raised.value).lower()
+
+
+def test_a_declared_format_we_do_not_support_is_rejected(photo):
+    source = photo(image_format="png")
+    declared_tiff = ImageRef(
+        path=source.path,
+        image_format="tiff",
+        size_bytes=source.size_bytes,
+        width=source.width,
+        height=source.height,
+    )
+
+    with pytest.raises(UnsupportedImageFormatError):
+        PillowPreprocessor().process(declared_tiff)
+
+
+def test_a_decoded_format_we_do_not_support_is_rejected(tmp_path):
+    """The bytes are a real image, just not one of ours.
+
+    The decoder's answer is authoritative, so a genuine BMP is refused however
+    the caller labelled it - and the extension is never consulted.
+    """
+    path = tmp_path / "label.png"
+    Image.new("RGB", (120, 60), (200, 180, 160)).save(path, format="BMP")
+    ref = ImageRef(
+        path=path,
+        image_format="png",
+        size_bytes=path.stat().st_size,
+        width=120,
+        height=60,
+    )
+
+    with pytest.raises(UnsupportedImageFormatError):
+        PillowPreprocessor().process(ref)
+
+
+# --- a failed write must not leave the intermediate behind -------------------
+
+
+def test_a_file_written_before_a_later_failure_is_cleaned_up(
+    photo, tmp_path, monkeypatch
+):
+    """`save()` succeeds, the next step does not.
+
+    Nobody downstream ever receives this path, so nothing will call `release()`
+    for it. Without the cleanup in `_write` it would sit in the output
+    directory until the process exited - one leftover per failed upload.
+    """
+    source = photo()
+    output = tmp_path / "prepared"
+    preprocessor = PillowPreprocessor(output_dir=output)
+
+    real_save = Image.Image.save
+
+    def save_then_fail(self, destination, *args, **kwargs):
+        real_save(self, destination, *args, **kwargs)
+        raise OSError(28, "No space left on device")
+
+    monkeypatch.setattr(Image.Image, "save", save_then_fail)
+
+    with pytest.raises(PreprocessingError):
+        preprocessor.process(source)
+
+    assert list(output.iterdir()) == []
+
+
+def test_the_original_survives_a_failed_preprocessing_run(photo, tmp_path, monkeypatch):
+    """Cleanup deletes our intermediate and never the user's evidence."""
+    source = photo()
+    original_bytes = source.path.read_bytes()
+    preprocessor = PillowPreprocessor(output_dir=tmp_path / "prepared")
+
+    real_save = Image.Image.save
+
+    def save_then_fail(self, destination, *args, **kwargs):
+        real_save(self, destination, *args, **kwargs)
+        raise OSError(28, "No space left on device")
+
+    monkeypatch.setattr(Image.Image, "save", save_then_fail)
+
+    with pytest.raises(PreprocessingError):
+        preprocessor.process(source)
+
+    assert source.path.exists()
+    assert source.path.read_bytes() == original_bytes
+
+
+def test_cleanup_does_not_swallow_the_failure_that_caused_it(
+    photo, tmp_path, monkeypatch
+):
+    """The exception explaining *why* must survive the tidying up."""
+    source = photo()
+    preprocessor = PillowPreprocessor(output_dir=tmp_path / "prepared")
+
+    real_save = Image.Image.save
+
+    def save_then_fail(self, destination, *args, **kwargs):
+        real_save(self, destination, *args, **kwargs)
+        raise OSError(28, "No space left on device")
+
+    monkeypatch.setattr(Image.Image, "save", save_then_fail)
+
+    with pytest.raises(PreprocessingError) as raised:
+        preprocessor.process(source)
+
+    assert isinstance(raised.value.__cause__, OSError)
+
+
+def test_nothing_is_left_behind_when_the_write_never_starts(
+    photo, tmp_path, monkeypatch
+):
+    """The other write failure: no file was created, so there is none to remove."""
+    source = photo()
+    output = tmp_path / "prepared"
+    preprocessor = PillowPreprocessor(output_dir=output)
+
+    def refuse(self, *args, **kwargs):
+        raise OSError(13, "Permission denied")
+
+    monkeypatch.setattr(Image.Image, "save", refuse)
+
+    with pytest.raises(PreprocessingError):
+        preprocessor.process(source)
+
+    assert list(output.iterdir()) == []
+
+
+def test_releasing_the_same_intermediate_twice_is_harmless(photo, tmp_path):
+    """Cleanup is idempotent, so the failure path and `release()` cannot clash."""
+    preprocessor = PillowPreprocessor(output_dir=tmp_path / "prepared")
+    processed = preprocessor.process(photo())
+
+    preprocessor.release(processed)
+    preprocessor.release(processed)
+
+    assert not processed.path.exists()

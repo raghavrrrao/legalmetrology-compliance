@@ -72,13 +72,29 @@ logger = logging.getLogger(__name__)
 NAME = "pillow-preprocessor"
 VERSION = "0.1.0"
 
+#: What a caller may declare, mapped to the canonical name it means. `jpg` and
+#: `jpeg` are the same format spelled two ways, and a declaration of either
+#: must match a decoded JPEG.
+_DECLARED_TO_CANONICAL: dict[str, str] = {
+    "jpeg": "jpeg",
+    "jpg": "jpeg",
+    "png": "png",
+    "webp": "webp",
+}
+
+#: Pillow's own format identifiers, mapped to the same canonical names. Pillow
+#: reports what it actually decoded, which is the authoritative answer about
+#: what the file is.
+_PILLOW_TO_CANONICAL: dict[str, str] = {
+    "JPEG": "jpeg",
+    "PNG": "png",
+    "WEBP": "webp",
+}
+
 #: Formats this stage will open. Mirrors `apps.images.constants.ALLOWED_FORMATS`
 #: rather than importing it - `ml/` must not depend on Django. The two lists
 #: are checked against each other by a backend test.
-SUPPORTED_FORMATS: frozenset[str] = frozenset({"jpeg", "jpg", "png", "webp"})
-
-#: Pillow's own format identifiers, for confirming what the bytes really are.
-_PILLOW_FORMATS: frozenset[str] = frozenset({"JPEG", "PNG", "WEBP"})
+SUPPORTED_FORMATS: frozenset[str] = frozenset(_DECLARED_TO_CANONICAL)
 
 
 @dataclass(frozen=True)
@@ -236,6 +252,7 @@ class PillowPreprocessor(ImagePreprocessor):
             PreprocessingError: the intermediate could not be written or read
                 back.
         """
+        destination: Path | None = None
         try:
             destination = self._destination()
             # PNG for the intermediate: lossless, so preprocessing never
@@ -244,6 +261,16 @@ class PillowPreprocessor(ImagePreprocessor):
             prepared.save(destination, format="PNG")
             size_bytes = destination.stat().st_size
         except Exception as exc:
+            # `save()` can fail *after* creating the file - a partial write on
+            # a full disk - and `stat()` can fail on a file that was written
+            # successfully. Either way nobody downstream receives this path, so
+            # nothing will ever call `release()` for it and it would sit in the
+            # output directory until the process exits. Discard it here.
+            #
+            # `_discard` never raises, so it cannot displace the failure being
+            # reported, and the original exception is still chained.
+            if destination is not None:
+                self._discard(destination)
             # One clause, because every outcome here is the same finding: the
             # image is fine and our storage is not. `OSError` covers the disk
             # and permission cases; Pillow can also raise its own encoder
@@ -265,23 +292,37 @@ class PillowPreprocessor(ImagePreprocessor):
     def release(self, processed: ImageRef) -> None:
         """Delete an intermediate this preprocessor wrote.
 
-        Never raises, and never deletes anything outside the directory it owns
-        - a preprocessor handed someone else's path must not remove it.
+        Never raises, idempotent, and never deletes anything outside the
+        directory it owns - a preprocessor handed someone else's path must not
+        remove it, and the original image is the evidence a disputed finding is
+        checked against.
+        """
+        self._discard(processed.path)
+
+    def _discard(self, path: Path) -> None:
+        """Best-effort removal of one file this preprocessor created.
+
+        The single place intermediates are deleted, used both by `release()`
+        and by the write-failure path in `_write`, so "only inside the
+        directory we own" is enforced once rather than twice.
+
+        Idempotent - deleting an already-deleted file is not an error - and it
+        never raises. Losing an extraction result, or displacing the exception
+        that explains a failure, because a temporary file could not be deleted
+        would be a strictly worse outcome than the leftover file.
         """
         try:
-            directory = self._output_dir()
-            path = processed.path.resolve()
-            if path.parent != directory.resolve():
+            owned = self._output_dir().resolve()
+            target = path.resolve()
+            if target.parent != owned:
                 logger.warning(
                     "Refusing to release a path outside the preprocessing "
                     "directory: %s",
-                    path,
+                    target,
                 )
                 return
-            path.unlink(missing_ok=True)
+            target.unlink(missing_ok=True)
         except Exception:
-            # Losing an extraction result because a temp file could not be
-            # deleted would be a strictly worse outcome than the leftover file.
             logger.warning("Could not release preprocessed image", exc_info=True)
 
     # --- transforms ---------------------------------------------------------
@@ -374,19 +415,59 @@ class PillowPreprocessor(ImagePreprocessor):
     def _check_format(self, pillow_format: str | None, declared: str) -> None:
         """Reject on what the bytes decode as, not on what the caller claimed.
 
-        `declared` is checked too, because a caller that says "webp" and ships
-        a PNG has a bug worth surfacing, but the decoder's answer is the
-        authoritative one.
+        Three checks, and the third is the one that matters most:
+
+        1. The declared format must be one we accept.
+        2. The decoded format must be one we accept - **the decoder's answer is
+           authoritative**, because it is derived from the bytes rather than
+           from anything a caller or a filename asserted.
+        3. The two must agree.
+
+        (3) is not redundant. Checking each side against the allowlist
+        independently passes a file declared `webp` that decodes as PNG, since
+        both are individually supported. That disagreement means the caller's
+        record of the file is wrong, and every consumer of that record - the
+        stored `ProductImage.image_format`, the API response, whatever a
+        reviewer is shown - is wrong with it. The image may well be readable;
+        the bookkeeping around it is not, so it is refused rather than silently
+        corrected.
+
+        `jpg` and `jpeg` are the same declaration, so they are compared after
+        canonicalisation rather than as strings.
+
+        Raises:
+            UnsupportedImageFormatError: either side is unsupported, they
+                disagree, or the decoder could not name the format at all.
         """
-        if declared.lower() not in SUPPORTED_FORMATS:
+        canonical_declared = _DECLARED_TO_CANONICAL.get(declared.strip().lower())
+        if canonical_declared is None:
             raise UnsupportedImageFormatError(
                 f"Unsupported image format {declared!r}. Supported: "
                 f"{', '.join(sorted(SUPPORTED_FORMATS))}."
             )
-        if pillow_format is not None and pillow_format.upper() not in _PILLOW_FORMATS:
+
+        if pillow_format is None:
+            # Pillow names the format of anything it opens from a file, so this
+            # means we have no authoritative answer to check against. Refused
+            # rather than assumed: an unidentifiable format is exactly what the
+            # decoded-format check exists to catch.
+            raise UnsupportedImageFormatError(
+                "The image format could not be determined from the file's "
+                "contents."
+            )
+
+        canonical_decoded = _PILLOW_TO_CANONICAL.get(pillow_format.strip().upper())
+        if canonical_decoded is None:
             raise UnsupportedImageFormatError(
                 f"File decoded as {pillow_format}, which is not a supported "
                 f"image format."
+            )
+
+        if canonical_decoded != canonical_declared:
+            raise UnsupportedImageFormatError(
+                f"Image format mismatch: declared {declared!r} but the file "
+                f"decodes as {canonical_decoded}. The decoded format is "
+                f"authoritative; the declared format is wrong."
             )
 
     # --- plumbing -----------------------------------------------------------
