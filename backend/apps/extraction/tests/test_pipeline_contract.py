@@ -200,7 +200,7 @@ def test_a_named_declaration_with_no_value_produces_no_field(extract):
 
 
 def test_a_named_declaration_with_no_value_survives_as_an_observation(extract):
-    """"Absent" and "printed but unreadable" must stay distinguishable.
+    """Absent" and "printed but unreadable" must stay distinguishable.
 
     The extraction pipeline puts these in its run metadata, which the backend
     persists verbatim into `raw_output`. That is the whole reason the signal
