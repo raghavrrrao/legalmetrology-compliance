@@ -47,6 +47,7 @@ from __future__ import annotations
 
 import json
 import logging
+from collections.abc import Mapping, Sequence
 from dataclasses import dataclass
 from pathlib import Path
 
@@ -337,6 +338,14 @@ def _checked_result(result: object) -> ExtractionResult:
         raise MalformedExtractionResult(
             f"Result carries {type(result.ocr).__name__}, not an OcrResult"
         )
+    # `OcrResult` and `ExtractionResult` are plain dataclasses with no
+    # `__post_init__`, so their container type hints are documentation rather
+    # than enforcement. Persistence calls `dict()` on the two mappings and
+    # `len()`/iteration on the two sequences, so an engine that leaves one None
+    # breaks inside the write with a bare TypeError - reported as a generic
+    # `internal_error` that names Python rather than the engine at fault.
+    _require_mapping(result.ocr.raw, what="ocr.raw")
+    _require_sequence(result.ocr.blocks, what="ocr.blocks")
     if (
         not isinstance(result.processing_ms, int)
         # `bool` is an `int` in Python, and `True` would be stored as 1ms - a
@@ -355,6 +364,9 @@ def _checked_result(result: object) -> ExtractionResult:
             "processing_ms must be a non-negative int no greater than "
             f"{_MAX_PROCESSING_MS}, got {result.processing_ms!r}"
         )
+
+    _require_mapping(result.metadata, what="metadata")
+    _require_sequence(result.fields, what="fields")
 
     for extracted in result.fields:
         if not isinstance(extracted, ExtractedField):
@@ -381,6 +393,42 @@ def _validated_key(key: LabelFieldKey) -> str:
     if not isinstance(key, LabelFieldKey):
         raise MalformedExtractionResult(f"Not a LabelFieldKey: {key!r}")
     return key.value
+
+
+def _require_mapping(value: object, *, what: str) -> None:
+    """Reject anything persistence would call `dict()` on and misread.
+
+    `Mapping` rather than `dict` on purpose: an engine is free to hand back any
+    mapping type, and the contract asks for one. The case worth stopping is not
+    only `None` - which at least fails loudly - but a list of pairs, which
+    `dict()` accepts silently. That would store an engine's diagnostics as
+    though they had been sent as a mapping, and `metadata` is where
+    `unread_declarations` rides, so a quiet reshape there loses the distinction
+    between "no MRP declared" and "the MRP could not be read".
+    """
+    if not isinstance(value, Mapping):
+        raise MalformedExtractionResult(
+            f"{what} must be a Mapping, got {type(value).__name__}"
+        )
+
+
+def _require_sequence(value: object, *, what: str) -> None:
+    """Reject anything persistence would iterate or measure and fail on.
+
+    A `list` is accepted as readily as a `tuple`: the contract names a tuple,
+    but nothing here depends on immutability and refusing a list would be
+    restrictive for no gain. `str` and `bytes` are excluded because they are
+    sequences that would iterate into characters rather than items.
+
+    A one-shot iterable is refused for a subtler reason than a crash: this
+    function iterates `fields`, and `_persist_result` iterates it again. A
+    generator would be empty by the second pass, and the run would be stored
+    COMPLETED with none of the declarations the engine actually read.
+    """
+    if not isinstance(value, Sequence) or isinstance(value, (str, bytes)):
+        raise MalformedExtractionResult(
+            f"{what} must be a sequence, got {type(value).__name__}"
+        )
 
 
 def _require_json_safe(value: object, *, what: str) -> None:

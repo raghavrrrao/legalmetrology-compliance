@@ -26,6 +26,7 @@ from __future__ import annotations
 import re
 from datetime import datetime
 from pathlib import Path
+from types import MappingProxyType
 
 import pytest
 from django.core.exceptions import ValidationError
@@ -196,6 +197,29 @@ class _TransactionProbePipeline:
         )
 
 
+#: A perfectly valid result whose two mappings are *not* `dict`. The contract
+#: asks for a `Mapping`, and `dict()` copies any of them, so an engine using
+#: `MappingProxyType` (the obvious way to hand back an immutable view of its own
+#: state) must not be turned away. `_BrokenPipeline` is only "returns exactly
+#: this payload" - here the payload is a good one.
+_MAPPING_SUBCLASS = "integration-mapping-subclass"
+_register(
+    _MAPPING_SUBCLASS,
+    lambda: _BrokenPipeline(
+        ExtractionResult(
+            status=ExtractionStatus.COMPLETED,
+            engine_name="mapping-subclass",
+            engine_version=_VERSION,
+            processing_ms=1,
+            ocr=OcrResult(
+                blocks=(TextBlock(text="Net Qty 500 g"),),
+                raw=MappingProxyType({"engine": "immutable-view"}),
+            ),
+            metadata=MappingProxyType({"unread_declarations": []}),
+        )
+    ),
+)
+
 _PROBE = "integration-transaction-probe"
 #: The registry caches instances, so the object the service resolves is this
 #: one and the test can read what it observed.
@@ -252,6 +276,57 @@ _MALFORMED = {
                 normalized_value={"parsed": datetime(2025, 4, 3)},
             ),
         ),
+    ),
+    # --- containers the persistence step calls dict()/len() on. None of these
+    # --- is stopped by the dataclasses: `OcrResult` and `ExtractionResult`
+    # --- have no __post_init__, so their type hints are unenforced at runtime.
+    "malformed-ocr-raw-none": ExtractionResult(
+        status=ExtractionStatus.COMPLETED,
+        engine_name="broken",
+        engine_version=_VERSION,
+        processing_ms=1,
+        ocr=OcrResult(blocks=(TextBlock(text="text"),), raw=None),
+    ),
+    "malformed-ocr-raw-not-a-mapping": ExtractionResult(
+        status=ExtractionStatus.COMPLETED,
+        engine_name="broken",
+        engine_version=_VERSION,
+        processing_ms=1,
+        ocr=OcrResult(blocks=(TextBlock(text="text"),), raw=["engine", "output"]),
+    ),
+    "malformed-ocr-blocks-none": ExtractionResult(
+        status=ExtractionStatus.COMPLETED,
+        engine_name="broken",
+        engine_version=_VERSION,
+        processing_ms=1,
+        ocr=OcrResult(blocks=None),
+    ),
+    "malformed-metadata-none": ExtractionResult(
+        status=ExtractionStatus.COMPLETED,
+        engine_name="broken",
+        engine_version=_VERSION,
+        processing_ms=1,
+        ocr=OcrResult(blocks=(TextBlock(text="text"),)),
+        metadata=None,
+    ),
+    # Not a crash but a silent misreading: `dict()` accepts a list of pairs, so
+    # without a check this is quietly stored as though the engine had sent a
+    # mapping - and `unread_declarations` would be gone from it unnoticed.
+    "malformed-metadata-not-a-mapping": ExtractionResult(
+        status=ExtractionStatus.COMPLETED,
+        engine_name="broken",
+        engine_version=_VERSION,
+        processing_ms=1,
+        ocr=OcrResult(blocks=(TextBlock(text="text"),)),
+        metadata=[("unread_declarations", [])],
+    ),
+    "malformed-fields-none": ExtractionResult(
+        status=ExtractionStatus.COMPLETED,
+        engine_name="broken",
+        engine_version=_VERSION,
+        processing_ms=1,
+        ocr=OcrResult(blocks=(TextBlock(text="text"),)),
+        fields=None,
     ),
     "malformed-raw-output": ExtractionResult(
         status=ExtractionStatus.COMPLETED,
@@ -589,6 +664,28 @@ def test_a_write_that_fails_part_way_leaves_no_half_result(
     # the run is FAILED, so `produced_usable_output` is False and the
     # compliance engine treats it as inconclusive.
     assert "Net Qty: 500 g" in run.recognised_text
+
+
+def test_a_mapping_that_is_not_a_dict_is_still_accepted(product_image):
+    """The container check is `Mapping`, and narrowing it to `dict` would break.
+
+    `ocr.raw` and `metadata` are documented as `Mapping`, and persistence copies
+    them with `dict()`, which accepts any of them. An engine returning a
+    `MappingProxyType` - the obvious way to expose an immutable view of its own
+    diagnostics - is entirely in contract.
+
+    Pinned because the tightening is invisible: swapping `Mapping` for `dict` in
+    `_require_mapping` passes every rejection test in this file while turning a
+    legitimate engine's output into a contract breach. The `metadata` half
+    matters most, since that is what carries `unread_declarations`.
+    """
+    run = _run(product_image, _MAPPING_SUBCLASS)
+
+    assert run.status == ExtractionRun.Status.COMPLETED
+    assert run.produced_usable_output is True
+    # Copied through verbatim, not just tolerated at the gate.
+    assert run.raw_output["engine_raw"] == {"engine": "immutable-view"}
+    assert run.raw_output["metadata"] == {"unread_declarations": []}
 
 
 # --- F. traceability --------------------------------------------------------
