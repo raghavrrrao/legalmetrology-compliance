@@ -39,6 +39,13 @@ import re
 import unicodedata
 from decimal import Decimal, InvalidOperation
 
+# The one import from `patterns`, and it is data rather than a pattern: the
+# worded counts `DURATION` can capture and this module has to resolve. Keeping
+# a second copy here would let the regex and the lookup drift into disagreeing
+# about which words are countable. `patterns` imports nothing from this module,
+# so there is no cycle.
+from labelextract.fields.patterns import WORD_COUNTS as _WORD_COUNTS
+
 #: Always present on a normalised mapping.
 UNCERTAIN_KEY = "uncertain"
 #: Present only when `uncertain` is True. A list of short, specific strings.
@@ -372,13 +379,44 @@ def normalise_duration(count_text: str, unit_text: str) -> dict:
     not contain, and a wrong expiry is exactly the kind of fabricated value
     this layer exists to avoid.
     """
-    count, reason = parse_decimal(count_text)
+    worded = _WORD_COUNTS.get(normalise_text(count_text).lower())
+    if worded is not None:
+        count, reason = Decimal(worded), None
+    else:
+        count, reason = parse_decimal(count_text)
     if count is None or count <= 0:
         return uncertain(reason or "duration could not be parsed")
     unit = normalise_text(unit_text).lower().rstrip("s.")
     if unit not in {"day", "week", "month", "year"}:
         return uncertain(f"unrecognised duration unit {unit_text!r}")
     return certain(duration_value=_as_number(count), duration_unit=f"{unit}s")
+
+
+def normalise_fssai_licence(digits_text: str) -> dict:
+    """Structure an FSSAI licence number.
+
+    An FSSAI licence is exactly 14 digits. That makes this the rare declaration
+    whose *format* can be checked without knowing anything about the product,
+    and the check is worth making: OCR truncated a digit on two of the packs
+    this was measured against, and a 13-digit licence number recorded as
+    correct would be a defect in a compliance record.
+
+    A wrong length is reported as **uncertain with the digits kept**, not
+    discarded. The licence was plainly declared; what is in doubt is whether we
+    read all of it, and that is exactly what a reviewer needs to see. Nothing
+    is repaired - no digit is invented to reach fourteen.
+    """
+    digits = re.sub(r"\D", "", normalise_text(digits_text))
+    if not digits:
+        return uncertain("no digits were read after the FSSAI keyword")
+    if len(digits) != 14:
+        return uncertain(
+            f"an FSSAI licence number is 14 digits; {len(digits)} were read, "
+            f"so this reading is incomplete or has run into adjacent text",
+            licence_number=digits,
+            digit_count=len(digits),
+        )
+    return certain(licence_number=digits, digit_count=14)
 
 
 def _parse_int(text: str | None) -> int | None:

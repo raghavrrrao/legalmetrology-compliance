@@ -68,18 +68,42 @@ logger = logging.getLogger(__name__)
 #: the Tesseract binary, whose version is recorded per run in `OcrResult.raw`.
 #: Bump it whenever a change would make two runs incomparable.
 NAME = "tesseract"
-VERSION = "0.2.0"
+#: 0.2.1 changed the *extraction* rules, not the engine settings: a
+#: keyword-shaped batch value is now refused, an ambiguous net quantity is
+#: withheld, and a number is no longer truncated to three digits. Two runs
+#: recorded either side of it are not comparable, so the version moves.
+#:
+#: 0.2.0 is **not** registered alongside it, which departs from the rule the
+#: rest of this file follows. Keeping a version resolvable exists so a stored
+#: run stays reproducible; 0.2.0's extraction layer fabricated batch numbers
+#: for packages that declared none, and reproducing that would mean shipping a
+#: switch whose only effect is to turn a violation into a pass. The changes
+#: also live inside `RuleBasedFieldExtractor` itself, which every registered
+#: version shares, so preserving them would mean forking a known-unsafe
+#: extractor. A run recorded under 0.2.0 stays interpretable - its name and
+#: version are stored as plain text - it just cannot be re-executed.
+VERSION = "0.2.1"
 
 #: The original configuration, kept registered rather than replaced.
 #:
-#: 0.2.0 changed the page-segmentation mode and turned on upscaling, which
-#: makes its output incomparable with anything recorded under 0.1.0. Both are
-#: registered so a stored `ExtractionRun` from before the change is still
-#: reproducible, and so the improvement can be re-measured on any image rather
-#: than taken on trust:
+#: The 0.2.x line changed the page-segmentation mode and turned on upscaling,
+#: which makes its output incomparable with anything recorded under 0.1.0. This
+#: one stays registered so a stored `ExtractionRun` from before that change is
+#: still reproducible, and so the improvement can be re-measured on any image
+#: rather than taken on trust.
+#:
+#: **`registry` holds exactly two tesseract versions: this one and `VERSION`.**
+#: 0.2.0 is the gap, for the reason given above it, so the pair that resolve
+#: today are:
 #:
 #:     python -m labelextract.cli LABEL.jpg --pipeline-version 0.1.0
-#:     python -m labelextract.cli LABEL.jpg --pipeline-version 0.2.0
+#:     python -m labelextract.cli LABEL.jpg --pipeline-version 0.2.1
+#:
+#: `--pipeline-version 0.2.0` raises `PipelineNotFoundError`. That is a real
+#: departure from the register-alongside convention the rest of this file
+#: describes, and it is recorded here as the current state rather than tidied
+#: away: every version this file names is either registered or explicitly said
+#: not to be.
 #:
 #: It is frozen. Nothing about it should be tuned again - that is what makes it
 #: a baseline.
@@ -92,6 +116,10 @@ _LANGUAGE_CODE = re.compile(r"^[a-z]{3}(_[A-Za-z]{2,})?$")
 
 #: Tesseract's sentinel for "this row is not a recognised word".
 _NO_CONFIDENCE = -1
+
+#: The only rotations whose bounding-box mapping is exact. See
+#: `_unrotated_word_data`.
+_RIGHT_ANGLES = frozenset({0, 90, 180, 270})
 
 
 @dataclass(frozen=True)
@@ -138,6 +166,42 @@ class TesseractOptions:
     #: exactly the misreadings a reviewer needs to see, and the confidence
     #: travels with each block anyway.
     minimum_word_confidence: float = 0.0
+    #: Ask Tesseract's OSD which way up the page is, and rotate before
+    #: recognising when it is confident.
+    #:
+    #: **Off by default, and that is a measured decision rather than caution.**
+    #:
+    #: A photograph of a label rotated 90 degrees is unreadable to this
+    #: pipeline - `--psm 3` is explicitly "no orientation detection" - so OSD
+    #: looks like the obvious fix. It was measured on the ten-product set
+    #: before being wired in, and the numbers did not support turning it on:
+    #:
+    #: - **OSD was wrong on the image that needed it.** On a rotated masala
+    #:   pack it reported `rotate=180` at confidence 1.32. The rotation that
+    #:   actually recovers the declaration panel is 270, which lifts the
+    #:   recognised legal-metrology keywords from 0/7 to 5/7. Following OSD
+    #:   would have reached 1/7.
+    #: - **OSD was confidently wrong on a good image.** On the best-recognised
+    #:   carton in the set it reported `rotate=180` - at confidence 0.12. Acting
+    #:   on that would have cut the recognised text from 1223 characters to 956
+    #:   and destroyed the one image the pipeline reads well.
+    #: - **It is not cheap.** An OSD pass measured 578-589 ms against a full
+    #:   recognition pass of 378-702 ms on the same images: an 82-156% increase
+    #:   in per-image processing time.
+    #:
+    #: So it is available, correct, and off. `minimum_orientation_confidence`
+    #: is what makes enabling it safe: on the images above, a threshold of 2.0
+    #: refuses both wrong answers. Anyone turning this on should re-measure on
+    #: their own images first - and note that a threshold high enough to be
+    #: safe made it a no-op on every image in our set.
+    #:
+    #: Rotating never costs a second recognition pass: the image is rotated
+    #: before the single `image_to_data` call, and boxes are mapped back to
+    #: source coordinates exactly.
+    orientation_detection: bool = False
+    #: OSD confidence below which its answer is ignored. Tesseract's own scale,
+    #: which is unbounded and typically 0-5; see `orientation_detection`.
+    minimum_orientation_confidence: float = 2.0
 
     def __post_init__(self) -> None:
         if not self.languages:
@@ -153,6 +217,8 @@ class TesseractOptions:
             raise ValueError("timeout_seconds must be positive")
         if not 0 <= self.minimum_word_confidence <= 100:
             raise ValueError("minimum_word_confidence must be within 0-100")
+        if self.minimum_orientation_confidence < 0:
+            raise ValueError("minimum_orientation_confidence must not be negative")
 
     @property
     def language_argument(self) -> str:
@@ -183,6 +249,35 @@ class TesseractRunner:
         The shape is pytesseract's `image_to_data(output_type=DICT)`: parallel
         lists keyed by `level`, `block_num`, `par_num`, `line_num`, `word_num`,
         `left`, `top`, `width`, `height`, `conf`, `text`.
+
+        When `options.orientation_detection` is on and OSD is confident, the
+        image is rotated before recognition and the returned geometry is
+        already mapped back to the *source* image's coordinate system, so a
+        caller never sees rotated-space boxes.
+        """
+        raise NotImplementedError
+
+    def orientation(
+        self, path: Path, options: TesseractOptions
+    ) -> tuple[int, float] | None:
+        """Tesseract's view of which way up the page is.
+
+        Returns `(degrees_to_rotate, confidence)`, or None when OSD could not
+        answer. `degrees_to_rotate` is **counter-clockwise** and one of
+        0/90/180/270, ready to hand to Pillow.
+
+        The conversion happens here, once, and it matters: Tesseract's OSD
+        reports the rotation to apply *clockwise*, while `Image.rotate()` turns
+        counter-clockwise. Passing OSD's number straight to Pillow turns a
+        90-degree error into a 180-degree one - the image comes out upside
+        down, recognition still returns text, and nothing fails. Measured on a
+        deliberately rotated pack: OSD said `rotate=90`, applying 90 CCW left
+        the net quantity unreadable, and applying it clockwise recovered it.
+
+        None rather than `(0, 0.0)` when OSD fails: "the page is upright" and
+        "nobody could tell" are different facts, and only the first is a
+        reading. OSD legitimately fails on images with too little text to
+        analyse, which is common on a front panel.
         """
         raise NotImplementedError
 
@@ -251,13 +346,25 @@ class PytesseractRunner(TesseractRunner):
         try:
             with Image.open(path) as image:
                 image.load()
-                return pytesseract.image_to_data(
+                rotation = 0
+                if options.orientation_detection:
+                    rotation = self._rotation_for(path, options)
+                source_size = image.size
+                if rotation:
+                    # Rotated before the single recognition pass, never after
+                    # a first one: enabling orientation detection costs an OSD
+                    # pass, not a second full OCR.
+                    image = image.rotate(rotation, expand=True)
+                data = pytesseract.image_to_data(
                     image,
                     lang=options.language_argument,
                     config=options.config_argument,
                     timeout=options.timeout_seconds,
                     output_type=pytesseract.Output.DICT,
                 )
+                if rotation:
+                    data = _unrotated_word_data(data, rotation, source_size)
+                return data
         # Order matters, and not only for tidiness: pytesseract's exceptions
         # subclass builtins, so a broader clause placed first silently swallows
         # a narrower one.
@@ -287,6 +394,80 @@ class PytesseractRunner(TesseractRunner):
             # What is left of RuntimeError once TesseractError is taken out:
             # pytesseract raises a plain one when `timeout` expires.
             raise OcrFailureError(f"Tesseract timed out or aborted: {exc}") from exc
+
+    def _rotation_for(self, path: Path, options: TesseractOptions) -> int:
+        """The rotation to apply, or 0 to leave the image alone.
+
+        Every failure here returns 0. Orientation detection is an *optimisation*
+        on top of a pipeline that already works on upright images; a page whose
+        orientation cannot be determined must be recognised as it arrived, not
+        refused. Rotating on a guess is the one outcome worse than not
+        rotating, because it destroys images that were fine.
+        """
+        try:
+            answer = self.orientation(path, options)
+        except EngineNotAvailableError:
+            raise
+        except Exception:
+            logger.debug("Orientation detection failed; recognising as-is",
+                         exc_info=True)
+            return 0
+        if answer is None:
+            return 0
+        degrees, confidence = answer
+        if confidence < options.minimum_orientation_confidence:
+            logger.debug(
+                "Ignoring OSD rotation %s: confidence %.2f is below the %.2f "
+                "threshold", degrees, confidence,
+                options.minimum_orientation_confidence,
+            )
+            return 0
+        return degrees % 360
+
+    def orientation(
+        self, path: Path, options: TesseractOptions
+    ) -> tuple[int, float] | None:
+        pytesseract = self._pytesseract()
+        try:
+            from PIL import Image
+        except ImportError as exc:
+            raise EngineNotAvailableError(
+                "Pillow is not installed. Install the OCR extra: "
+                "pip install -e ./ml[ocr]"
+            ) from exc
+
+        try:
+            with Image.open(path) as image:
+                image.load()
+                osd = pytesseract.image_to_osd(
+                    image,
+                    timeout=options.timeout_seconds,
+                    output_type=pytesseract.Output.DICT,
+                )
+        except pytesseract.TesseractNotFoundError as exc:
+            raise EngineNotAvailableError(
+                "The tesseract binary was not found. Install Tesseract OCR and "
+                "make sure it is on PATH; see ml/README.md."
+            ) from exc
+        except Exception:
+            # OSD refuses on images with too little text to analyse, which is
+            # normal for a front panel. Not a reading, so not a result.
+            logger.debug("OSD produced no orientation", exc_info=True)
+            return None
+
+        try:
+            clockwise = int(osd["rotate"]) % 360
+            confidence = float(osd["orientation_conf"])
+        except (KeyError, TypeError, ValueError):
+            return None
+        # OSD's clockwise convention -> Pillow's counter-clockwise one.
+        degrees = (360 - clockwise) % 360
+        if degrees not in _RIGHT_ANGLES:
+            # Only right angles are exactly invertible for bounding boxes, and
+            # an inexact box is a claim about where on the package a
+            # declaration was read.
+            return None
+        return degrees, confidence
 
 
 class TesseractOcrEngine(OcrEngine):
@@ -504,6 +685,100 @@ def _confidence_at(data: Mapping[str, Sequence], index: int) -> float | None:
     return max(0.0, min(1.0, value / 100.0))
 
 
+def _unrotated_word_data(
+    data: Mapping[str, Sequence], rotation: int, source_size: tuple[int, int]
+) -> dict[str, Sequence]:
+    """Map word geometry from a rotated image back to source coordinates.
+
+    Rotation is why bounding boxes and orientation correction cannot be done
+    independently. Recognising a rotated copy puts every box in the rotated
+    image's coordinate system, so an evidence overlay drawn on the photograph
+    the reviewer is looking at would point at the wrong part of the package -
+    and nothing would fail while it did. That is the same defect resizing had
+    before `ExtractionPipeline` learned to map boxes back, and it is worse
+    here, because a 90-degree error moves a box to a completely different
+    region rather than merely scaling it.
+
+    This mapping is **exact**, not approximate, which is why `orientation()`
+    refuses any angle that is not a right angle.
+
+    The arithmetic is in **edge coordinates, not pixel centres**, and the
+    difference is not cosmetic. Tesseract reports a box as `left, top, width,
+    height`, so `left + width` is the exclusive right edge - one past the last
+    pixel. Treating coordinates as the continuous grid lines between pixels,
+    Pillow's counter-clockwise `rotate(angle, expand=True)` maps a source of
+    `W x H` as:
+
+        90   source (x, y) -> rotated (y, W-x),  rotated size H x W
+        180  source (x, y) -> rotated (W-x, H-y), size W x H
+        270  source (x, y) -> rotated (H-y, x),  rotated size H x W
+
+    and `_unrotate_point` inverts exactly those. Written in pixel-centre form
+    the constants would each gain a `-1` (`W-1-x`), which is the natural way to
+    write it and is **wrong here**: applied to an exclusive corner it shrinks
+    every box by a pixel on the rotated axis and shifts it by one. Mapping both
+    corners in edge coordinates and taking min/max returns the source rectangle
+    with no error at all, which
+    `tests/test_ocr_tesseract.py::test_a_rotated_box_maps_back_to_its_source_box`
+    pins against a real Pillow rotation rather than against this comment.
+
+    Corners are re-normalised afterwards because the inverse of a rotation
+    swaps which corner is top-left.
+
+    The `raw` word list downstream is documented as verbatim engine output, and
+    it stays that way: this rewrites geometry only, before anything reads it,
+    so no consumer ever sees a coordinate system it was not told about.
+    """
+    if rotation % 360 == 0:
+        return dict(data)
+
+    width, height = source_size
+    mapped = {key: list(values) for key, values in data.items()}
+    count = len(mapped.get("text", []))
+
+    for index in range(count):
+        left = _int_at(data, "left", index)
+        top = _int_at(data, "top", index)
+        box_width = _int_at(data, "width", index)
+        box_height = _int_at(data, "height", index)
+
+        corners = [
+            _unrotate_point(left, top, rotation, width, height),
+            _unrotate_point(
+                left + box_width, top + box_height, rotation, width, height
+            ),
+        ]
+        xs = [point[0] for point in corners]
+        ys = [point[1] for point in corners]
+        mapped["left"][index] = min(xs)
+        mapped["top"][index] = min(ys)
+        mapped["width"][index] = max(xs) - min(xs)
+        mapped["height"][index] = max(ys) - min(ys)
+
+    return mapped
+
+
+def _unrotate_point(
+    x: int, y: int, rotation: int, width: int, height: int
+) -> tuple[int, int]:
+    """One rotated-space point, expressed in source-image space.
+
+    Edge coordinates, not pixel centres - see `_unrotated_word_data`. A single
+    point round-trips one pixel off along each rotated axis by design; a *box*
+    round-trips exactly, because its second corner is exclusive and the offset
+    cancels. Boxes are the only thing this is used for.
+    """
+    if rotation == 90:
+        # forward: (x, y) -> (y, W-x); inverse of the rotated point (x, y):
+        return (width - y, x)
+    if rotation == 180:
+        return (width - x, height - y)
+    if rotation == 270:
+        # forward: (x, y) -> (H-y, x); inverse of the rotated point (x, y):
+        return (y, height - x)
+    return (x, y)
+
+
 def _int_at(data: Mapping[str, Sequence], key: str, index: int) -> int:
     column = data.get(key)
     if column is None or index >= len(column):
@@ -560,7 +835,7 @@ def build_baseline_pipeline() -> ExtractionPipeline:
     a change against, and a way to reproduce a run recorded before the change.
 
     Kept deliberately free of tuning. If it needs adjusting, the thing that
-    needs adjusting is 0.2.0.
+    needs adjusting is the current `VERSION`.
     """
     from labelextract.fields import RuleBasedFieldExtractor
     from labelextract.preprocessing import PillowPreprocessor, PreprocessingConfig

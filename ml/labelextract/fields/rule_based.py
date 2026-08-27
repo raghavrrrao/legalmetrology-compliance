@@ -20,6 +20,32 @@ Three rules it will not break
    whether one was required, or whether the declared value is correct. Both of
    those come from verified `ComplianceRule` rows.
 
+One rule for cross-references
+-----------------------------
+Labels routinely say *where* a declaration is printed - `See Above Panel for
+Date of Packaging, MRP Rs. (incl. of all taxes), Batch No. & Use By Date`. Two
+detectors used to treat any such phrase as a veto over the whole line, and the
+other six ignored it, so the same sentence fragment suppressed a net quantity
+while leaving an MRP and a best-before date untouched:
+
+    MRP Rs. 40.00 (see below for offers)        ->  40.00 extracted
+    Net Quantity: 500 g (see below for offers)  ->  nothing at all
+    Best Before 12/2026. See above panel.       ->  2026-12 extracted
+
+The rule is now the same everywhere, and it is about the *value*, not the
+phrase:
+
+- a usable value on the line is extracted, whatever else the line says;
+- a declaration named with no usable value produces no field, and
+  `unread_declarations` records that it was named;
+- nothing is ever read out of the reference text itself.
+
+The third point is what the veto was really protecting, and it is enforced
+where it belongs - `_batch_value`, `DECLARATION_STOPWORDS` and the `validation`
+stage refuse `No`, `panel`, `above` and the rest as values. That guard does not
+need to know a cross-reference phrase was present, which is why there is no
+longer a pattern for one.
+
 Where it is weak, stated plainly
 --------------------------------
 - English only. Devanagari text is recognised by the OCR layer when the
@@ -58,17 +84,23 @@ from labelextract.fields.normalisation import (
     is_uncertain,
     normalise_date,
     normalise_duration,
+    normalise_fssai_licence,
     normalise_price,
     normalise_quantity,
     normalise_text,
     uncertain,
 )
+from labelextract.fields.validation import validate
 from labelextract.interfaces import FieldExtractor
 
 logger = logging.getLogger(__name__)
 
 NAME = "rule-based-fields"
-VERSION = "0.1.0"
+#: 0.2.0 added the refusal guards (a keyword-shaped value is not a value, an
+#: ambiguous quantity is withheld), the `validation` stage, and the FSSAI
+#: licence field. What this extractor emits for the same text changed, so the
+#: version moves with it.
+VERSION = "0.2.0"
 
 #: How a candidate was located. Recorded on every field so a reviewer can tell
 #: "the label said MRP" from "this line merely looked like a price".
@@ -82,6 +114,7 @@ SUPPORTED_KEYS: frozenset[LabelFieldKey] = frozenset(
         LabelFieldKey.NET_QUANTITY,
         LabelFieldKey.RETAIL_SALE_PRICE,
         LabelFieldKey.BATCH_NUMBER,
+        LabelFieldKey.FSSAI_LICENCE,
         LabelFieldKey.DATE_OF_MANUFACTURE,
         LabelFieldKey.DATE_OF_PACKING,
         LabelFieldKey.DATE_OF_IMPORT,
@@ -129,11 +162,23 @@ UNSUPPORTED_KEYS: frozenset[LabelFieldKey] = frozenset(LabelFieldKey) - SUPPORTE
 #:   marked uncertain when it finds the keyword and no contact details, so
 #:   there is nothing left unresolved to report.
 #: - `manufacturer_name`, `packer_name`, `importer_name`, `other`,
-#:   `batch_number`, `country_of_origin`. Their patterns capture keyword *and*
-#:   value together, so a keyword with nothing after it never matches at all.
+#:   `country_of_origin`. Their patterns capture keyword *and* value together,
+#:   so a keyword with nothing after it never matches at all.
+#:
+#: `batch_number` was on that list and has moved off it. The reasoning that put
+#: it there - "the pattern captures keyword and value together, so a bare
+#: keyword never matches" - stopped being true once `_batch_value` began
+#: *rejecting* a captured value that is only the keyword's own suffix. A pack
+#: printing `Batch No. :` with nothing after it now correctly produces no
+#: field, and without an anchor here that would be silent - indistinguishable
+#: from a pack carrying no batch declaration at all. `BATCH_ANCHOR` is stricter
+#: than the extraction pattern's opening for the usual reason: evidence has to
+#: be unambiguous, so a bare `bn` or `b no` does not qualify.
 _KEYWORD_ANCHORS: tuple[tuple[LabelFieldKey, re.Pattern[str]], ...] = (
     (LabelFieldKey.NET_QUANTITY, P.NET_QUANTITY_ANCHOR),
     (LabelFieldKey.RETAIL_SALE_PRICE, P.MRP_KEYWORD),
+    (LabelFieldKey.BATCH_NUMBER, P.BATCH_ANCHOR),
+    (LabelFieldKey.FSSAI_LICENCE, P.FSSAI_ANCHOR),
     (LabelFieldKey.BEST_BEFORE, dict(P.DATE_KEYWORDS)["best_before"]),
     (LabelFieldKey.DATE_OF_IMPORT, dict(P.DATE_KEYWORDS)["date_of_import"]),
 )
@@ -274,6 +319,7 @@ class RuleBasedFieldExtractor(FieldExtractor):
             self._net_quantity,
             self._retail_sale_price,
             self._batch_number,
+            self._fssai_licence,
             self._dates,
             self._consumer_care_contact,
             self._country_of_origin,
@@ -285,24 +331,34 @@ class RuleBasedFieldExtractor(FieldExtractor):
     def _net_quantity(self, lines: list[_Line]) -> list[_Candidate]:
         found: list[_Candidate] = []
         for line in lines:
-            if P.NON_DECLARATION_CONTEXT.search(line.text):
+            has_keyword = bool(P.NET_QUANTITY_KEYWORD.search(line.text))
+
+            if P.NON_DECLARATION_CONTEXT.search(line.text) and not (
+                P.NET_QUANTITY_ANCHOR.search(line.text)
+            ):
                 # A nutrition-panel line. Its numbers are real quantities and
                 # none of them is the declared net quantity.
+                #
+                # It is a whole-line veto, so an explicit net-quantity anchor
+                # overrides it. `Net Quantity: 500 g. See above for nutrition`
+                # is a declaration that happens to mention the panel, and the
+                # bare word "nutrition" was enough to discard it entirely.
+                #
+                # `NET_QUANTITY_ANCHOR` rather than `NET_QUANTITY_KEYWORD`, and
+                # the difference is the whole safety of the override: the
+                # keyword ends in a bare `\bquantity\b`, so a genuine panel
+                # heading reading `Quantity per 100 g` would cancel its own
+                # guard and be read as a 100 g declaration. The anchor requires
+                # `Net Qty` / `Net Weight` / `Net Contents` - which is what a
+                # declaration prints and a nutrition panel does not.
                 continue
-
-            has_keyword = bool(P.NET_QUANTITY_KEYWORD.search(line.text))
             if self.require_net_quantity_keyword and not has_keyword:
                 continue
 
-            match = P.QUANTITY.search(line.text)
-            if match is None:
+            normalized = _quantity_on(line.text)
+            if normalized is None:
                 continue
 
-            normalized = normalise_quantity(
-                match.group("value"),
-                match.group("unit"),
-                pack_count_text=match.group("pack"),
-            )
             if not has_keyword:
                 normalized = _mark_uncertain(
                     normalized,
@@ -376,14 +432,27 @@ class RuleBasedFieldExtractor(FieldExtractor):
     # --- batch / lot --------------------------------------------------------
 
     def _batch_number(self, lines: list[_Line]) -> list[_Candidate]:
+        """Locate a batch or lot code.
+
+        No cross-reference guard, deliberately. `See Above Panel for ... Batch
+        No. & Use By Date` used to be skipped as a whole line; it does not need
+        to be, because the only thing such a line can offer is `No` - and
+        `_batch_value` refuses that, as does the `validation` stage behind it.
+        Vetoing the line as well cost `Batch No.: A123. Refer above panel for
+        storage` its perfectly readable code. See the module docstring.
+        """
         found: list[_Candidate] = []
         for line in lines:
             match = P.BATCH_NUMBER.search(line.text)
             if match is None:
                 continue
 
-            value = normalise_text(match.group("value")).strip(P.TRAILING_PUNCTUATION)
-            if not value:
+            value = _batch_value(match.group("value"))
+            if value is None:
+                # The keyword was printed with no usable value after it. No
+                # field: a keyword is not a batch code, and emitting one would
+                # record a declaration the package may never have made.
+                # `unread_declarations` reports the keyword instead.
                 continue
 
             if _looks_like_a_date(value):
@@ -407,6 +476,44 @@ class RuleBasedFieldExtractor(FieldExtractor):
                     signature=value,
                 )
             )
+        return found
+
+    # --- FSSAI licence ------------------------------------------------------
+
+    def _fssai_licence(self, lines: list[_Line]) -> list[_Candidate]:
+        """Locate an FSSAI licence number.
+
+        Added because this declaration is mandatory on every packaged food and
+        was being discarded despite being among the *best*-recognised text on
+        the labels measured - three packs returned their licence numbers
+        digit-perfect while their MRP was unreadable.
+
+        It is the safest field in this set to add, for one reason: an FSSAI
+        licence is exactly 14 digits, so a match can be checked against its own
+        format without knowing anything about the product. A wrong digit count
+        is reported uncertain rather than dropped, because a truncated licence
+        number is something a reviewer needs to see, and rather than silently
+        corrected, because inventing a digit would produce a licence number
+        indistinguishable from a correctly read one.
+
+        A pack often prints several licence numbers - one per manufacturing
+        site, keyed A) to O). `_resolve` reports the disagreement and lists
+        them all rather than picking one, which is the honest answer: this
+        layer cannot know which site made the unit in front of the camera.
+        """
+        found: list[_Candidate] = []
+        for line in lines:
+            for match in P.FSSAI_LICENCE.finditer(line.text):
+                normalized = normalise_fssai_licence(match.group("value"))
+                found.append(
+                    _candidate(
+                        LabelFieldKey.FSSAI_LICENCE,
+                        line,
+                        normalized,
+                        MATCHED_BY_KEYWORD,
+                        signature=normalized.get("licence_number"),
+                    )
+                )
         return found
 
     # --- dates --------------------------------------------------------------
@@ -474,18 +581,35 @@ class RuleBasedFieldExtractor(FieldExtractor):
     def _consumer_care_contact(self, lines: list[_Line]) -> list[_Candidate]:
         found: list[_Candidate] = []
         for line in lines:
+            # A licence line is long digit runs introduced by a `No.`, which
+            # is exactly what the phone patterns look for. Measured: an FSSAI
+            # licence number was reported as a consumer-care phone number.
+            # Email is still read, because an address on such a line is
+            # unambiguous.
+            is_licence_line = bool(P.LICENCE_NUMBER_CONTEXT.search(line.text))
+
             emails = P.EMAIL.findall(line.text)
-            toll_free = P.TOLL_FREE_PHONE.findall(line.text)
-            mobiles = [
+            toll_free = (
+                [] if is_licence_line else P.TOLL_FREE_PHONE.findall(line.text)
+            )
+            mobiles = [] if is_licence_line else [
                 number
                 for number in P.MOBILE_PHONE.findall(line.text)
                 if not any(number in tf for tf in toll_free)
             ]
+            # Landlines are matched after the other two and de-duplicated
+            # against them, because an STD-code pattern is the loosest of the
+            # three and must not claim digits another pattern already read.
+            landlines = [] if is_licence_line else [
+                number
+                for number in P.LANDLINE_PHONE.findall(line.text)
+                if not any(number in other for other in [*toll_free, *mobiles])
+            ]
             has_keyword = bool(P.CONTACT_KEYWORD.search(line.text))
 
-            if not (emails or toll_free or mobiles or has_keyword):
+            if not (emails or toll_free or mobiles or landlines or has_keyword):
                 continue
-            if has_keyword and not (emails or toll_free or mobiles):
+            if has_keyword and not (emails or toll_free or mobiles or landlines):
                 # "Customer care:" with the number on another line. Recorded as
                 # located-but-unread rather than dropped, because the absence
                 # of a value here is a different fact from the absence of the
@@ -498,7 +622,9 @@ class RuleBasedFieldExtractor(FieldExtractor):
                 values: dict[str, Any] = {}
                 if emails:
                     values["emails"] = [normalise_text(e) for e in emails]
-                phones = [normalise_text(p) for p in [*toll_free, *mobiles]]
+                phones = [
+                    normalise_text(p) for p in [*toll_free, *mobiles, *landlines]
+                ]
                 if phones:
                     values["phones"] = phones
                 if has_keyword or toll_free or emails:
@@ -506,6 +632,8 @@ class RuleBasedFieldExtractor(FieldExtractor):
                 else:
                     # A bare ten-digit number with no keyword could belong to
                     # the manufacturer's address rather than to consumer care.
+                    # A bare landline even more so - an STD code with no
+                    # keyword is most often part of the printed address.
                     normalized = uncertain(
                         "a phone number was read with no consumer-care keyword "
                         "on the line",
@@ -764,6 +892,190 @@ def _looks_like_a_date(value: str) -> bool:
     return _first_date_in(value) is not None
 
 
+def _quantity_on(text: str) -> dict | None:
+    """The net quantity declared on one line, or None if there is none.
+
+    This reads the **whole line** rather than the first thing on it that looks
+    like a quantity, because a declaration line routinely carries more than one
+    number and the first is often the wrong one.
+
+    The case that forced this, from a real Dove carton:
+
+        NET CONTENTS WHEN PACKED 4 UNITS X 125 g + 125 g FREE
+
+    `QUANTITY.search` returns `4 UNITS` - the first match - and the old code
+    committed to it, emitting `quantity: 4, unit: units, measure: count` with
+    `uncertain: false`. A 625 g pack was recorded as a count of four, with no
+    mass anywhere in the output and nothing to signal doubt.
+
+    Three rules, in order:
+
+    1. **A multipack form wins.** `4 UNITS X 125 g` is one declaration, not two
+       numbers, and `MULTIPACK_QUANTITY` reads it as a count times a per-unit
+       amount so the base quantity comes out right.
+    2. **A measurable amount beats a bare count.** Where a line declares both,
+       the mass or volume is the substantive net quantity; the count says how
+       it is divided up. This alone is what stops `4 units` being the answer.
+    3. **Disagreement is reported, not resolved.** If distinct measurable
+       readings remain, or a bonus quantity is printed alongside the declared
+       one, the reading is emitted uncertain with every candidate listed. Which
+       number a `+ 125 g FREE` pack declares as its net quantity is a question
+       about the declaration; picking one would be a guess wearing the
+       appearance of a reading.
+    """
+    multipack = P.MULTIPACK_QUANTITY.search(text)
+    if multipack is not None:
+        normalized = normalise_quantity(
+            multipack.group("value"),
+            multipack.group("unit"),
+            pack_count_text=multipack.group("pack"),
+        )
+        return _flag_bonus(normalized, text)
+
+    readings = [
+        (match, normalise_quantity(match.group("value"), match.group("unit"),
+                                   pack_count_text=match.group("pack")))
+        for match in P.QUANTITY.finditer(text)
+    ]
+    if not readings:
+        return None
+
+    measurable = [
+        (match, normalized) for match, normalized in readings
+        if normalized.get("measure") in ("mass", "volume")
+    ]
+    chosen = measurable or readings
+    normalized = chosen[0][1]
+
+    distinct = _distinct_quantities(chosen)
+    if len(distinct) > 1:
+        normalized = _mark_uncertain(
+            normalized,
+            f"{len(distinct)} different quantities are printed on this line "
+            f"({', '.join(distinct)}); which one is the declared net quantity "
+            f"cannot be determined from the text alone",
+        )
+        normalized = {**normalized, "candidates": distinct}
+
+    return _flag_bonus(normalized, text)
+
+
+#: Quantity keys withheld when the reading cannot be committed to.
+#:
+#: The same set `validation._VALUE_KEYS[NET_QUANTITY]` strips, and it has to
+#: be: both exist to leave a net-quantity mapping with no committed value, and
+#: a key present in one and missing from the other would leave a number behind
+#: on one path and not the other - exactly the "withheld" reading that still
+#: puts a quantity into the compliance record.
+#:
+#: `test_extraction_robustness.test_withheld_quantity_keys_match_validation`
+#: asserts the two are equal, so adding a key to `normalise_quantity` without
+#: adding it to both places fails rather than half-working.
+_QUANTITY_VALUE_KEYS = (
+    "quantity", "unit", "base_quantity", "base_unit", "measure", "pack_count",
+)
+
+
+def _flag_bonus(normalized: dict, text: str) -> dict:
+    """Withhold the value when a bonus quantity shares the line.
+
+    `500 g + 50 g free` may declare 500 g or 550 g, and `4 units x 125 g +
+    125 g free` may declare 500 g or 625 g. The package knows which; the
+    characters do not, and no ordering of the numbers on the line settles it.
+
+    The value is **withheld rather than flagged**, which is stronger than what
+    the rest of this module does for an uncertain reading, and deliberately so.
+    A flagged-but-present net quantity still puts a specific number into the
+    compliance record, and on the carton this was measured against every
+    available number - 4, 125, 500, 625 - is wrong except one. Emitting the
+    declaration with no committed quantity keeps `field_presence` correct (the
+    package *does* declare a net quantity) while putting nothing in the record
+    that a reviewer would have to catch.
+
+    The candidates are listed, so the reviewer sees exactly what was printed.
+    """
+    if not P.BONUS_QUANTITY.search(text):
+        return normalized
+
+    candidates = _distinct_quantities(
+        [(match, normalise_quantity(match.group("value"), match.group("unit"),
+                                    pack_count_text=match.group("pack")))
+         for match in P.QUANTITY.finditer(text)]
+    )
+    withheld = {
+        name: value
+        for name, value in normalized.items()
+        if name not in _QUANTITY_VALUE_KEYS
+    }
+    withheld = _mark_uncertain(
+        withheld,
+        "a bonus or free quantity is printed alongside the declared one, so "
+        "the net quantity may be the base amount or the total; no value is "
+        "reported rather than guessing which",
+    )
+    if candidates:
+        withheld["candidates"] = candidates
+    return withheld
+
+
+def _distinct_quantities(
+    readings: list[tuple[re.Match[str], dict]]
+) -> list[str]:
+    """Human-readable distinct readings among `readings`, or [] if they agree."""
+    seen: list[str] = []
+    for _, normalized in readings:
+        base = normalized.get("base_quantity")
+        unit = normalized.get("base_unit") or normalized.get("unit")
+        if base is None:
+            base = normalized.get("quantity")
+        if base is None:
+            continue
+        label = f"{base} {unit}".strip()
+        if label not in seen:
+            seen.append(label)
+    return seen if len(seen) > 1 else []
+
+
+def _batch_value(captured: str) -> str | None:
+    """The batch code from a `BATCH_NUMBER` capture, or None if there is none.
+
+    Two things go wrong with the raw capture, both measured on real packs:
+
+    **The keyword's own suffix becomes the value.** `BATCH_NUMBER`'s
+    `(?:no\\.?|number|code|#)?` group is optional, so on a pack printing
+    `Batch No. :` with the value left blank, the group backtracks and the value
+    group takes `No`. That produced `batch_number = "No"`, *certain*, for a
+    package that declared no batch number at all.
+
+    **The capture runs into adjacent text.** Allowing a second token is what
+    lets `Batch No.: K BL28I50075` be read whole, and it is also what lets
+    `Batch No: A123 Use` pick up a word that is not part of the code.
+
+    Both are handled by walking the captured tokens and stopping at the first
+    one that is label vocabulary rather than code. What survives must contain a
+    digit: every batch and lot code on every pack this was measured against
+    does, and requiring one is what rejects the OCR-damaged `Ni` that no
+    stopword list would catch. A purely alphabetic code would be refused, and
+    that is the intended direction of the trade - a missing batch number is a
+    review flag, an invented one is a compliance pass.
+    """
+    tokens: list[str] = []
+    for token in normalise_text(captured).split():
+        cleaned = token.strip(P.TRAILING_PUNCTUATION)
+        if not cleaned:
+            break
+        if cleaned.casefold() in P.DECLARATION_STOPWORDS:
+            break
+        tokens.append(cleaned)
+
+    value = " ".join(tokens)
+    if not value:
+        return None
+    if not any(character.isdigit() for character in value):
+        return None
+    return value
+
+
 def _resolve(candidates: list[_Candidate]) -> tuple[ExtractedField, ...]:
     """Reduce many candidates to at most one field per declaration.
 
@@ -781,7 +1093,12 @@ def _resolve(candidates: list[_Candidate]) -> tuple[ExtractedField, ...]:
     for key in sorted(grouped, key=lambda k: k.value):
         ranked = sorted(grouped[key], key=_rank)
         best = ranked[0]
-        normalized = dict(best.normalized)
+        # The single choke point every emitted field passes through. The
+        # detectors guard their own patterns and those guards are the primary
+        # defence; this is the one place a future detector cannot route around
+        # by accident. See `validation`'s module docstring for why the
+        # duplication is deliberate.
+        normalized = validate(key, dict(best.normalized))
 
         conflicting = _conflicting_signatures(ranked)
         if conflicting:
@@ -817,17 +1134,41 @@ def _resolve(candidates: list[_Candidate]) -> tuple[ExtractedField, ...]:
 def _rank(candidate: _Candidate) -> tuple:
     """Sort key: best candidate first.
 
-    Keyword-anchored beats pattern-only, committed beats uncertain, then higher
-    OCR confidence, then earlier on the label. An unknown confidence sorts as
-    if it were zero *for tie-breaking only* - that is an ordering convenience
-    and is never written anywhere as a measured value.
+    A candidate carrying a value beats one carrying none, then keyword-anchored
+    beats pattern-only, then committed beats uncertain, then higher OCR
+    confidence, then earlier on the label. An unknown confidence sorts as if it
+    were zero *for tie-breaking only* - that is an ordering convenience and is
+    never written anywhere as a measured value.
+
+    Value-presence leads, and it was not always first. A label printing
+
+        For Feedback/Suggestions, Please Contact
+        Phone No.: 022-71230555
+
+    produces a keyword-anchored candidate carrying nothing from the first line
+    and a pattern-only candidate carrying the number from the second. Ranking
+    the keyword first meant the emitted field was the empty one, with the
+    number visible only in `candidates`. "We saw the word 'contact'" is not a
+    better-supported reading of a consumer-care declaration than the phone
+    number itself.
     """
     return (
+        1 if _carries_no_value(candidate) else 0,
         0 if candidate.matched_by == MATCHED_BY_KEYWORD else 1,
         1 if is_uncertain(candidate.normalized) else 0,
         -(candidate.confidence if candidate.confidence is not None else 0.0),
         candidate.line_index,
     )
+
+
+def _carries_no_value(candidate: _Candidate) -> bool:
+    """True when this reading located a declaration but committed to nothing.
+
+    The same emptiness test `_conflicting_signatures` uses, so "cannot disagree
+    with anything" and "loses to anything that has a value" stay one idea.
+    """
+    signature = candidate.signature
+    return signature is None or signature == () or _is_all_none(signature)
 
 
 def _conflicting_signatures(ranked: list[_Candidate]) -> list[str]:

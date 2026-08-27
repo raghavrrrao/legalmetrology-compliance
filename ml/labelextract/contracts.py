@@ -56,6 +56,7 @@ class LabelFieldKey(str, Enum):
     CONSUMER_CARE_CONTACT = "consumer_care_contact"
     COUNTRY_OF_ORIGIN = "country_of_origin"
     BATCH_NUMBER = "batch_number"
+    FSSAI_LICENCE = "fssai_licence"
     OTHER = "other"
 
 

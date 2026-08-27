@@ -181,6 +181,47 @@ Modes 3, 4, 6, 11 and 12 were each run over all six photographs:
 Mode 3 and the upscaling were chosen together and should be changed together —
 mode 3 on un-upscaled images is worse than what it replaced.
 
+## ORIENTATION
+
+`--psm 3` is explicitly "no orientation detection", so a label photographed
+sideways is unreadable to this pipeline. `TesseractOptions.orientation_detection`
+adds an OSD pass and rotates before recognition when OSD is confident.
+
+**It is off by default, and that is a measurement rather than caution.** OSD
+was run over the evaluation set before being wired in:
+
+| Image | OSD said | Confidence | Correct rotation | Outcome if followed |
+|---|---|---|---|---|
+| Rotated masala pack | 180 | 1.32 | **270** | 1/7 keywords instead of 5/7 |
+| Best-read carton | 180 | **0.12** | 0 (upright) | 1223 chars → 956; destroys the best image in the set |
+| Upright supermarket pack | 0 | 2.25 | 0 | correct, no-op |
+
+OSD was wrong on the one image that needed it and confidently wrong on an image
+that did not. An OSD pass also measured **578–589 ms against a full recognition
+pass of 378–702 ms** — an 82–156% increase in per-image time.
+
+`minimum_orientation_confidence` (default 2.0) is what makes enabling it safe:
+that threshold refuses both wrong answers above. Note what follows — on our
+images a threshold high enough to be safe makes the feature a **no-op**. It is
+implemented, correct and tested because a genuinely sideways photograph is a
+common real upload and OSD handles that case well; it is off because on this
+dataset it buys nothing and costs latency. Re-measure before enabling.
+
+Mean word confidence was also evaluated as a rotation selector and rejected: it
+chose 270° for three upright images, because a handful of confidently-read
+noise words outscores many correctly-read real ones.
+
+When rotation is applied, word geometry is mapped back to the source image's
+coordinate system exactly — only right angles are accepted, for that reason.
+A 90° error would move an evidence box to a different part of the package while
+nothing failed. Rotating never costs a second recognition pass: the image is
+turned before the single `image_to_data` call.
+
+**Tesseract's `rotate` is clockwise; Pillow's `rotate()` is counter-clockwise.**
+The conversion happens once, in `orientation()`. Passing OSD's number straight
+to Pillow turns a 90° error into a 180° one, and recognition still returns
+text, so nothing fails while every reading is upside down.
+
 ## FIELD EXTRACTION
 
 `fields/rule_based.py`, behind `interfaces.FieldExtractor`. Deterministic
@@ -195,7 +236,8 @@ would be unexplainable in a tool whose output is meant to be evidence.
 
 | Declaration | `LabelFieldKey` | Normalised to |
 |---|---|---|
-| Net quantity | `net_quantity` | `{quantity, unit, base_quantity, base_unit, measure, pack_count?}` |
+| Net quantity | `net_quantity` | `{quantity, unit, base_quantity, base_unit, measure, pack_count?}` — the whole line is read, not the first number on it |
+| FSSAI licence | `fssai_licence` | `{licence_number, digit_count}` — 14 digits, or uncertain with the digits kept |
 | MRP / retail sale price | `retail_sale_price` | `{amount (exact decimal string), currency, inclusive_of_all_taxes?}` — read from the text the MRP keyword introduces, skipping quantities |
 | Batch / lot number | `batch_number` | `{batch_number}` |
 | Date of manufacture | `date_of_manufacture` | `{date}` or `{year_month}` |
@@ -217,7 +259,9 @@ would be unexplainable in a tool whose output is meant to be evidence.
 | **Common or generic name** (`common_or_generic_name`) | Same problem |
 | **Manufacturer address** (`manufacturer_address`) | Spans several lines below the name; needs real layout analysis |
 | **Unit sale price** (`unit_sale_price`) | Detected only well enough to *exclude* it from MRP matches |
-| Any non-English text | Tesseract recognises Devanagari when `tesseract-ocr-hin` is installed; no pattern here matches it |
+| **FSSAI licence** | ~~not attempted~~ — **now supported**, see the table above |
+| Ingredients, nutritional information, barcode | Not in `LabelFieldKey` at all. Ingredients and FSSAI numbers are among the *best*-recognised text on real labels, so these are recall left on the table rather than hard problems — but each needs a schema decision, not just a pattern |
+| Any non-English text | Tesseract recognises Devanagari when `tesseract-ocr-hin` is installed; no pattern here matches it. **See LANGUAGES below: `hin` is not installed on the development machine, so this is currently an environment limitation as well as a code one** |
 
 `SUPPORTED_KEYS` and `UNSUPPORTED_KEYS` are exported from
 `labelextract.fields`, and `UNSUPPORTED_KEYS` is *derived* from the full
@@ -237,6 +281,72 @@ violation. A declaration we fail to find produces a review flag. The second
 failure is recoverable; the first is not. `RuleBasedFieldExtractor(
 require_net_quantity_keyword=False)` trades it back explicitly, and marks
 everything it gains as uncertain.
+
+### REFUSING A READING
+
+Three guards decide when a value is **not** emitted, all added after a
+ten-product evaluation found the pipeline confidently reporting values the
+packages did not carry. They cost recall on purpose.
+
+**A declaration keyword is never its own value.** `Batch No.` printed with the
+value left blank produced `batch_number = "No"`, *certain*. `field_presence`
+passes on any extracted field regardless of its uncertainty flag, so that
+recorded a package which declared no batch number as having declared one —
+turning a real violation into a pass. A batch value must now survive
+`DECLARATION_STOPWORDS`, stop at the first label word, and contain a digit.
+Every batch and lot code on every pack measured does; a purely alphabetic code
+would be refused, and that is the intended direction of the trade.
+
+**A cross-reference is not a declaration — but it does not cancel one
+either.** `See Above Panel for Date of Packaging, MRP Rs. (incl. of all taxes),
+Batch No. & Use By Date` names four declarations and carries none of them.
+Nothing is read out of it, and it stays eligible for `unread_declarations` —
+"the package says its batch number is on the other panel" is exactly what that
+mechanism exists to record.
+
+That used to be enforced by a pattern that vetoed the whole line, applied by
+two detectors and ignored by the other six, which made the same phrase behave
+three different ways:
+
+| Line | Before | Now |
+| --- | --- | --- |
+| `MRP Rs. 40.00 (see below for offers)` | `40.00` | `40.00` |
+| `Net Quantity: 500 g (see below for offers)` | nothing | `500 g` |
+| `Best Before 12/2026. See above panel.` | `2026-12` | `2026-12` |
+| `Batch No.: A123. Refer above panel for storage` | nothing | `A123` |
+| `Batch No.: See above panel` | unread | unread |
+
+One rule now applies to every detector, and it is about the value rather than
+the phrase: **a usable value on the line is extracted whatever else the line
+says; a declaration named with no usable value produces no field and an unread
+observation; nothing is ever read out of the reference text.** The last point
+was what the veto was really protecting, and it is enforced where it belongs —
+`DECLARATION_STOPWORDS`, `_batch_value` and `fields/validation.py` refuse `No`,
+`panel` and `above` as values without needing to know a cross-reference was
+printed.
+
+**A marketing claim is not a bonus quantity.** `+ 125 g FREE` makes a declared
+net quantity genuinely ambiguous. `Gluten Free` does not, and matching a bare
+`free` meant `Net Qty: 500 g Gluten Free` reported no net quantity at all — an
+unambiguous 500 g declaration withheld because of a health claim printed beside
+it. `BONUS_QUANTITY` now requires *a printed quantity* immediately before the
+offer word, which is structural: no list of marketing phrases is maintained,
+and the next one costs nothing.
+
+**An ambiguous quantity is withheld, not resolved.** `4 UNITS X 125 g + 125 g
+FREE` was reported as `4 units`, certain — a 625 g carton recorded as a count
+of four with no mass at all. The line is now read whole: a multipack form is
+recognised as one declaration, a measurable amount beats a bare count, and a
+bonus quantity makes the total genuinely ambiguous, so the field is emitted
+with **no committed value** and every printed candidate listed. Presence stays
+correct; no wrong number enters the record.
+
+`fields/validation.py` is a fourth guard behind those three: a single choke
+point every candidate passes through, rejecting stopword values, impossible
+quantities and prices, out-of-range dates, and names that are punctuation or
+label vocabulary. It only ever withdraws a value and says why — it never
+repairs one, and it never decides whether a declared value is *correct*, which
+is the rules engine's job.
 
 ### NORMALISATION
 
@@ -350,6 +460,43 @@ whether the declaration was required, or whether its value would have been
 correct. **No compliance rule consumes this yet**; it exists so that a
 deterministic engine can eventually distinguish "absent" from "unreadable"
 instead of guessing.
+
+## LANGUAGES
+
+`TesseractOptions.languages` is `("eng",)`. **The pipeline is English-only, and
+nothing in this repository changes that**, because language data is an
+operating-system install rather than a code change.
+
+Verify what is actually present before claiming anything:
+
+```bash
+tesseract --list-langs
+```
+
+On the machine this was last measured, that printed `eng` and `osd` only. Three
+of the ten evaluation products carry Marathi, Hindi or Gujarati on the panel;
+**zero Indic characters were recognised**, and the Devanagari front panels
+returned short runs of noise rather than errors.
+
+Adding a language is two steps, and both are required:
+
+| Platform | Devanagari (Hindi/Marathi) | Gujarati |
+|---|---|---|
+| Windows | re-run the UB-Mannheim installer, tick the script | same |
+| macOS | `brew install tesseract-lang` | same |
+| Debian / Ubuntu | `sudo apt install tesseract-ocr-hin` | `tesseract-ocr-guj` |
+
+Then select it per run — `python -m labelextract.cli LABEL.jpg --languages
+eng+hin`. Asking for a language whose data is absent makes Tesseract fail, which
+is why the registered pipeline does not request one by default: an engine that
+breaks on a machine without `hin` would be worse than one that reads only the
+English on a bilingual panel.
+
+**Recognising Devanagari would not, by itself, extract anything.** Every pattern
+in `fields/patterns.py` is English. Installing `hin` would put Indic text into
+`recognised_text` and produce no additional fields. Both halves are needed, and
+the extraction half is the larger piece of work — which is why this is recorded
+as a limitation rather than half-solved.
 
 ## DATA
 
@@ -491,10 +638,31 @@ number with no provenance:
   views while happily returning the marketing paragraph above them. Nothing
   warns the user that the *legally relevant* part of the label is the part that
   was missed.
-- **The rupee sign is unreliable.** It has been read as `8` and as `€`. When it
-  is read as a digit the amount is wrong *and* certain, which is the worst
-  combination this system can produce. Nothing repairs OCR confusions by
-  design — see NORMALISATION — so a reviewer is the only guard.
+- **The rupee sign is unreliable.** It has been read as `8`, as `€`, as `%` and
+  as `=`. When it is read as a digit the amount is wrong *and* certain, which is
+  the worst combination this system can produce. Nothing repairs OCR confusions
+  by design — see NORMALISATION — so a reviewer is the only guard. In three of
+  the four cases measured the MRP keyword anchored the reading and the amount
+  still parsed correctly; the fourth (`₹465` → `8465`) was on a line the keyword
+  did not introduce, and was correctly refused rather than reported.
+- **Numbers were truncated to three digits until 0.2.1.** `_NUMBER`'s grouped
+  branch allowed zero comma groups, and Python alternation is leftmost-first
+  rather than longest-match, so an ungrouped number never reached the branch
+  that would have taken all its digits: `MRP Rs. 1500` parsed as `150`, and
+  `Net Qty 1500 g` as `150 g`. A tenfold error on the two most legally
+  significant numbers on a package, emitted as certain. It was invisible to the
+  ten-product evaluation because no pack in that set prints a four-digit price
+  without a comma — a reminder that ten products is a development check and not
+  a measurement.
+- **A misspelled keyword still loses the declaration.** Keyword matching
+  tolerates stray glyphs *between* two correctly-spelled words (`Use @ By`), and
+  deliberately nothing more. `ie By: 30/09/25` — OCR losing two characters of
+  "Use" — is not recovered, because matching a bare `by` would collide with
+  "Marketed by" and "Packed by" and invent declarations that were never printed.
+- **Multi-site packs declare several FSSAI licences.** A supermarket pack lists
+  one per manufacturing site, keyed A) to O). All are extracted, the field is
+  marked uncertain and every candidate is listed; this layer cannot know which
+  site made the unit in front of the camera.
 - **Bounding boxes are mapped back to source space** whenever the preprocessor
   reports its dimensions; when it does not, they stay in preprocessed space and
   `metadata["bounding_box_space"]` says so. The engine's `raw` word geometry is
@@ -546,11 +714,19 @@ Switching engines is two values in `.env` and no code change:
 
 ```
 DEFAULT_EXTRACTION_ENGINE_NAME=tesseract
-DEFAULT_EXTRACTION_ENGINE_VERSION=0.2.0
+DEFAULT_EXTRACTION_ENGINE_VERSION=0.2.1
 ```
 
 `/api/v1/health/` then reports `is_placeholder: false` and the UI's "no OCR
 engine is installed" notice disappears on its own.
+
+**`0.2.0` no longer resolves.** It is the one version deliberately not kept
+registered: its extraction layer emitted fabricated batch numbers for packages
+that declared none, and the fix lives inside `RuleBasedFieldExtractor`, which
+every registered version shares. Reproducing it would mean forking a
+known-unsafe extractor to preserve a switch whose only effect is to turn a
+violation into a pass. Runs recorded under it stay interpretable - name and
+version are stored as plain text - they just cannot be re-executed.
 
 `0.1.0` still resolves and still works — it is the frozen baseline. Selecting
 it for a deployment would mean deliberately running the configuration that read
@@ -622,7 +798,7 @@ resolvable, so any change can be re-measured rather than taken on trust:
 
 ```bash
 python -m labelextract.cli label.jpg --pipeline-version 0.1.0   # frozen baseline
-python -m labelextract.cli label.jpg --pipeline-version 0.2.0   # current
+python -m labelextract.cli label.jpg --pipeline-version 0.2.1   # current
 ```
 
 `0.1.0` is frozen on purpose and should not be tuned again — it is what a
@@ -639,7 +815,7 @@ the repository root:
 for f in ml/data/raw/products/product_001/*.jpeg; do
   echo "== $f"
   python -m labelextract.cli "$f" --pipeline tesseract --pipeline-version 0.1.0
-  python -m labelextract.cli "$f" --pipeline tesseract --pipeline-version 0.2.0
+  python -m labelextract.cli "$f" --pipeline tesseract --pipeline-version 0.2.1
 done
 ```
 

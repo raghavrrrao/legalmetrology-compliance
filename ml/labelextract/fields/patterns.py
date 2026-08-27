@@ -37,7 +37,22 @@ _I = re.IGNORECASE
 
 #: A printed number: Indian (1,00,000) or international (1,000,000) grouping,
 #: with up to three decimal places.
-_NUMBER = r"\d{1,3}(?:,\d{2,3})*(?:\.\d{1,3})?|\d+(?:\.\d{1,3})?"
+#:
+#: The first branch requires **at least one** comma group, and that `+` is
+#: load bearing. It was `*`, which made the branch match any 1-3 digit run -
+#: and Python alternation is leftmost-first, not longest-match, so a number
+#: with no commas never reached the second branch. `Rs. 1500` matched the first
+#: branch as `150` and the trailing `0` was simply left behind:
+#:
+#:     MRP Rs. 1500      ->  amount 150       (10x understated, and certain)
+#:     MRP Rs. 99999999  ->  amount 999
+#:
+#: `BARE_AMOUNT` never showed this because its `(?!\d)` lookahead forces the
+#: engine to backtrack into the second branch; `PRICE` has no such guard, so
+#: any four-or-more-digit price written without a comma - which is how most
+#: Indian packs print one - was silently truncated. Requiring the comma sends
+#: every ungrouped number to the second branch, which takes all of its digits.
+_NUMBER = r"\d{1,3}(?:,\d{2,3})+(?:\.\d{1,3})?|\d+(?:\.\d{1,3})?"
 
 #: Units of net quantity as they are actually abbreviated on packaging. Ordered
 #: longest-first inside each family so `kg` is not matched as `g`, and `ltr` is
@@ -50,6 +65,31 @@ _UNITS = (
 
 #: How rupees are written. `Rs` with or without stops, the symbol, the ISO code.
 _CURRENCY = r"₹|Rs\.?|INR|R\.?\s?s\.?"
+
+#: The join between the two words of a two-word keyword, tolerant of the stray
+#: glyphs OCR inserts between them.
+#:
+#: Measured, not guessed: a real DMart pack printed `Use By: 26/01/26` and
+#: Tesseract returned `Use @ By: 26/01/26`. The date itself was perfect; a
+#: single spurious `@` cost the whole declaration, because `use\s*by` cannot
+#: span it.
+#:
+#: Deliberately narrow. It allows at most two non-word characters between two
+#: words that must *both* still be present and correctly spelled. It does not
+#: make the keyword fuzzy, does not tolerate a missing word, and does not
+#: tolerate a misspelling - `ie By` (OCR losing the first two letters of "Use")
+#: still does not match, because matching a bare `by` would collide with
+#: "Marketed by" and "Packed by" and invent declarations that were never made.
+_GLYPH_GAP = r"\s*[^\w\s]{0,2}\s*"
+
+#: Small worded counts, for shelf lives printed as words rather than digits.
+#: Bounded at twelve: a shelf life is months or years, and beyond twelve the
+#: risk of matching an unrelated number word outweighs the recall.
+_WORD_COUNTS: dict[str, int] = {
+    "one": 1, "two": 2, "three": 3, "four": 4, "five": 5, "six": 6,
+    "seven": 7, "eight": 8, "nine": 9, "ten": 10, "eleven": 11, "twelve": 12,
+}
+_WORD_COUNT_ALTERNATION = "|".join(_WORD_COUNTS)
 
 _MONTHS = (
     r"jan(?:uary)?|feb(?:ruary)?|mar(?:ch)?|apr(?:il)?|may|jun(?:e)?|jul(?:y)?"
@@ -106,6 +146,63 @@ QUANTITY = re.compile(
     rf"(?:(?P<pack>\d{{1,3}})\s*[x×]\s*)?"
     rf"(?P<value>{_NUMBER})\s*"
     rf"(?P<unit>{_UNITS})\b\.?",
+    _I,
+)
+
+#: `4 UNITS X 125 g` - a multipack written with the count unit spelled out
+#: between the count and the per-unit quantity.
+#:
+#: `QUANTITY`'s own `pack` group only handles the bare `4 x 125 g` form. On a
+#: real Dove carton reading `NET CONTENTS WHEN PACKED 4 UNITS X 125 g + 125 g
+#: FREE`, the bare form does not apply and `QUANTITY.search` returns the *first*
+#: match, `4 UNITS` - reporting a 625 g pack as a count of four, with no mass
+#: at all and no uncertainty flag. This names the form so it can be recognised
+#: rather than silently truncated.
+MULTIPACK_QUANTITY = re.compile(
+    rf"(?P<pack>\d{{1,3}})\s*"
+    rf"(?:pieces?|pcs?|units?|nos?|n|u)\b\.?\s*"
+    rf"[x×*]\s*"
+    rf"(?P<value>{_NUMBER})\s*"
+    rf"(?P<unit>{_UNITS})\b\.?",
+    _I,
+)
+
+#: `+ 125 g FREE`, `& 50 g extra` - a bonus quantity added to the declared one.
+#:
+#: Whether the net quantity of such a pack is the base amount or the total is a
+#: question about the declaration, not about the characters. This exists so the
+#: extractor can say it does not know, rather than commit to whichever number
+#: the scanner happened to reach first.
+#: **An offer word on its own is not evidence of a bonus**, and that is the
+#: whole shape of this pattern. It used to end in a bare `(?:free|extra)\b`,
+#: which made every composition claim printed beside a quantity look like one:
+#:
+#:     Net Qty: 500 g   Gluten Free         ->  no net quantity reported
+#:     Net Weight: 250 g Preservative Free  ->  no net quantity reported
+#:     Net Contents: 500 g Alcohol Free     ->  no net quantity reported
+#:
+#: Those three packages declare 500 g, 250 g and 500 g plainly, with nothing
+#: ambiguous about any of them, and the extractor withheld all three.
+#:
+#: The replacement is structural rather than a list of marketing phrases: a
+#: bonus quantity is *a printed quantity* immediately followed by the offer
+#: word, optionally introduced by `+` or `&`. In `Gluten Free` the token before
+#: `Free` is not a quantity, so nothing matches - and no vocabulary of health
+#: claims has to be kept up to date for whichever phrase appears next.
+#:
+#: `free from` / `free of` is excluded for the same structural reason: it
+#: introduces what the package does *not* contain, so the `free` is not an
+#: offer even when a quantity runs straight into it - `Net Wt 200 g Free From
+#: Preservatives`.
+#:
+#: The limit of the rule, stated rather than papered over: a trailing
+#: adjectival use - `Net Qty 1 L Extra Strong` - still reads as a bonus,
+#: because a quantity really does immediately precede the offer word. That
+#: failure withholds a value instead of committing to a wrong one, which is the
+#: safe direction to be wrong in here.
+BONUS_QUANTITY = re.compile(
+    rf"(?:[+&]\s*)?(?:{_NUMBER})\s*(?:{_UNITS})\b\.?\s*"
+    rf"(?:free\b(?!\s*(?:from|of)\b)|extra\b)",
     _I,
 )
 
@@ -186,11 +283,11 @@ DATE_KEYWORDS: tuple[tuple[str, re.Pattern[str]], ...] = (
     (
         "best_before",
         re.compile(
-            r"\bbest\s*(?:before|by)\b"
-            r"|\buse\s*(?:by|before)\b"
+            rf"\bbest{_GLYPH_GAP}(?:before|by)\b"
+            rf"|\buse{_GLYPH_GAP}(?:by|before)\b"
             r"|\bexp(?:iry|ires?|\.)?\s*(?:date|on|dt)?\b"
             r"|\bexpiration\b"
-            r"|\bconsume\s*(?:by|before)\b",
+            rf"|\bconsume{_GLYPH_GAP}(?:by|before)\b",
             _I,
         ),
     ),
@@ -221,9 +318,18 @@ ISO_DATE = re.compile(
 )
 
 #: "Best before 9 months from the date of packaging" - a shelf life, not a date.
+#:
+#: The count may be worded: a real namkeen pack prints `BEST BEFORE TWO MONTHS
+#: AFTER PACKING`, which OCR read perfectly and the digits-only pattern then
+#: discarded. `normalise_duration` resolves the word via `WORD_COUNTS`.
 DURATION = re.compile(
-    r"(?P<count>\d{1,3})\s*(?P<unit>days?|weeks?|months?|years?)\b", _I
+    rf"(?P<count>\d{{1,3}}|{_WORD_COUNT_ALTERNATION})\s*"
+    rf"(?P<unit>days?|weeks?|months?|years?)\b",
+    _I,
 )
+
+#: Worded counts `DURATION` may capture, exposed for `normalise_duration`.
+WORD_COUNTS: dict[str, int] = dict(_WORD_COUNTS)
 
 
 # --- batch / lot ------------------------------------------------------------
@@ -231,10 +337,52 @@ DURATION = re.compile(
 BATCH_NUMBER = re.compile(
     r"\b(?:batch|lot|b\.?\s*no|l\.?\s*no|bn)\b\.?\s*"
     r"(?:no\.?|number|code|#)?\s*[:.\-]?\s*"
-    r"(?P<value>[A-Za-z0-9][A-Za-z0-9\-/]{1,19})",
+    r"(?P<value>[A-Za-z0-9][A-Za-z0-9\-/]{0,19}"
+    r"(?:\s+[A-Za-z0-9][A-Za-z0-9\-/]{0,19})?)",
     _I,
 )
 
+#: The part of the batch keyword strong enough to stand on its own as evidence
+#: that the declaration was *named*, for `unread_declarations`.
+#:
+#: Stricter than `BATCH_NUMBER`'s opening: a bare `b no` or `bn` is too easy to
+#: produce from misread text, so a marker word or punctuation must follow.
+BATCH_ANCHOR = re.compile(
+    r"\b(?:batch|lot)\b\.?\s*(?:no\b\.?|number|code|#|:)",
+    _I,
+)
+
+#: Words that are part of *naming* a declaration and can never be its value.
+#:
+#: This exists because of a real and dangerous failure. `BATCH_NUMBER`'s
+#: `(?:no\.?|number|code|#)?` group is optional, so on a package printing
+#:
+#:     Batch No. :
+#:
+#: with the value left blank, the group backtracks, the value group takes `No`
+#: itself, and the extractor emitted `batch_number = "No"` as a *certain*
+#: reading. `field_presence` passes on any extracted field regardless of its
+#: uncertainty flag, so a package that failed to declare a batch number was
+#: recorded as having declared one - a real violation turned into a pass.
+#:
+#: Matched against a whole token, never a substring: a genuine batch code
+#: beginning with the letters "no" must not be rejected.
+DECLARATION_STOPWORDS: frozenset[str] = frozenset(
+    {
+        "no", "nos", "number", "numbers", "num", "code", "codes",
+        "batch", "batches", "lot", "lots", "bn",
+        "mfg", "mfd", "exp", "expiry", "pkd", "packed", "packing",
+        "date", "dates", "dt", "use", "used", "by", "before", "best",
+        "mrp", "price", "rs", "inr", "net", "qty", "quantity", "wt",
+        "weight", "vol", "volume", "and", "the", "of", "for", "see",
+        "panel", "above", "below", "refer", "details", "n", "a",
+        # Consumer-care block vocabulary. A real marketer line reading
+        # `Marketed By Address` - OCR's rendering of "...Care Executive At
+        # 'Marketed By' Address" - produced a company called "Address".
+        "address", "care", "customer", "consumer", "executive", "contact",
+        "feedback", "suggestions", "please", "queries", "complaints",
+    }
+)
 
 # --- consumer care contact --------------------------------------------------
 
@@ -251,10 +399,48 @@ EMAIL = re.compile(r"[A-Za-z0-9._%+\-]+@[A-Za-z0-9.\-]+\.[A-Za-z]{2,}")
 
 #: Indian toll-free numbers, the strongest single signal that a line is a
 #: consumer-care declaration.
-TOLL_FREE_PHONE = re.compile(r"\b1[\s\-]?800[\s\-]?\d{2,4}[\s\-]?\d{3,4}\b")
+#:
+#: The group structure after the `1800` prefix is not fixed in practice, and
+#: the previous two-group form could not match the very common four-group
+#: printing. Measured: a Dove carton prints `TOLL FREE: 1800-10-22-221`, which
+#: OCR read exactly and this pattern then failed to match, so the extracted
+#: consumer-care field carried no number at all. Total digits after the prefix
+#: are bounded at 6-8, which is what a real toll-free number has.
+TOLL_FREE_PHONE = re.compile(
+    r"\b1[\s\-]?800(?:[\s\-]?\d){6,8}\b"
+)
 
 #: A ten-digit Indian mobile number, optionally with the country code.
 MOBILE_PHONE = re.compile(r"(?:\+?91[\s\-]?)?\b[6-9]\d{4}[\s\-]?\d{5}\b")
+
+#: A landline with an STD code: `022-71230555`, `(020) 2612 3456`.
+#:
+#: Consumer-care blocks on retail packs routinely print a landline rather than
+#: a mobile. A DMart pack prints `Phone No.: 022-71230555`, recognised exactly
+#: and matched by nothing. The leading `0` is what distinguishes an STD code
+#: from a stray run of digits.
+#:
+#: **The separator between the STD code and the subscriber number is required,
+#: not optional**, and that is what keeps this pattern from eating things that
+#: are not phone numbers. Without it, the same 14-digit FSSAI licence numbers
+#: this module now extracts also matched here: an OCR line reading
+#: `m Lic No (0721999000621` was reported as a consumer-care phone number.
+#: Printed landlines carry a space, a hyphen or brackets; an unbroken digit run
+#: is a licence, a barcode or a batch code. The trailing `(?!\d)` stops a match
+#: from ending in the middle of a longer run.
+LANDLINE_PHONE = re.compile(
+    r"(?:\(0\d{2,4}\)|\b0\d{2,4})[\s\-]\s*\d{6,8}(?!\d)"
+)
+
+#: A line carrying a licence number rather than contact details.
+#:
+#: Used to keep the phone patterns off it. A licence number and a phone number
+#: are both long digit runs printed next to a `No.`, and the only thing that
+#: reliably tells them apart on one line of text is which keyword introduced
+#: them.
+LICENCE_NUMBER_CONTEXT = re.compile(
+    r"\bfssai\b|\blic(?:ence|ense)?\b\.?\s*no\b", _I
+)
 
 
 # --- country of origin ------------------------------------------------------
@@ -333,3 +519,33 @@ NAME_DECLARATIONS: tuple[tuple[str, re.Pattern[str]], ...] = (
 #: Trailing punctuation to strip from a captured free-text value. Never applied
 #: to `raw_value`, which stays exactly as recognised.
 TRAILING_PUNCTUATION = " \t.,:;-–—|/\\"
+
+
+# --- FSSAI licence ----------------------------------------------------------
+
+#: An FSSAI licence number: the word, or a `Lic. No.` marker, then 14 digits.
+#:
+#: This is the one declaration in this pattern set with a format rigid enough
+#: to validate outright - an FSSAI licence is exactly 14 digits - which is why
+#: it can be added with far less false-positive risk than a free-text field.
+#: The digit count is checked in `normalise_fssai_licence`, not here, so that a
+#: near-miss becomes an uncertain reading rather than silently no reading at
+#: all: OCR truncating a digit is a fact a reviewer needs to see.
+#:
+#: The separators allow the spaces and hyphens OCR inserts into a long digit
+#: run. `\D{0,3}` between marker and digits absorbs `.: ` and the stray glyphs
+#: that land on the `fssai` logo lockup.
+FSSAI_LICENCE = re.compile(
+    r"(?:\bfssai\b|\blic(?:ence|ense)?\b\.?\s*\bno\b|\blicence\s*number\b)"
+    r"\D{0,6}"
+    # Twelve digits minimum rather than fourteen: a licence OCR truncated by a
+    # digit or two must still be *caught*, so that `normalise_fssai_licence`
+    # can report it as an incomplete reading. Requiring the full fourteen here
+    # would make a truncation indistinguishable from a pack with no licence.
+    r"(?P<value>\d[\d\s\-]{10,20}\d)",
+    _I,
+)
+
+#: The keyword alone, for `unread_declarations`: the licence was named but no
+#: digits followed it.
+FSSAI_ANCHOR = re.compile(r"\bfssai\b", _I)
