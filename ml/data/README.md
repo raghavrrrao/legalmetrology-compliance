@@ -155,6 +155,113 @@ taken in shops catch things nobody intended to photograph.
 Never commit an image, even a "harmless" one — a file in Git history is in
 every clone, permanently, and removing it means rewriting history for everyone.
 
+## The frozen evaluation set
+
+`raw/` and `evaluation/` above are a *development* set — a place to run the
+pipeline by hand and see where it breaks. A **frozen evaluation set** is a
+different thing with a different discipline, and it lives in its own directory:
+
+```
+ml/data/our-evaluation-set/
+├── MANIFEST.json          dataset_version, created_on, one entry per sample
+├── images/                the photographs
+└── annotations/           one JSON per image: ground truth for that photograph
+```
+
+Like everything else under `ml/data/`, **none of it is committed.** What the
+repository holds is the code that reads it — `labelextract.evaluation` — plus
+the tests that pin the format. A clone gets the method and none of the data.
+
+### Why the manifest carries a checksum
+
+Each manifest entry records the SHA-256 of its image. That is what makes
+"frozen" a fact rather than an intention: if a photograph is edited, replaced
+or re-compressed, validation fails and says so, instead of silently changing
+what every number already published against that version meant.
+
+When the set genuinely needs to change, **publish a new `dataset_version`**.
+Do not edit a version that has been measured against.
+
+### The four annotation states
+
+A field annotation records one of four things, and they are deliberately not
+collapsible into "value or null":
+
+| State | Meaning |
+|---|---|
+| `present_and_readable` | Printed, and its value is legible. Carries the value. |
+| `present_but_unreadable` | The declaration is named; its value cannot be read. **Carries no value** — writing one here is how an OCR guess becomes ground truth. |
+| `not_present` | Not on this panel. A photograph shows one panel. |
+| `unknown` | Not annotated yet. Scored as excluded, never as absent. |
+
+A field left out of the file reads as `unknown`. That matters: if absence meant
+`not_present`, every gap in the annotation effort would score as a false
+positive against the extractor, and precision would *fall* as annotation
+improved.
+
+### An annotation file
+
+```json
+{
+  "sample_id": "eval_0001",
+  "annotated_by": "your-name",
+  "annotated_on": "2026-01-15",
+  "conditions": ["reflective_foil", "low_light"],
+  "reference_text": "NET QTY 500 g\nMRP Rs. 40.00",
+  "fields": [
+    {"key": "net_quantity", "state": "present_and_readable", "value": "500 g"},
+    {"key": "batch_number", "state": "present_but_unreadable",
+     "note": "glare across the panel"},
+    {"key": "country_of_origin", "state": "not_present"}
+  ]
+}
+```
+
+`annotated_by` and `annotated_on` are required. Provenance that lives only in
+one person's memory is not provenance, and an annotation nobody can be asked
+about cannot be questioned later.
+
+`reference_text` is optional and expensive: it is a hand transcription of the
+printed text, and it is the **only** thing that makes CER and WER computable.
+Without it those metrics are reported as unavailable — never estimated from
+something cheaper.
+
+`conditions` are free-form labels. `docs/evaluation-strategy.md` requires
+results per condition, because "an average over easy and hard images hides
+exactly the cases that matter".
+
+`key` must be a `LabelFieldKey`. Annotating a declaration the extractor does not
+yet attempt is worth doing — the truth is ready when an implementation lands —
+and it is reported as excluded rather than scored.
+
+### Validating and running
+
+From `ml/`:
+
+```bash
+# Parse everything, re-digest every image, report what is there. Changes nothing.
+python -m labelextract.evaluation.cli validate data/our-evaluation-set
+
+# Run a pipeline over the set and write a JSON report.
+python -m labelextract.evaluation.cli run data/our-evaluation-set \
+    --pipeline tesseract --report evaluation-report.json
+```
+
+Exit codes: `0` fine, `1` the dataset is unusable, `2` the run failed, `3` bad
+arguments.
+
+Validation **refuses rather than repairs**. There is no flag to skip a bad
+sample, because a set that loads with three samples quietly dropped still
+reports a sample count, and that count is what ends up in the report.
+
+### What has actually been measured
+
+**Nothing.** No frozen set exists in anyone's checkout that this repository
+knows about, no annotation has been written, and no CER, WER, precision, recall
+or F1 figure for this system has been computed. The infrastructure above makes
+measuring possible; it is not a measurement, and a report produced from a
+synthetic fixture is not one either.
+
 ## This is a development set, not a training set
 
 These folders exist so that a person can run the pipeline over real labels and

@@ -76,6 +76,14 @@ The held-out set that produces the numbers we report.
 - Size matters less than honesty about size. Fifty carefully annotated images
   with a stated confidence interval beat a thousand guessed labels.
 
+**The format is now defined and enforced in code.** `labelextract.evaluation`
+reads a frozen set from `our-evaluation-set/` below, validates it, and refuses
+it rather than repairing it. The annotation schema, the four ground-truth
+states and the `validate` command are documented in
+[`../ml/data/README.md`](../ml/data/README.md); the metrics it can and cannot
+compute are in [`evaluation-strategy.md`](evaluation-strategy.md). The code is
+committed; the dataset, as everywhere else in this document, is not.
+
 ## 3a. OCR datasets: four kinds that must not be conflated
 
 The single most common way an OCR claim becomes dishonest is quoting a number

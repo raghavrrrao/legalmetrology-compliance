@@ -150,6 +150,83 @@ instrumentation.
 5. **Report where it fails.** A named failure mode is more credible than a
    round number.
 
+## Running the method: `labelextract.evaluation`
+
+The method above is now executable. `ml/labelextract/evaluation/` holds the
+infrastructure — schema, loader, scoring, runner and CLI — and
+[`ml/data/README.md`](../ml/data/README.md) documents the annotation format.
+
+**The infrastructure is not a measurement.** No frozen set exists in this
+repository, no annotation has been written, and every "Not measured" in this
+document is still accurate. What changed is that measuring is now a matter of
+annotating images rather than of writing code first.
+
+```bash
+cd ml
+python -m labelextract.evaluation.cli validate data/our-evaluation-set
+python -m labelextract.evaluation.cli run data/our-evaluation-set \
+    --pipeline tesseract --report evaluation-report.json
+```
+
+### How each numbered requirement above is enforced
+
+| Requirement | Mechanism |
+|---|---|
+| 1. Freeze the set before measuring | `MANIFEST.json` carries a `dataset_version` and a SHA-256 per image. An edited photograph fails validation and names the remedy: publish a new version. |
+| 2. Annotate independently of the system | Ground truth (`schema.py`) and predictions (`prediction.py`) are separate types with no constructor between them. A test asserts the only annotation constructor is `from_dict`. |
+| 3. Record the exact versions measured | Every report embeds pipeline name, pipeline version, the placeholder flag, a `report_version` for the scoring itself, and the run date. |
+| 4. Report set size and date | `dataset_version`, `created_on` and `sample_count` are embedded in every report; they are not optional and cannot be omitted. |
+| 5. Report where it fails | Every scored disagreement is listed individually with both sides — expected value, what was read, and whether it was flagged uncertain. |
+
+### The outcome table
+
+Four ground-truth states meet four prediction outcomes. Flattening them would
+hide the two failures that matter most:
+
+|  | predicted value | withheld / unread | nothing |
+|---|---|---|---|
+| `present_and_readable` | true positive | false negative | false negative |
+| `present_but_unreadable` | **fabricated** | correct | missed unread |
+| `not_present` | false positive | false positive | true negative |
+| `unknown` | excluded | excluded | excluded |
+
+**Fabricated** — a value produced for a declaration a person could not read —
+is counted as a false positive *and* reported on its own line. It is the
+failure the whole architecture exists to prevent: `field_presence` passes on
+any extracted field regardless of its uncertainty flag, so a fabricated value
+turns a package that declared nothing readable into one that declared
+something.
+
+**Excluded** is not a negative. Counting an un-annotated field as
+`not_present` would charge the extractor for every gap in the annotation
+effort, and precision would *fall* as annotation improved.
+
+### What the infrastructure refuses to compute
+
+Honesty here is enforced in code, not by convention:
+
+- **CER and WER** require a hand transcription (`reference_text`). Without one
+  they are reported as `null` with a stated reason, never as `0.0`.
+- **Any rate with no denominator** is `null`, not zero. "Not measured" and
+  "measured as zero" are different claims and only one of them is damning.
+- **Unsupported keys** are excluded from every aggregate, per the rule above
+  that a recall figure including them really measures how many declarations we
+  chose not to implement.
+- **A sample whose pipeline run crashed** is recorded under `failures` and
+  excluded from scoring. Counting it as a miss would improve the number every
+  time a bug was fixed.
+- **Value comparison is shallow and documented**: normalised exact match, or
+  containment in the evidence line. It does not know that `1 kg` and `1000 g`
+  are the same quantity — that would be a per-field metric definition, and this
+  document defines none — so such a case is listed as a disagreement for a
+  human to judge.
+
+### Text-region recall is still not implemented
+
+The OCR table above names it. The annotation schema records no bounding boxes,
+so it cannot be computed and is not reported. Adding boxes to the schema is the
+work that would unlock it; estimating it from anything else would not.
+
 ## Reporting rules
 
 Non-negotiable, for the same reason the rest of this project is built the way
@@ -180,7 +257,9 @@ did not improve when Tesseract landed, and it will not until somebody runs the
 method in this document against an annotated set.
 
 What *is* measured today are the engineering properties, and those are real:
-433 automated tests (157 backend, 230 ML, 46 frontend); query-count regression
+automated tests across the three suites (run them to get today's numbers —
+a count written into a document is stale the next time anyone adds one);
+query-count regression
 bounds on the compliance engine; and a browser-to-database request path
 verified in a real browser.
 
