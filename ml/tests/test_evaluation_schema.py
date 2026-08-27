@@ -83,7 +83,7 @@ def test_an_unannotated_field_reads_as_unknown_not_absent():
 
 
 def test_an_explicitly_absent_declaration_is_not_unknown():
-    """"Not on this panel" is a finding; "not annotated" is an absence of one."""
+    """\"Not on this panel\" is a finding; \"not annotated\" is an absence of one."""
     annotation = SampleAnnotation.from_dict(
         _annotation(fields=[{"key": "batch_number", "state": "not_present"}])
     )
