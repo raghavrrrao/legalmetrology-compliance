@@ -174,7 +174,7 @@ def test_a_value_for_an_absent_declaration_is_a_false_positive():
 
 
 def test_naming_an_absent_declaration_is_also_a_false_positive():
-    """"The label names a net quantity" is a claim, even with no value attached."""
+    """\"The label names a net quantity\" is a claim, even with no value attached."""
     counts = counts_for(truth("not_present"), nothing_predicted(unread={QUANTITY}))
     assert counts.false_positive == 1
 
