@@ -387,6 +387,26 @@ between preprocessing options. It is not enough to support any claim about how
 well this system reads labels, and one product cannot be a measurement of a
 system meant for every packaged commodity sold in India.
 
+### The measuring apparatus exists; the measurement does not
+
+`labelextract.evaluation` implements the method that document describes: a
+frozen dataset with a version and a checksum per image, hand-written
+annotations kept structurally apart from the pipeline's output, and scoring
+that reports a metric as unavailable rather than estimating it.
+
+```bash
+cd ml
+python -m labelextract.evaluation.cli validate data/our-evaluation-set
+python -m labelextract.evaluation.cli run data/our-evaluation-set \
+    --pipeline tesseract --report evaluation-report.json
+```
+
+**No such dataset exists in this repository.** `ml/data/` is git-ignored in
+full, no annotation has been written, and none of the tests for this code is a
+measurement — they run over synthetic manifests and PNGs the tests build
+byte-by-byte. The format is documented in
+[`ml/data/README.md`](data/README.md).
+
 ## PRODUCT 001 — what changed between 0.1.0 and 0.2.0
 
 Six photographs of one product: four full-frame views, one close-up of the
@@ -573,7 +593,8 @@ ml/
 │   ├── baseline/             the null engine (placeholder, reads no pixels)
 │   ├── preprocessing/        Pillow preparation
 │   ├── ocr/                  Tesseract adapter
-│   └── fields/               patterns, normalisation, the rule-based extractor
+│   ├── fields/               patterns, normalisation, the rule-based extractor
+│   └── evaluation/           frozen-dataset schema, scoring and runner
 └── tests/
 ```
 
