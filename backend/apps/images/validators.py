@@ -99,9 +99,13 @@ def validate_image_upload(upload: UploadedFile) -> ValidatedImage:
     return ValidatedImage(
         original_filename=original_filename,
         image_format=image_format,
-        content_type=ALLOWED_CONTENT_TYPES.get(
-            (upload.content_type or "").lower(), f"image/{image_format}"
-        ),
+        # Derived from the decoded format, not from the declared header. The
+        # header is a claim, and it has already served its only purpose in
+        # `_check_content_type`; carrying it further would let the uploader
+        # decide how its own file is described. `image_format` is one of the
+        # three canonical names, so this is always a real MIME type - which is
+        # what the column is documented to hold.
+        content_type=f"image/{image_format}",
         size_bytes=size_bytes,
         width=width,
         height=height,

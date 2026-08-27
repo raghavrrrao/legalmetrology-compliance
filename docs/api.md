@@ -166,6 +166,54 @@ the contract here in a PR before building it.
 | `GET /api/v1/compliance/<id>/` | `feature/compliance-analysis` |
 | `GET /api/v1/rules/` | `feature/rule-management` |
 
+### What already exists behind them
+
+The upload and extraction endpoints are the only missing layer, not the missing
+work. The services they will call are implemented and tested:
+
+- `apps.images.services.ingestion.ingest_product_image(upload, ...)` — validates
+  and stores an upload, returning a `ProductImage`. Raises Django
+  `ValidationError` with a `code` (`unsupported_extension`, `file_too_large`,
+  `undecodable_image`, …). The standard error envelope already turns that into a
+  400 — but note it does **not** currently surface the code:
+  `api_exception_handler` converts a Django `ValidationError` through
+  `exc.messages`, so every rejection reaches the client as `validation_error`
+  with the reason in `details`, and none of the codes above appear in the Codes
+  table on this page.
+- `apps.extraction.services.extraction_service.run_extraction(image, ...)` —
+  runs the pipeline and persists an `ExtractionRun` plus its
+  `ExtractedLabelField` rows.
+- `apps.extraction.services.extraction_service.ingest_and_extract(upload, ...)` —
+  both, returning an `ExtractionOutcome(image, run)`.
+
+So `POST /api/v1/images/` is a serializer for the multipart body, a permission
+class, and a call to one of these. **A view must not re-implement validation or
+persistence**, and in particular must never write a `ProductImage` without going
+through the ingestion service — that is the only thing preventing an unvalidated
+file from reaching storage.
+
+Three decisions are still open and belong in the endpoint's PR, not here:
+
+- **Synchronous or queued.** `run_extraction` runs inline today, which is fine
+  for a placeholder engine and will not be for a real one. If the endpoint
+  returns before extraction finishes, its response shape has to account for a
+  run that is still `pending`/`running`.
+- **Authentication.** `ProductImage.uploaded_by` is nullable and no endpoint
+  currently authenticates. Whether uploads require a user is an unmade decision.
+- **Whether rejection reasons reach the client.** As above, the envelope
+  flattens every upload rejection to `validation_error`, so the UI cannot today
+  tell "convert this file" from "this file is corrupt". Surfacing the validator
+  codes means teaching `api_exception_handler` to read `ValidationError.code`
+  and adding them to the Codes table — a change to shared error handling, which
+  is why it is not made here.
+
+One constraint is **not** open, and the endpoint must respect it:
+`run_extraction` deliberately manages its own transactions so that a failed
+extraction still leaves a `failed` `ExtractionRun` behind. Enabling
+`ATOMIC_REQUESTS`, or wrapping the call in the view's own `transaction.atomic()`,
+discards that record along with the exception — the image is then left in
+`processing` with nothing explaining why.
+
 ## Conventions for new endpoints
 
 - Plural, lowercase, hyphenated collection names; trailing slash.

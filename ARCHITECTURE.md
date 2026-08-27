@@ -53,10 +53,14 @@ The end-to-end flow the whole system exists to serve:
   apps.images.validators        decode the bytes, measure, checksum
         │                       reject anything that is not a real image
         ▼
+  apps.images.services          the only way an upload becomes a row:
+    .ingestion                  validation cannot be skipped on this path
+        │
+        ▼
   ProductImage row              stored under a generated filename
         │
         ▼
-  apps.extraction.services      the ONLY module that imports labelextract
+  apps.extraction.services      the ONLY module that runs an ML engine
         │
         ▼
   labelextract.ExtractionPipeline
@@ -110,12 +114,25 @@ Conventions:
 
 ### Service layer (`backend/apps/*/services/`)
 
-Owns orchestration and business rules. Two services exist today:
+Owns orchestration and business rules. Three services exist today:
 
-- `extraction/services/extraction_service.py` — runs the OCR pipeline and
-  persists the result. **The only backend module that imports `labelextract`.**
+- `images/services/ingestion.py` — validates an upload and stores it as a
+  `ProductImage`, filling every column from what the bytes were measured to be
+  rather than from what the upload claimed. It is the only path from an upload
+  to a row, so nothing can reach extraction without having been validated.
+- `extraction/services/extraction_service.py` — runs the OCR pipeline, checks
+  what comes back against the contract, and persists the result.
+  **The only backend module that reaches the ML runtime** — `registry`,
+  `pipeline`, `exceptions`, and any engine behind them.
 - `compliance/services/engine.py` — determines applicable rules, evaluates
   them, records violations and evidence, decides the overall result.
+
+`labelextract.contracts` is the one deliberate exception to that boundary. It
+is a dependency-free vocabulary, not an implementation, and
+`rules/checks/field_presence.py` imports `LabelFieldKey` from it so a rule and
+a reading agree on what a field is called. Two vocabularies would drift; one
+that lives in `ml/` does not. Both halves of the boundary are pinned by tests
+in `apps/extraction/tests/test_extraction_integration.py`.
 
 ### Models (`backend/apps/*/models.py`)
 

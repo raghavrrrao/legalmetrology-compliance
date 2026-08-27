@@ -64,8 +64,11 @@ should be treated as the thing protecting the project, not an obstacle.
 backend  ──imports──▶  labelextract        (one direction, enforced by layout)
 ```
 
-`ml/labelextract` never imports Django. The only backend module that imports it
-is `backend/apps/extraction/services/extraction_service.py`. Engines are
+`ml/labelextract` never imports Django. The only backend module that runs an
+engine is `backend/apps/extraction/services/extraction_service.py`; the
+dependency-free `labelextract.contracts` vocabulary is also imported by
+`backend/apps/rules/checks/field_presence.py`, so a rule and a reading name a
+field identically. Engines are
 resolved by name and version through a registry, so swapping OCR
 implementations is a settings change plus a registration — no backend code, no
 migration.
