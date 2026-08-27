@@ -194,7 +194,7 @@ def test_an_unusable_dataset_version_is_refused(build_dataset, version):
 
 
 def test_a_non_iso_created_on_is_refused(build_dataset):
-    """"Last Tuesday" is not a date a later reader can check a claim against."""
+    """\"Last Tuesday\" is not a date a later reader can check a claim against."""
     root = build_dataset(manifest_overrides={"created_on": "last Tuesday"})
     with pytest.raises(EvaluationDataError, match="created_on"):
         load_dataset(root)
