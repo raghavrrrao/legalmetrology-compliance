@@ -50,7 +50,7 @@ is never a finding. No field in this schema records a compliance verdict.
 from __future__ import annotations
 
 import re
-from dataclasses import dataclass, field as dataclass_field
+from dataclasses import dataclass
 from enum import Enum
 from typing import Any, Mapping, Sequence
 
