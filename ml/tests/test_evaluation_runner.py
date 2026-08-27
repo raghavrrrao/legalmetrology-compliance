@@ -367,7 +367,7 @@ def test_the_validate_command_rejects_a_tampered_dataset(dataset_root, capsys):
 
 
 def test_the_validate_command_says_so_when_the_set_measures_nothing(tmp_path, capsys):
-    """"Validated" on an empty set is the sentence that gets misremembered."""
+    """\"Validated\" on an empty set is the sentence that gets misremembered."""
     root = tmp_path / "empty"
     root.mkdir()
     (root / "MANIFEST.json").write_text(
