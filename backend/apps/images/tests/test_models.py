@@ -62,7 +62,7 @@ def test_a_hostile_filename_never_reaches_the_stored_path(
 
     image = ProductImage.objects.create(
         product=product,
-        image=SimpleUploadedFile("label.png", png_bytes, content_type="image/png"),
+        image=SimpleUploadedFile(hostile_name, png_bytes, content_type="image/png"),
         original_filename=display_name,
         content_type="image/png",
         image_format="png",
