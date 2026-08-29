@@ -25,11 +25,80 @@ database, never sees an HTTP request. You can develop and test an OCR engine
 with no database and no web server running.
 
 The backend resolves engines **by name and version** through
-`labelextract.registry`. The only backend module that imports `labelextract` at
-all is `backend/apps/extraction/services/extraction_service.py`.
+`labelextract.registry`. The only backend module that reaches the ML *runtime*
+— `registry`, `pipeline`, `exceptions`, or any engine — is
+`backend/apps/extraction/services/extraction_service.py`.
+
+`labelextract.contracts` is the exception, and deliberately so: it is a
+dependency-free vocabulary rather than an implementation, and
+`backend/apps/rules/checks/field_presence.py` imports `LabelFieldKey` from it
+so a rule and a reading agree on what a field is called. Adding an engine still
+touches neither.
 
 Consequence: adding a real engine changes files in `ml/` plus two settings
 values. No Django code, no migration.
+
+## What the backend does with your result
+
+`extraction_service.run_extraction(image)` is the whole of it. Knowing what it
+does with what you return is what stops an engine from producing output that is
+technically valid and practically useless.
+
+**Before anything is written**, the returned object is checked against the
+contract — it must be an `ExtractionResult`, with a known `ExtractionStatus`, a
+non-negative `processing_ms`, an `OcrResult`, and every field a real
+`ExtractedField` carrying a real `LabelFieldKey` and a JSON-serialisable
+`normalized_value`. A breach raises `MalformedExtractionResult`.
+
+That check exists because the database would not object. `field_key` has no
+choices, and `raw_output`/`normalized_value` accept any JSON. A run stored with
+a misspelled key raises nothing at all — the compliance engine simply never
+matches it, and a declaration you *did* read gets reported as absent.
+
+**What gets persisted**, per run:
+
+| From your result | Lands in |
+|---|---|
+| `status` | `ExtractionRun.status` (`completed` / `empty` / `failed`) |
+| `is_placeholder` | `ExtractionRun.is_placeholder`, surfaced through the API |
+| `processing_ms` | `ExtractionRun.processing_ms` |
+| `ocr.full_text` | `ExtractionRun.recognised_text` |
+| `ocr.raw`, `metadata`, block count | `ExtractionRun.raw_output` (verbatim JSON) |
+| `error_code` / `error_message` | the columns of the same name |
+| each `ExtractedField` | one `ExtractedLabelField` row on that run |
+
+`metadata` is stored verbatim, which is how `unread_declarations` reaches the
+database with no column of its own. Keep putting it there: it is the only thing
+separating "the package declares no MRP" from "the MRP was printed too small to
+read", and those are opposite findings.
+
+Nothing is flattened on the way in. A `confidence` of `None` is stored as SQL
+`NULL`, never `0` — `NULL` means "this engine did not say", and zero would be a
+claim you never made. An `uncertain` flag in `normalized_value` survives intact.
+
+**Failure behaviour**, and what each case leaves behind:
+
+| What happened | Result |
+|---|---|
+| You raised a `LabelExtractError` | run saved `failed` with your `code`; not re-raised |
+| Your pipeline returned a `FAILED` result | run saved `failed` with your `error_code` |
+| You returned an empty `OcrResult` | run saved `empty` — a valid outcome, not an error |
+| You broke the result contract | run saved `failed` (`internal_error`), then **re-raised** |
+| Any other exception escaped your engine | same: recorded, then **re-raised** |
+
+The split is deliberate. A `LabelExtractError` is an ordinary outcome — one
+unreadable photograph must not fail a batch — so it is recorded and the caller
+carries on. A contract breach or an unexpected exception is a bug in an engine,
+and a bug filed away as "the photo was unreadable" is one nobody is ever shown.
+
+A failed run is still a run: it names the image, the engine and the version, and
+`produced_usable_output` is `False`, so the compliance engine treats it as
+inconclusive rather than as a package that declared nothing.
+
+**Re-running is free and non-destructive.** Every call creates a new
+`ExtractionRun`; nothing is overwritten or deduplicated, and each
+`ExtractedLabelField` belongs to the run that read it. That is what lets you
+compare a new engine version against an old one on the same photograph.
 
 ## Steps
 

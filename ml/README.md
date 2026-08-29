@@ -82,8 +82,9 @@ engines can be compared on the same images.
 repository, because none has been measured on our data.**
 
 The engine is swappable without touching Django: `extraction_service.py` is the
-only backend module that imports `labelextract`, and it resolves pipelines by
-name and version. See [`docs/ml-integration.md`](../docs/ml-integration.md).
+only backend module that reaches the runtime here - `registry`, `pipeline`,
+`exceptions` or an engine - and it resolves pipelines by name and version. Only
+the dependency-free `contracts` vocabulary is imported elsewhere in the backend. See [`docs/ml-integration.md`](../docs/ml-integration.md).
 
 ## PREPROCESSING
 
@@ -558,9 +559,11 @@ backend  ──imports──▶  labelextract        (one direction, enforced by
 ```
 
 `labelextract` never imports Django, never touches the database, never sees an
-HTTP request. The only backend module that imports it is
+HTTP request. The only backend module that runs an engine is
 `backend/apps/extraction/services/extraction_service.py`, which resolves
-pipelines by name and version through `registry`.
+pipelines by name and version through `registry`. `contracts` is the one module
+imported more widely - `apps.rules.checks.field_presence` reads `LabelFieldKey`
+from it - because a shared vocabulary is the point of it.
 
 Switching engines is two values in `.env` and no code change:
 
