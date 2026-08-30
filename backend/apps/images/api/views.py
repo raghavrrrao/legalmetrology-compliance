@@ -98,4 +98,15 @@ class ImageAnalysisView(APIView):
         """
         if not code:
             return None
-        return ProductCategory.objects.get(code=code, is_active=True)
+        try:
+            return ProductCategory.objects.get(code=code, is_active=True)
+        except ProductCategory.DoesNotExist as exc:
+            from rest_framework import exceptions as drf_exceptions
+
+            raise drf_exceptions.ValidationError(
+                {
+                    "category_code": [
+                        f"No active product category with code {code!r}. Load categories with `manage.py seed_categories`."
+                    ]
+                }
+            ) from exc
