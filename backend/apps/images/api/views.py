@@ -74,12 +74,13 @@ class ImageAnalysisView(APIView):
                 view_type=validated["view_type"],
             )
         except DjangoValidationError as exc:
-            # The upload was rejected by apps.images.validators. Re-raised as
-            # itself: `api_exception_handler` already translates a Django
-            # ValidationError into the standard 400 envelope, so catching it
-            # only to re-shape it here would produce a second error format.
+            # The upload was rejected by apps.images.validators.
+            # Raise as a DRF ValidationError keyed to the request field so the
+            # standard error envelope stays structured (details.image=[...]).
             logger.info("Upload rejected: %s", exc.messages)
-            raise
+            from rest_framework import exceptions as drf_exceptions
+
+            raise drf_exceptions.ValidationError({"image": exc.messages}) from exc
 
         body = ComplianceCheckSerializer(
             outcome.check, context={"request": request}
