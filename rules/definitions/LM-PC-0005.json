@@ -1,0 +1,29 @@
+{
+  "_comment_1": "Rule 6(1)(e) LMPC 2011 - retail sale price.",
+  "_comment_2": "DELIBERATELY INACTIVE (is_active: false). The legal text is verified, but the exemptions written into rule 6(1) for this declaration cannot be expressed by the categories this repository has, so evaluating it would produce false violations.",
+  "_comment_3": "Carve-outs that cannot be expressed: (i) proviso (C) to rule 6(1), under which no declaration as to the retail sale price is required on any package containing bidi, or on any domestic liquefied petroleum gas cylinder whose price is covered under the Administrative Price Mechanism of the Government; (ii) the proviso to clause (e), under which State Excise Laws govern packages containing alcoholic beverages or spirituous liquor within the State in which they are manufactured, these rules applying only where those laws do not provide for declaration of retail sale price; (iii) the proviso inserted vide G.S.R. 858(E) dated 7th September 2016, under which a retail sale price fixed and notified by the Competent Authority under the Essential Commodities Act, 1955 applies. Bidi and LPG cylinders fall inside packaged-non-food and alcoholic beverages inside packaged-food; there is no narrower category to attach the rule to.",
+  "_comment_4": "field_presence would also only ask whether a price declaration was read. It cannot check the manner of declaration required by the substituted words - that it clearly indicate the maximum retail price inclusive of all taxes in Indian currency. That needs a check type this repository does not have.",
+  "_comment_5": "To activate: seed narrower commodity categories for bidi, LPG cylinders and alcoholic beverages, or add a conditional check type. Then set is_active true.",
+
+  "code": "LM-PC-0005",
+  "title": "Retail sale price (maximum retail price)",
+
+  "requirement": "The package must state the retail sale price of the package, clearly indicated as the maximum retail price inclusive of all taxes, in Indian currency.",
+
+  "legal_reference": "Rule 6(1)(e) of the Legal Metrology (Packaged Commodities) Rules, 2011",
+  "source_status": "verified",
+  "source_note": "Checked 2026-08-30 by Claude Code (automated legal-source check) for raghavrrrao against the Department of Consumer Affairs (Ministry of Consumer Affairs, Food and Public Distribution) consolidated publication 'Book on Legal Metrology Packaged Commodities Rules, 2011 with all amendments', https://consumeraffairs.gov.in/public/upload/admin/cmsfiles/whatsnews/Book_on_Legal_Metrology_Packaged_Commodities_Rules,2011_with_all_amendments_whatsnews.pdf (sha256 0ef948f9c6b89f5dfb20d384861901714fd0dc54fc67b5b86c772d2c3f983a4b; server Last-Modified 2025-04-14). Clause (e) reads there, verbatim: 'the retail sale price of the package;', followed by the words substituted vide G.S.R. 629(E) dated 23rd June 2017 w.e.f. 1.1.2018: 'shall clearly indicate that it is the maximum retail price inclusive of all taxes in Indian currency:'. The source records that the illustrations and rounding words which followed were replaced by the words 'in Indian currency' vide G.S.R. 779(E) dated 2nd November 2021 w.e.f. 1.4.2022, now w.e.f. 01.10.2022 vide G.S.R. 226(E) dated 28th March 2022. Rule 2(m), as substituted vide G.S.R. 629(E), defines 'retail sale price' verbatim as 'the maximum price at which the commodity in packaged form may be sold to the consumer inclusive of all taxes'. Proviso (C) to rule 6(1) reads verbatim: 'no declaration as to the retail sale price shall be required to be made on (i) any package containing bidi; (ii) any domestic liquefied petroleum gas cylinder of which the price is covered under the Administrative Price Mechanism of the Government.' THIS RULE IS RECORDED BUT NOT EVALUATED - see the _comment keys above and rules/SOURCES.md. HUMAN COUNTER-REVIEW BY A NAMED REVIEWER IS STILL OUTSTANDING.",
+
+  "severity": "major",
+
+  "check_type": "field_presence",
+  "parameters": {
+    "field_key": "retail_sale_price"
+  },
+
+  "applies_to_category_codes": ["packaged-commodity"],
+
+  "effective_from": "2022-10-01",
+  "effective_to": null,
+  "is_active": false
+}

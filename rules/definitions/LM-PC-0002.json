@@ -1,0 +1,30 @@
+{
+  "_comment_1": "Rule 6(1)(b) LMPC 2011 - common or generic name of the commodity.",
+  "_comment_2": "Applicability: no carve-out is written into clause (b) itself, so it applies to every commodity within Chapter II. Scoped to the root category rather than an empty list so the claim is explicit and stays inside this taxonomy; ProductCategory.ancestry_codes() makes it inherit to packaged-food and packaged-non-food.",
+  "_comment_3": "Chapter-wide scope limits in rule 3 (packages over 25 kg / 25 litre; cement, fertilizer and agricultural farm produce above 50 kg; industrial or institutional consumers) and rule 26 (net weight 10 g / 10 ml or less; restaurant fast food; DPCO formulations; thread sold in coil to handloom weavers) are NOT expressible as categories and are NOT encoded here. See rules/SOURCES.md.",
+  "_comment_4": "DEACTIVATED (is_active: false). The legal text is verified and unchanged; the blocker is technical. 'common_or_generic_name' is in labelextract.fields.UNSUPPORTED_KEYS - the extractor does not read this declaration, because identifying it needs layout analysis that the pattern-matching field layer does not do (see ml/README.md). While it was active this rule reported a violation against every product, since the field is absent from every run the extractor produces.",
+  "_comment_5": "field_presence has no way to tell 'the extractor does not look for this' apart from 'the package does not declare it', so while this rule was active every readable label produced a FAILED outcome. Deactivating it is the only safeguard currently in place. Giving the check that second signal is a separate piece of work and is NOT done in this branch - see rules/INVENTORY.md.",
+  "_comment_6": "To activate: teach the extractor to read the common or generic name, so that common_or_generic_name enters SUPPORTED_KEYS. No legal change is needed - the requirement, its wording and its applicability are unchanged.",
+
+  "code": "LM-PC-0002",
+  "title": "Common or generic name of the commodity",
+
+  "requirement": "The package must state the common or generic name of the commodity it contains. Where the package contains more than one product, it must also state the name and the number or quantity of each product.",
+
+  "legal_reference": "Rule 6(1)(b) of the Legal Metrology (Packaged Commodities) Rules, 2011",
+  "source_status": "verified",
+  "source_note": "Checked 2026-08-30 by Claude Code (automated legal-source check) for raghavrrrao against the Department of Consumer Affairs (Ministry of Consumer Affairs, Food and Public Distribution) consolidated publication 'Book on Legal Metrology Packaged Commodities Rules, 2011 with all amendments', https://consumeraffairs.gov.in/public/upload/admin/cmsfiles/whatsnews/Book_on_Legal_Metrology_Packaged_Commodities_Rules,2011_with_all_amendments_whatsnews.pdf (sha256 0ef948f9c6b89f5dfb20d384861901714fd0dc54fc67b5b86c772d2c3f983a4b; server Last-Modified 2025-04-14). Clause (b) reads there, verbatim: 'The common or generic names of the commodity contained in the package and in case of packages with more than one product, the name and number or quantity of each product shall be mentioned on the package.' No proviso, explanation or exemption is attached to this clause. Provenance, verification method and residual gaps: rules/SOURCES.md. HUMAN COUNTER-REVIEW BY A NAMED REVIEWER IS STILL OUTSTANDING.",
+
+  "severity": "major",
+
+  "check_type": "field_presence",
+  "parameters": {
+    "field_key": "common_or_generic_name"
+  },
+
+  "applies_to_category_codes": ["packaged-commodity"],
+
+  "effective_from": "2011-04-01",
+  "effective_to": null,
+  "is_active": false
+}

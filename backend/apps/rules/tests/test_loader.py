@@ -54,14 +54,23 @@ def test_missing_directory_yields_no_files(tmp_path):
     assert discover_rule_files(tmp_path / "nope") == []
 
 
-def test_the_shipped_definitions_directory_contains_no_rules(settings):
-    """This repository ships zero rules, and that is deliberate.
+def test_every_shipped_definition_file_parses(settings):
+    """The real rule files must satisfy the loader, not just the fixtures here.
 
-    If this test fails, someone added a rule file. That is fine - but it must
-    come with verified legal sourcing, so this test failing is a prompt to
-    check that, not to delete the assertion.
+    This assertion used to be `== []`: the repository shipped zero rules, and
+    the test existed so that adding one could not pass unnoticed. Rules have
+    now been added from the Department of Consumer Affairs' consolidated text
+    (see rules/SOURCES.md), so the guard moves from "there are none" to "each
+    one parses and carries its sourcing". What the shipped set contains, which
+    rules are active, and why three are not is pinned in
+    apps/rules/tests/test_shipped_definitions.py.
     """
-    assert discover_rule_files(settings.RULES_DEFINITIONS_DIR) == []
+    paths = discover_rule_files(settings.RULES_DEFINITIONS_DIR)
+
+    assert paths, "rules/definitions/ is empty - see rules/README.md"
+    for path in paths:
+        parsed = parse_rule_file(path)
+        assert path.name == f"{parsed['code']}.json"
 
 
 # --- structural validation --------------------------------------------------

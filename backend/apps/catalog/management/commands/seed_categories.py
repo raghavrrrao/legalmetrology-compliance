@@ -18,15 +18,21 @@ an identifier this system uses to group commodities so that a rule can say
 which commodities it covers. Nothing here asserts that a category exists in the
 Legal Metrology (Packaged Commodities) Rules, 2011, that it is the right way to
 carve up commodities under them, or that any particular declaration is required
-for anything in it. That claim can only be made by a verified `ComplianceRule`,
-and `rules/definitions/` ships none - see `rules/README.md`.
+for anything in it. That claim can only be made by a verified `ComplianceRule` -
+see `rules/README.md` for the ones that ship and `rules/SOURCES.md` for what
+they were checked against.
 
-The set below is therefore deliberately shallow and generic: one root that
-restates the problem statement's own subject, plus two obvious sub-groupings
-present to prove the inheritance in `ProductCategory.ancestry_codes()` works.
-Whoever takes `feature/legal-rules-dataset` should expect to replace this
-taxonomy with one derived from the authoritative text, and is free to: no rule
-file references these codes yet, so nothing breaks when they change.
+The set below is deliberately shallow and generic: one root that restates the
+problem statement's own subject, plus two obvious sub-groupings that also carry
+the inheritance in `ProductCategory.ancestry_codes()`.
+
+**These three codes are now part of a reviewed data contract.** Every shipped
+rule file names one of them, so renaming or removing one invalidates rule files
+and `load_rules` will reject them rather than silently widen a rule to every
+commodity. Adding a narrower category is safe and is in fact what three of the
+shipped rules are waiting on: `LM-PC-0004` and `LM-PC-0005` stay inactive
+because exemptions for cosmetics, seeds, bidi, incense sticks, LPG cylinders
+and alcoholic beverages cannot be expressed against a taxonomy this coarse.
 
 Idempotent. Safe to re-run; it never renames or deletes an existing category,
 because `rules/README.md` notes that renaming a code invalidates rule files
@@ -99,6 +105,6 @@ class Command(BaseCommand):
         )
         self.stdout.write(
             "These are grouping identifiers only. No compliance rule is "
-            "loaded by this command, and none ships in rules/definitions/ - "
-            "so every product will still be reported as REVIEW_REQUIRED."
+            "loaded by this command - run 'load_rules' for that. Until you "
+            "do, every product will still be reported as REVIEW_REQUIRED."
         )

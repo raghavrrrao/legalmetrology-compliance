@@ -1,0 +1,29 @@
+{
+  "_comment_1": "Rule 6(1)(a) LMPC 2011 - manufacturer / packer / importer declaration.",
+  "_comment_2": "DELIBERATELY INACTIVE (is_active: false). The legal text is verified, but the requirement CANNOT be expressed with the field_presence check without producing false violations.",
+  "_comment_3": "Why: clause (a) is disjunctive - a package satisfies it by declaring the manufacturer, OR the manufacturer and the packer, OR (for an imported package) the importer. field_presence tests exactly one field_key. A rule with field_key 'manufacturer_name' would report a lawfully labelled imported package, which declares only importer_name, as NON_COMPLIANT. Expressing 'at least one of manufacturer_name, packer_name, importer_name' needs a check type this repository does not have.",
+  "_comment_4": "Applicability that IS expressible and is encoded here: Explanation III to clause (a), as substituted vide G.S.R. 629(E) dated 23rd June 2017 w.e.f. 1.1.2018, disapplies this clause to packages containing food articles, for which the Food Safety and Standards Act, 2006 and the rules made thereunder apply instead. Hence packaged-non-food only, never packaged-food.",
+  "_comment_5": "To activate: add a check type that can test a disjunction of field keys, then set is_active true. Do not set is_active true with the parameters below as they stand.",
+
+  "code": "LM-PC-0001",
+  "title": "Name and address of the manufacturer, packer or importer",
+
+  "requirement": "The package must state the name and address of the manufacturer. Where the manufacturer is not the packer, it must state the name and address of both the manufacturer and the packer. For an imported package, it must state the name and address of the importer.",
+
+  "legal_reference": "Rule 6(1)(a) of the Legal Metrology (Packaged Commodities) Rules, 2011",
+  "source_status": "verified",
+  "source_note": "Checked 2026-08-30 by Claude Code (automated legal-source check) for raghavrrrao against the Department of Consumer Affairs (Ministry of Consumer Affairs, Food and Public Distribution) consolidated publication 'Book on Legal Metrology Packaged Commodities Rules, 2011 with all amendments', https://consumeraffairs.gov.in/public/upload/admin/cmsfiles/whatsnews/Book_on_Legal_Metrology_Packaged_Commodities_Rules,2011_with_all_amendments_whatsnews.pdf (sha256 0ef948f9c6b89f5dfb20d384861901714fd0dc54fc67b5b86c772d2c3f983a4b; server Last-Modified 2025-04-14). Clause (a) reads there, verbatim: 'the name and address of the manufacturer, or where the manufacturer is not the packer, the name and address of the manufacturer and packer and for any imported package the name and address of the importer shall be mentioned.' Explanation III, as substituted vide G.S.R. 629(E) dated 23rd June 2017 w.e.f. 1.1.2018, reads verbatim: 'In respect of packages containing food articles, the provisions of this clause shall not apply, but the provisions of, and the requirements specified in the Food Safety and Standards Act, 2006 (34 of 2006) and the rules made thereunder shall apply;'. THIS RULE IS RECORDED BUT NOT EVALUATED - see the _comment keys above and rules/SOURCES.md. HUMAN COUNTER-REVIEW BY A NAMED REVIEWER IS STILL OUTSTANDING.",
+
+  "severity": "major",
+
+  "check_type": "field_presence",
+  "parameters": {
+    "field_key": "manufacturer_name"
+  },
+
+  "applies_to_category_codes": ["packaged-non-food"],
+
+  "effective_from": "2018-01-01",
+  "effective_to": null,
+  "is_active": false
+}

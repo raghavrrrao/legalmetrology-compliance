@@ -1,0 +1,30 @@
+{
+  "_comment_1": "Rule 6(1)(d) LMPC 2011 - month and year of manufacture.",
+  "_comment_2": "NOTE THE CURRENT WORDING: the words 'or pre-packed or imported' were OMITTED vide G.S.R. 779(E) dated 2nd November 2021 w.e.f. 1.4.2022, now w.e.f. 01.10.2022 vide G.S.R. 226(E) dated 28th March 2022. The clause in force therefore covers the month and year of MANUFACTURE only. The brief for this branch described this as 'month/year of manufacture, pre-packing or import'; that wording is no longer in the rule.",
+  "_comment_3": "DELIBERATELY INACTIVE (is_active: false). The legal text is verified, but the carve-outs written into this clause cannot be expressed by the categories this repository has, so evaluating it would produce false violations.",
+  "_comment_4": "Carve-outs that cannot be expressed: (i) packages containing cosmetics products, for which the Drugs and Cosmetics Rules, 1945 apply instead; (ii) packages containing seeds labelled and certified under the Seeds Act, 1966; (iii) proviso (A) to rule 6(1), under which no declaration of month and year is required on any package containing bidi or incense sticks, or on any domestic liquefied petroleum gas cylinder of 14.2 kg or 5 kg bottled and marketed by a public sector undertaking. All of these fall inside packaged-non-food and there is no narrower category to attach the rule to.",
+  "_comment_5": "Applicability that IS expressible and is encoded here: the first proviso disapplies this clause to packages containing food articles, for which the Food Safety and Standards Act, 2006 and the rules made thereunder apply. Hence packaged-non-food only.",
+  "_comment_6": "To activate: either seed narrower commodity categories for cosmetics, seeds, bidi and incense sticks, and LPG cylinders, or add a conditional check type. Then set is_active true.",
+
+  "code": "LM-PC-0004",
+  "title": "Month and year of manufacture",
+
+  "requirement": "The package must state the month and year in which the commodity was manufactured.",
+
+  "legal_reference": "Rule 6(1)(d) of the Legal Metrology (Packaged Commodities) Rules, 2011",
+  "source_status": "verified",
+  "source_note": "Checked 2026-08-30 by Claude Code (automated legal-source check) for raghavrrrao against the Department of Consumer Affairs (Ministry of Consumer Affairs, Food and Public Distribution) consolidated publication 'Book on Legal Metrology Packaged Commodities Rules, 2011 with all amendments', https://consumeraffairs.gov.in/public/upload/admin/cmsfiles/whatsnews/Book_on_Legal_Metrology_Packaged_Commodities_Rules,2011_with_all_amendments_whatsnews.pdf (sha256 0ef948f9c6b89f5dfb20d384861901714fd0dc54fc67b5b86c772d2c3f983a4b; server Last-Modified 2025-04-14). Clause (d) reads there, verbatim: 'The month and year in which the commodity is manufactured or pre-packed or imported shall be mentioned in the package:', with the source recording that 'the words, - \"or pre-packed or imported\" shall be omitted vide GSR 779(E) dated 2nd November, 2021 w.e.f. 1.4.2022 (now w.e.f 01.10.2022 vide GSR 226(E) dated 28.3.2022)'. Provisos recorded verbatim in the source: for packages containing food articles the provisions of the Food Safety and Standards Act, 2006 (34 of 2006) and the rules made there under shall apply; 'Provided further that nothing in this sub-clause shall apply in case of packages containing seeds which are labeled and certified under the provisions of the Seeds Act, 1966 (54 of 1966) and the rules made there under'; 'Provided also that for packages containing cosmetics products, the provisions of the Drugs and Cosmetics Rules, 1945 shall apply.' Proviso (A) to rule 6(1) reads verbatim: 'no declaration as to the month and year in which the commodity is manufactured or pre-packed shall be required to be made on-- (i) any package containing bidi or incense sticks; (ii) any domestic liquefied petroleum gas cylinder of 14.2kg or 5kg, bottled and marketed by a public sector undertaking'. THIS RULE IS RECORDED BUT NOT EVALUATED - see the _comment keys above and rules/SOURCES.md. HUMAN COUNTER-REVIEW BY A NAMED REVIEWER IS STILL OUTSTANDING.",
+
+  "severity": "major",
+
+  "check_type": "field_presence",
+  "parameters": {
+    "field_key": "date_of_manufacture"
+  },
+
+  "applies_to_category_codes": ["packaged-non-food"],
+
+  "effective_from": "2022-10-01",
+  "effective_to": null,
+  "is_active": false
+}

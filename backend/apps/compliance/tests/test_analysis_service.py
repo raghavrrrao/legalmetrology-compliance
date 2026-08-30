@@ -181,9 +181,10 @@ def test_with_no_rules_loaded_the_result_is_review_required(
 ):
     """Engine guarantee 1, reached through the service.
 
-    This is the repository's actual state: zero rules ship, so a perfectly
-    readable label still yields REVIEW_REQUIRED. Not COMPLIANT - nothing was
-    checked, which is not the same as nothing being wrong.
+    Rules do ship now, but this test loads none, so a perfectly readable
+    label still yields REVIEW_REQUIRED. Not COMPLIANT - nothing was checked,
+    which is not the same as nothing being wrong. The same guarantee against
+    the real shipped rules is in apps/rules/tests/test_shipped_definitions.py.
     """
     outcome = _analyse(png_upload, category=category)
 
@@ -196,8 +197,8 @@ def test_a_verified_rule_that_passes_yields_compliant(
 ):
     """The COMPLIANT path exists and is reachable - with a rule that passes.
 
-    Uses a fixture rule rather than a shipped one, because the repository
-    ships none. It proves the wiring, not a legal conclusion.
+    Uses a fixture rule rather than a shipped one, so this stays a test of
+    the wiring rather than of any legal conclusion.
     """
     make_rule(code="ANALYSIS-PASS", field_key="net_quantity", verified=True)
 
