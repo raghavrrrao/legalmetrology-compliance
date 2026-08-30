@@ -27,12 +27,12 @@ Keeping rules as data buys three things that matter for this project:
 ## What this directory currently ships
 
 Six rules, drawn from rule 6 of the Legal Metrology (Packaged Commodities)
-Rules, 2011. **Three of them are evaluated; three are recorded but inactive.**
+Rules, 2011. **Two of them are evaluated; four are recorded but inactive.**
 
 | Code | Declaration | Provision | Active |
 |---|---|---|---|
 | `LM-PC-0001` | Manufacturer, packer or importer | Rule 6(1)(a) | **no** |
-| `LM-PC-0002` | Common or generic name | Rule 6(1)(b) | yes |
+| `LM-PC-0002` | Common or generic name | Rule 6(1)(b) | **no** |
 | `LM-PC-0003` | Net quantity | Rule 6(1)(c) | yes |
 | `LM-PC-0004` | Month and year of manufacture | Rule 6(1)(d) | **no** |
 | `LM-PC-0005` | Retail sale price (MRP) | Rule 6(1)(e) | **no** |
@@ -43,12 +43,37 @@ Consumer Affairs' own consolidated publication. What was read, from where, with
 what checksum, and quoted verbatim clause by clause, is recorded in
 [`SOURCES.md`](SOURCES.md). Read that before changing anything here.
 
+**Six rules is not the legal inventory.** [`INVENTORY.md`](INVENTORY.md) records
+every requirement of the Rules relevant to this project - rules 3 to 34 - and
+for each one whether this software can evaluate it, what blocks it, and which
+check type it would need. Read it before proposing a new rule file: most of
+what is missing is blocked on applicability data or a check type, not on
+someone writing more JSON.
+
 This project makes legal compliance determinations, so a rule that is invented,
 half-remembered, or paraphrased from a blog post is worse than no rule at all:
 it produces a confident, wrong, official-looking answer. Nothing here is
 paraphrased — the statutory wording sits verbatim in each rule's `source_note`.
 
-### Why three rules are inactive
+### `LM-PC-0002` is inactive: the extractor cannot read the declaration
+
+`LM-PC-0002` names `common_or_generic_name`, which is in
+`labelextract.fields.UNSUPPORTED_KEYS` — identifying a generic name needs
+layout analysis the pattern-matching field layer does not do.
+
+While it was active it reported a violation against **every** product, because
+the field is absent from every run the extractor produces. `field_presence`
+cannot tell "the extractor does not look for this" apart from "the package does
+not declare it", so **`is_active: false` is the only thing preventing that, and
+reactivating the rule would restore the bug.**
+
+The legal text, wording and applicability are unchanged and still verified.
+The blocker is technical, and closing it properly is separate work outside this
+branch: teach the extractor to read the declaration, or give the check a
+per-run signal for what the engine actually attempted. Neither is a legal
+decision. See [`INVENTORY.md`](INVENTORY.md).
+
+### Why the other three rules are inactive
 
 `is_active: false` means the rule is on record and loaded, but never evaluated.
 Each of the three is blocked on something the current machinery cannot express,

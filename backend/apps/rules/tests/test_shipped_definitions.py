@@ -8,10 +8,12 @@ else:
 1. A rule file drifts out of the shape the loader accepts, and `load_rules`
    fails in a deployment rather than in CI.
 2. Someone widens a rule's applicability, or flips `is_active`, without the
-   verified sourcing that entitles it to produce a finding. Three of the six
-   shipped rules are deliberately inactive because `field_presence` cannot
-   express their carve-outs safely - see `rules/SOURCES.md`. Activating one is
-   a legal decision, so it has to break a test rather than pass quietly.
+   verified sourcing that entitles it to produce a finding. Four of the six
+   shipped rules are deliberately inactive - three because `field_presence`
+   cannot express their carve-outs safely (see `rules/SOURCES.md`), and
+   LM-PC-0002 because the extractor does not read the declaration it names
+   (see `rules/INVENTORY.md`). Activating one is a legal decision, so it has
+   to break a test rather than pass quietly.
 """
 
 import pytest
@@ -26,17 +28,19 @@ pytestmark = pytest.mark.django_db
 
 
 #: Evaluated against real products. Each is a verified declaration whose
-#: applicability the current schema can express without over-applying.
-ACTIVE_CODES = {"LM-PC-0002", "LM-PC-0003", "LM-PC-0006"}
+#: applicability the current schema can express without over-applying, AND
+#: whose declaration the extractor actually reads.
+ACTIVE_CODES = {"LM-PC-0003", "LM-PC-0006"}
 
-#: Verified text kept on record, but not evaluated: `field_presence` plus the
-#: three seeded categories cannot express their exemptions without producing
-#: false violations. `rules/SOURCES.md` says which exemption blocks which rule.
-INACTIVE_CODES = {"LM-PC-0001", "LM-PC-0004", "LM-PC-0005"}
+#: Verified text kept on record, but not evaluated. Three are blocked on
+#: applicability the schema cannot express - `rules/SOURCES.md` says which
+#: exemption blocks which. LM-PC-0002 is blocked on something different: the
+#: extractor does not read `common_or_generic_name`, so the rule could only
+#: ever return "cannot tell". See rules/INVENTORY.md.
+INACTIVE_CODES = {"LM-PC-0001", "LM-PC-0002", "LM-PC-0004", "LM-PC-0005"}
 
 #: The declarations the active rules require, and the LabelFieldKey each uses.
 ACTIVE_FIELD_KEYS = {
-    "LM-PC-0002": "common_or_generic_name",
     "LM-PC-0003": "net_quantity",
     "LM-PC-0006": "consumer_care_contact",
 }
@@ -102,9 +106,10 @@ def test_every_shipped_rule_is_verified_with_a_source_note(shipped):
 def test_only_the_reviewed_rules_are_active(shipped):
     """Flipping `is_active` is a legal decision, not a configuration tweak.
 
-    The three inactive rules are blocked on exemptions `field_presence` cannot
-    express. If this test fails because one was activated, the question to
-    answer is whether the exemption is now expressible - see rules/SOURCES.md.
+    If this fails because a rule was activated, the question to answer is what
+    was unblocked: an exemption the categories can now express (LM-PC-0001,
+    -0004, -0005, see rules/SOURCES.md), or an extractor that now reads the
+    declaration (LM-PC-0002).
     """
     active = {code for code, rule in shipped.items() if rule["is_active"]}
 

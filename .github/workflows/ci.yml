@@ -84,6 +84,19 @@ jobs:
       - name: Apply migrations
         run: python backend/manage.py migrate
 
+      # MUST run before load_rules. Rule files name the categories they apply
+      # to by `ProductCategory.code`, and the loader rejects a code that has no
+      # row rather than silently widening the rule to every commodity. On a
+      # fresh database no categories exist, so load_rules fails with
+      # "unknown product category code(s)".
+      #
+      # This step was not needed while rules/definitions/ was empty - the
+      # loader never resolved a category - which is why its absence only
+      # surfaced when the first real rules landed. The ordering is pinned by
+      # apps/rules/tests/test_setup_sequence.py so it cannot silently regress.
+      - name: Seed product categories
+        run: python backend/manage.py seed_categories
+
       - name: Rule loader runs
         run: python backend/manage.py load_rules --dry-run
 

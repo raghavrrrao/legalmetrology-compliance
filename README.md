@@ -37,11 +37,11 @@ those limits are enforced by tests rather than only documented:
   generic name, manufacturer address and unit sale price are **not** extracted.
   The unsupported list is derived from the code rather than maintained by hand,
   so it cannot drift away from what the system actually does.
-- **Six compliance rules ship, and only three are evaluated.** They come from
+- **Six compliance rules ship, and only two are evaluated.** They come from
   rule 6 of the Rules, verified against the Department of Consumer Affairs'
-  consolidated text. The other three are recorded but inactive because the
-  present `field_presence` check and category taxonomy cannot express their
-  exemptions without producing false violations. Legibility under rule 9(1)(a),
+  consolidated text. The other four are recorded but inactive: three because
+  the present category taxonomy cannot express their exemptions, and one
+  because the extractor does not read the declaration it names. Legibility under rule 9(1)(a),
   and the rule 3 / rule 26 scope limits, are not modelled at all. See
   [`rules/README.md`](rules/README.md) and [`rules/SOURCES.md`](rules/SOURCES.md).
 - **The legal sourcing is not finished.** An amendment-chain gap between March
@@ -122,7 +122,8 @@ those limits are enforced by tests rather than only documented:
 │   ├── README.md
 │   ├── SCHEMA.md
 │   ├── SOURCES.md       what each rule was verified against
-│   └── definitions/     six rules from rule 6; three active
+│   ├── INVENTORY.md     every LMPC requirement and whether we can check it
+│   └── definitions/     six rules from rule 6; two active
 │
 ├── docs/              API, security, ML-integration and strategy docs
 ├── .github/workflows/ CI: backend, ML and frontend on every pull request
@@ -301,19 +302,33 @@ The name must match `DATABASE_NAME` in your `.env`.
 python backend/manage.py migrate
 ```
 
-### 8. Load compliance rules
+### 8. Seed the product categories
+
+```bash
+python backend/manage.py seed_categories
+```
+
+Creates the internal grouping codes (`packaged-commodity`, `packaged-food`,
+`packaged-non-food`) that rule files reference. **This must run before
+`load_rules`**: the loader rejects a rule naming a category that has no row,
+rather than silently widening the rule to every commodity. Idempotent.
+
+These are an internal taxonomy for deciding which rules apply — not categories
+defined by the Rules.
+
+### 9. Load compliance rules
 
 ```bash
 python backend/manage.py load_rules
 ```
 
-This loads six rules and reports each one. Three are active; three load with
+This loads six rules and reports each one. Two are active; four load with
 `is_active: false` and are never evaluated — see
 [`rules/README.md`](rules/README.md) for why, and
 [`rules/SOURCES.md`](rules/SOURCES.md) for what they were verified against.
 Add `--dry-run` to validate the files without writing.
 
-### 9. Create an admin user (optional)
+### 10. Create an admin user (optional)
 
 ```bash
 python backend/manage.py createsuperuser
