@@ -3,6 +3,7 @@ import { Route, Routes } from 'react-router-dom';
 import { AppLayout } from './layouts/AppLayout.jsx';
 import { HomePage } from './pages/HomePage.jsx';
 import { NotFoundPage } from './pages/NotFoundPage.jsx';
+import { ScanPage } from './pages/ScanPage.jsx';
 
 /**
  * Application routes.
@@ -15,6 +16,7 @@ export function App() {
     <Routes>
       <Route element={<AppLayout />}>
         <Route index element={<HomePage />} />
+        <Route path="scan" element={<ScanPage />} />
         <Route path="*" element={<NotFoundPage />} />
       </Route>
     </Routes>

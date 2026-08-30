@@ -15,6 +15,7 @@ export function AppLayout() {
         </Link>
         <nav className="app-nav">
           <Link to="/">Home</Link>
+          <Link to="/scan">Scan a label</Link>
         </nav>
       </header>
 
