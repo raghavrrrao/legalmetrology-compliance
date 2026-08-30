@@ -43,9 +43,20 @@ documentation:
 
 `unit_sale_price` entered the supported set on `feature/ml-label-extraction`
 after this inventory was written. **That changed extraction capability and
-nothing else** — no rule file names the key, no status below was re-decided,
-and the rule 6(11) entry is left exactly as it was for the rules owner to
-re-assess (see the note there).
+nothing else.** Specifically:
+
+- **Supported means attempted, not measured.** The key is newer than the frozen
+  evaluation set, so all 28 of its cells score as `unknown` → excluded and
+  there is **no precision, recall or value accuracy for it anywhere**. One
+  correct reading on one panel is a demonstration, not a measurement. Read the
+  supported list above as a statement about the extractor's code, never as a
+  reliability claim.
+- **No rule file names the key**, no status below was re-decided, and the rule
+  6(11) entry is left for the rules owner to re-assess (see the note there).
+- **No rule was activated on that branch.** `LM-PC-0002` and every other
+  inactive rule remain `is_active: false`. Extraction capability and legal-rule
+  activation are separate decisions, and this file's own contained-defect note
+  above is the record of what happens when they are conflated.
 
 `ProductCategory` holds three internal grouping codes only —
 `packaged-commodity`, `packaged-food`, `packaged-non-food`. The system records
@@ -366,10 +377,10 @@ reactivating `LM-PC-0002` needs extraction support, not legal review.
 | | |
 |---|---|
 | **Quotation** | "The unit sale price shall be declared as- (i) 'Rs. _ per g' for pre-packaged commodities with net quantity of commodity …" with "Provided further that declaration of unit sale price is not required for the pre-packaged commodities in which retail sale price is equal to the unit sale price." |
-| **Evidence** | `unit_sale_price` — **now supported** by the extractor (keyword-anchored; the printed unit is reported, never converted) |
-| **check_type** | `format_check` + `numeric_check` (the format depends on the net-quantity band, and the exemption is an arithmetic comparison) |
-| **Status** | `BLOCKED_BY_MISSING_EXTRACTION_FIELD` — **stale as to the extraction half; needs a rules-owner re-assessment** |
-| **Why** | The extraction blocker named here is closed: `feature/ml-label-extraction` added a detector, and `Rs.2.91 per gram` reads correctly off the frozen evaluation set. The rest of the entry stands unchanged — deciding the required *form* still needs the net-quantity band, and the "not required where retail sale price equals unit sale price" proviso is still an arithmetic comparison, so `format_check` and `numeric_check` remain unregistered and this requirement remains unevaluable. The status line was **not** re-decided here: that is a legal-inventory judgement for the rules owner, not an ML change. **Note it is rule 6(11), not a clause of rule 6(1)** — a common mis-citation. |
+| **Evidence** | `unit_sale_price` — the extractor now **attempts** this declaration (keyword-anchored; the printed unit is reported, never converted). Attempted is not the same as reliable: the key is newer than the frozen evaluation set, so **no precision or recall figure exists for it** |
+| **check_type** | `format_check` + `numeric_check` (the format depends on the net-quantity band, and the exemption is an arithmetic comparison) — **neither is registered** |
+| **Status** | `BLOCKED_BY_MISSING_EXTRACTION_FIELD` — **unchanged, and still correct as a bottom line.** The extraction half has moved and needs a rules-owner re-assessment; the requirement remains unevaluable either way |
+| **Why** | **This requirement still cannot be evaluated, and extraction work did not change that.** What changed on `feature/ml-label-extraction` is only that the extractor now attempts the declaration — one panel of the frozen set reads as `Rs.2.91 per gram`, which demonstrates the detector runs and measures nothing, because that set does not annotate this key. Everything that makes the requirement unevaluable stands untouched: deciding the required *form* needs the net-quantity band, the "not required where retail sale price equals unit sale price" proviso is an arithmetic comparison, and `format_check` and `numeric_check` remain unregistered. Applicability and format are the rules layer's to decide; the extractor supplies evidence and makes no claim about whether a declaration was required or correctly expressed. The status line was **not** re-decided here — that is a legal-inventory judgement for the rules owner, not an ML change — and no rule file was created or activated. **Note it is rule 6(11), not a clause of rule 6(1)** — a common mis-citation. |
 
 ### Rule 7 — principal display panel: area, size of numerals and letters
 
