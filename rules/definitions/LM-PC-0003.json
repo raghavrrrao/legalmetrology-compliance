@@ -1,0 +1,27 @@
+{
+  "_comment_1": "Rule 6(1)(c) LMPC 2011 - net quantity.",
+  "_comment_2": "Applicability: no carve-out is written into clause (c) itself, so it applies to every commodity within Chapter II. Scoped to the root category rather than an empty list so the claim is explicit; ancestry_codes() makes it inherit to packaged-food and packaged-non-food.",
+  "_comment_3": "Chapter-wide scope limits in rule 3 and rule 26 are NOT expressible as categories and are NOT encoded here. See rules/SOURCES.md.",
+
+  "code": "LM-PC-0003",
+  "title": "Net quantity of the commodity",
+
+  "requirement": "The package must state the net quantity of the commodity it contains, in terms of the standard unit of weight or measure. Where the commodity is packed or sold by number, the package must state the number of the commodity it contains.",
+
+  "legal_reference": "Rule 6(1)(c) of the Legal Metrology (Packaged Commodities) Rules, 2011",
+  "source_status": "verified",
+  "source_note": "Checked 2026-08-30 by Claude Code (automated legal-source check) for raghavrrrao against the Department of Consumer Affairs (Ministry of Consumer Affairs, Food and Public Distribution) consolidated publication 'Book on Legal Metrology Packaged Commodities Rules, 2011 with all amendments', https://consumeraffairs.gov.in/public/upload/admin/cmsfiles/whatsnews/Book_on_Legal_Metrology_Packaged_Commodities_Rules,2011_with_all_amendments_whatsnews.pdf (sha256 0ef948f9c6b89f5dfb20d384861901714fd0dc54fc67b5b86c772d2c3f983a4b; server Last-Modified 2025-04-14). Clause (c) reads there, verbatim: 'The net quantity, in terms of the standard unit of weight or measure, of the commodity contained in the package or where the commodity is packed or sold by number, the number of the commodity contained in the package shall be mentioned.' No proviso, explanation or exemption is attached to this clause. Provenance, verification method and residual gaps: rules/SOURCES.md. HUMAN COUNTER-REVIEW BY A NAMED REVIEWER IS STILL OUTSTANDING.",
+
+  "severity": "major",
+
+  "check_type": "field_presence",
+  "parameters": {
+    "field_key": "net_quantity"
+  },
+
+  "applies_to_category_codes": ["packaged-commodity"],
+
+  "effective_from": "2011-04-01",
+  "effective_to": null,
+  "is_active": true
+}

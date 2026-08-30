@@ -21,7 +21,7 @@ pytestmark = pytest.mark.django_db
 
 
 def test_no_rules_loaded_yields_review_required_not_compliant(completed_run):
-    """The current state of this repository: zero rules loaded.
+    """No rules loaded - the state this test builds, not the repository's.
 
     A system with no rules has checked nothing. Reporting COMPLIANT here would
     tell every user their product is fine, which is the single worst failure

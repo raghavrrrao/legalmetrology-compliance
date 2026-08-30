@@ -37,10 +37,18 @@ those limits are enforced by tests rather than only documented:
   generic name, manufacturer address and unit sale price are **not** extracted.
   The unsupported list is derived from the code rather than maintained by hand,
   so it cannot drift away from what the system actually does.
-- **Zero compliance rules are loaded.** We ship none, because none have been
-  verified against the authoritative text of the Rules. See
-  [`rules/README.md`](rules/README.md).
-- **With no rules loaded, no product can be found compliant.** The engine
+- **Six compliance rules ship, and only three are evaluated.** They come from
+  rule 6 of the Rules, verified against the Department of Consumer Affairs'
+  consolidated text. The other three are recorded but inactive because the
+  present `field_presence` check and category taxonomy cannot express their
+  exemptions without producing false violations. Legibility under rule 9(1)(a),
+  and the rule 3 / rule 26 scope limits, are not modelled at all. See
+  [`rules/README.md`](rules/README.md) and [`rules/SOURCES.md`](rules/SOURCES.md).
+- **The legal sourcing is not finished.** An amendment-chain gap between March
+  2022 and December 2025 is unresolved, and no named human reviewer has
+  counter-signed the rule text yet. Both are recorded in
+  [`rules/SOURCES.md`](rules/SOURCES.md).
+- **With no applicable rule, no product can be found compliant.** The engine
   returns `REVIEW_REQUIRED`, which means "nobody has checked this" — never
   "this is fine".
 - **This tool is not a legal determination.** It assists a human reviewer. It
@@ -113,7 +121,8 @@ those limits are enforced by tests rather than only documented:
 ├── rules/             compliance rules as reviewable data
 │   ├── README.md
 │   ├── SCHEMA.md
-│   └── definitions/     currently empty by design
+│   ├── SOURCES.md       what each rule was verified against
+│   └── definitions/     six rules from rule 6; three active
 │
 ├── docs/              API, security, ML-integration and strategy docs
 ├── .github/workflows/ CI: backend, ML and frontend on every pull request
@@ -298,9 +307,11 @@ python backend/manage.py migrate
 python backend/manage.py load_rules
 ```
 
-This currently reports that no rule files were found. **That is the expected
-output** — see [`rules/README.md`](rules/README.md) for why the rule set ships
-empty.
+This loads six rules and reports each one. Three are active; three load with
+`is_active: false` and are never evaluated — see
+[`rules/README.md`](rules/README.md) for why, and
+[`rules/SOURCES.md`](rules/SOURCES.md) for what they were verified against.
+Add `--dry-run` to validate the files without writing.
 
 ### 9. Create an admin user (optional)
 

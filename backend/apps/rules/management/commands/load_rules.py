@@ -51,8 +51,9 @@ class Command(BaseCommand):
             )
 
         if report.total_seen == 0:
-            # Not an error, and worth stating plainly: this is the expected
-            # state of the repository until feature/legal-rules-dataset lands.
+            # Not an error, but no longer the expected state: rule files do
+            # ship. An empty directory here usually means --directory points
+            # somewhere wrong, so say plainly what the consequence is.
             self.stdout.write(
                 self.style.WARNING(
                     f"No rule files found in {directory}.\n"

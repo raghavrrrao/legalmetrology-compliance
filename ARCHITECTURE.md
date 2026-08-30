@@ -221,7 +221,7 @@ touching shared files.
 | Image preprocessing | `ml/labelextract/preprocessing/` | `feature/image-processing` | First pass landed (orientation, grayscale, contrast). Deskew and perspective correction still open |
 | OCR engine | `ml/labelextract/ocr/` | `feature/ocr-processing` | Tesseract 5 landed. A second engine for hard packaging is open |
 | Field extraction | `ml/labelextract/fields/` | `feature/label-field-extraction` | English patterns landed. Layout-dependent declarations - name, brand, address - still open |
-| Rule dataset | `rules/definitions/` | `feature/legal-rules-dataset` | |
+| Rule dataset | `rules/definitions/` | `feature/legal-rules-dataset` | Six rules from rule 6 of the LMPC Rules landed; three active, three inactive pending a disjunction check and narrower categories. Legal counter-review still open - see `rules/SOURCES.md` |
 | Rule engine & validators | `backend/apps/rules/checks/`, `backend/apps/compliance/` | `feature/compliance-rule-engine` | |
 | Frontend UI | `frontend/src/` | `feature/frontend-dashboard` | |
 | Authentication | `backend/apps/accounts/` | `feature/authentication` | |

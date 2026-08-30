@@ -1,0 +1,27 @@
+{
+  "_comment_1": "Consumer care details. NOTE THE CITATION: this requirement is rule 6(2), NOT rule 6(1)(f). In the official consolidated text, rule 6(1)(f) is the declaration of dimensions where the sizes of the commodity are relevant, and rule 6(1)(g) is 'such other matter as are specified in these rules'.",
+  "_comment_2": "Applicability: sub-rule (2) is written as 'Every package shall bear...' with no carve-out, so it applies to every commodity within Chapter II. Chapter-wide scope limits in rule 3 and rule 26 are NOT expressible as categories and are NOT encoded here.",
+  "_comment_3": "field_presence asks only whether a consumer care declaration was read. It does NOT verify that all four required elements (name, address, telephone number, e-mail address) are present. That needs a check type this repository does not have. See rules/SOURCES.md.",
+
+  "code": "LM-PC-0006",
+  "title": "Consumer care details",
+
+  "requirement": "The package must state the name, address, telephone number and e-mail address of the person who can be contacted, or of the office that can be contacted, in case of consumer complaints.",
+
+  "legal_reference": "Rule 6(2) of the Legal Metrology (Packaged Commodities) Rules, 2011",
+  "source_status": "verified",
+  "source_note": "Checked 2026-08-30 by Claude Code (automated legal-source check) for raghavrrrao against the Department of Consumer Affairs (Ministry of Consumer Affairs, Food and Public Distribution) consolidated publication 'Book on Legal Metrology Packaged Commodities Rules, 2011 with all amendments', https://consumeraffairs.gov.in/public/upload/admin/cmsfiles/whatsnews/Book_on_Legal_Metrology_Packaged_Commodities_Rules,2011_with_all_amendments_whatsnews.pdf (sha256 0ef948f9c6b89f5dfb20d384861901714fd0dc54fc67b5b86c772d2c3f983a4b; server Last-Modified 2025-04-14). Sub-rule (2), as substituted vide G.S.R. 385(E) dated 14th May 2015 with effect from 1.1.2016 (the source records 'dispensed upto 30.6.2016'), reads there verbatim: 'Every package shall bear the name, address, telephone number, e-mail address of the person who can be or the office which can be contacted, in case of consumer complaints.' The brief for this branch cited rule 6(1)(f) for this requirement; that citation does not match the official text and was corrected to rule 6(2). Provenance, verification method and residual gaps: rules/SOURCES.md. HUMAN COUNTER-REVIEW BY A NAMED REVIEWER IS STILL OUTSTANDING.",
+
+  "severity": "major",
+
+  "check_type": "field_presence",
+  "parameters": {
+    "field_key": "consumer_care_contact"
+  },
+
+  "applies_to_category_codes": ["packaged-commodity"],
+
+  "effective_from": "2016-01-01",
+  "effective_to": null,
+  "is_active": true
+}
