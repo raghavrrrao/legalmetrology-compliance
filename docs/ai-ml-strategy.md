@@ -194,12 +194,30 @@ them is more credible than a round number with no provenance:
   by hand, so it cannot drift.
 - **A declaration being extracted is not a claim that it is extracted well, and
   never a claim that the matching rule can be evaluated.** `unit_sale_price` is
-  the current example: the extractor attempts it, it is newer than the frozen
-  evaluation set, and so **no precision or recall figure exists for it**. Nor
-  does reading it make rule 6(11) checkable — that needs the net-quantity band
-  and a comparison against the retail sale price, which are the rules layer's
-  to decide with check types that are not registered. Extraction capability and
-  legal-rule activation are separate decisions throughout this project.
+  the worked example. The extractor attempts it; measured against
+  `our-eval-v0.3-usp-partial` it finds **1 of 6** readable declarations, produced
+  no fabricated value and no false-positive detection for that declaration in
+  those 364 cells — an observation on that dataset, not a property of the
+  extractor, and the dataset as a whole carries one of each — and returns
+  precision and value accuracy of 1.000 on a denominator of a single detection — figures that are not quotable, against
+  negatives that surfaced no candidate text and so tested nothing. That dataset
+  carries the first human ground-truth corrections and is **partially** human
+  verified: 34 of 364 cells, not the whole set. `docs/evaluation-results.md` §10
+  reports it; §9 records the superseded `our-eval-v0.2-usp-draft` run and its
+  **NOT YET DEFENSIBLE** verdict, which the extra verification does not overturn.
+  Nor does reading the field make rule 6(11) checkable — that needs the net-quantity band and a
+  comparison against the retail sale price, which are the rules layer's to decide
+  with check types that are not registered. Extraction capability, extraction
+  *accuracy*, and legal-rule activation are three separate things throughout this
+  project.
+- **Where the recall is actually lost is worth knowing.** On that run, eight of
+  the ten unit-sale-price misses were recognition failures, not interpretation
+  failures: the ₹ glyph was misread as `¥`, `%` and `Z` on three different
+  packs, three of the six declaring products print the keyword in a legend box
+  or label column that a line-oriented extractor cannot pair with the value, and
+  one pack photographed on its side came back as mirrored text because `psm 3`
+  runs without orientation detection. Better patterns would not have recovered
+  any of them.
 - **Tesseract is weaker than the neural engines on hard packaging** — foil,
   curved surfaces, decorative type. It was chosen for being free, offline,
   weightless and installable by six people on three operating systems, with the

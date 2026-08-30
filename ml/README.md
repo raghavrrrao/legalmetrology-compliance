@@ -202,7 +202,7 @@ would be unexplainable in a tool whose output is meant to be evidence.
 |---|---|---|
 | Net quantity | `net_quantity` | `{quantity, unit, base_quantity, base_unit, measure, pack_count?}` |
 | MRP / retail sale price | `retail_sale_price` | `{amount (exact decimal string), currency, inclusive_of_all_taxes?}` — read from the text the MRP keyword introduces, skipping quantities |
-| Unit sale price | `unit_sale_price` | `{amount (exact decimal string), currency, per_unit, per_measure}` — the unit **as printed**; no base conversion. **Not yet measured — see below** |
+| Unit sale price | `unit_sale_price` | `{amount (exact decimal string), currency, per_unit, per_measure}` — the unit **as printed**; no base conversion. **Recall 1/6 on `our-eval-v0.3-usp-partial` — see below** |
 | Batch / lot number | `batch_number` | `{batch_number}` |
 | Date of manufacture | `date_of_manufacture` | `{date}` or `{year_month}` |
 | Date of packing | `date_of_packing` | `{date}` or `{year_month}` |
@@ -237,15 +237,42 @@ Three separate claims, and a row in the table above makes only the first:
    asserts. It is a statement about our code, not about any package.
 2. **The extractor reads it reliably.** A *separate* claim, and one only an
    evaluation run can make. Twelve of the fourteen supported keys are annotated
-   in the frozen evaluation set and appear in the per-declaration table in
+   in `our-eval-v0.1-draft` and appear in the per-declaration table in
    [`docs/evaluation-results.md`](../docs/evaluation-results.md).
-   **`unit_sale_price` is not one of them.** It was added after that set was
-   frozen, so all 28 of its cells score as `unknown` → excluded and the set
-   yields **no precision, no recall and no value accuracy** for it. What exists
-   is one correct reading on one panel, which is a demonstration and not a
-   measurement. Quote no accuracy figure for this field; there is none, and the
-   frozen set cannot produce one — that needs the key annotated across the
-   samples and re-published under a new `dataset_version`.
+   **`unit_sale_price` is not one of them**, because it was added after that set
+   was frozen. It is now measured against **`our-eval-v0.3-usp-partial`**, the
+   successor carrying the first human corrections; §10 of that document reports
+   the run in full, and §9 records the earlier `our-eval-v0.2-usp-draft` run it
+   supersedes. The short version, and the only part safe to repeat:
+
+   > **Recall 1 of 6 readable declarations (0.167).** No fabricated value and no
+   > false-positive detection were observed **for this declaration** in the
+   > evaluated 364-cell dataset — an observation on partially verified ground
+   > truth (34 of 364 cells human-reviewed), not a property of the extractor.
+   > The dataset as a whole carries one of each, in `batch_number`. **Precision
+   > and value accuracy are both 1.000 on a denominator of one detection, and
+   > the negatives surfaced no candidate text at all, so neither figure means
+   > anything.**
+
+   Most of the misses are OCR failures rather than extraction failures. Quote the
+   recall, with its denominator; quote neither of the other two.
+
+   **Three things that are not the same claim**, and the distinction matters more
+   than the number:
+
+   - **Evaluation baseline** — `our-eval-v0.3-usp-partial` is the dataset the
+     figures above are measured against. That is all "baseline" means.
+   - **Partial human verification** — 34 of its 364 cells have been reviewed by a
+     person, including every cell that carries this metric. The other 330 remain
+     model-drafted. **The dataset is not human-verified**, and must not be
+     described as such.
+   - **Independent human verification** — stricter still, and *not* claimed for
+     this column: `p010_01_back`'s value was confirmed only after the verifier
+     had been exposed to panel-distinguishing information, and 17 negatives were
+     never reviewed at all. See the caveats in §10.
+
+   Per-cell provenance for every decision, objection and correction is in
+   `ml/data/human-verification/VERIFICATION-LOG.md`.
 3. **The corresponding legal requirement can now be evaluated.** Not implied by
    either of the above, and **not true for rule 6(11)**. Reading a unit sale
    price off a label says nothing about whether one was required — that turns

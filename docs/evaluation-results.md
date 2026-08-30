@@ -164,6 +164,12 @@ The baseline is the branch as it stands.
 
 ## 3. Metrics — `tesseract` 0.2.0 on `our-eval-v0.1-draft` (N=28)
 
+> **Superseded by §10, not invalidated.** These numbers are an accurate record of
+> a real run against `our-eval-v0.1-draft`, which still exists and still
+> validates. One cell of its ground truth was later corrected by a human
+> verifier; the corrected successor is measured in §10. Nothing below has been
+> recalculated.
+
 28 of 28 samples ran. 26 returned `completed`, 2 returned `empty` (nothing
 usable recognised); 0 crashed, so nothing was excluded from scoring.
 
@@ -206,15 +212,11 @@ five.
 all 28 are domestically packed. They are unmeasured, not perfect.
 
 `unit_sale_price` became a supported declaration *after* this set was frozen, so
-it has **no row above and no metric at all**. Every one of its 28 cells is
-`unknown` → excluded, because the annotations cover the twelve declarations that
-were supported when they were written. Re-running the baseline with the detector
-in place reproduces every number in this table unchanged and adds one committed
-reading — `₹2.91 per gram` off `p001_05_declaration_closeup`, confidence 0.83 —
-that nothing scores. **One correct reading is not a measurement.** A precision
-or recall figure for this declaration requires annotating the key across the set
-and re-freezing it as a new `dataset_version`; the frozen set was not edited to
-produce a number. See `ml/data/our-evaluation-set/VERIFICATION.md`.
+it has **no row above and no metric at all** against `our-eval-v0.1-draft`.
+Every one of its 28 cells is `unknown` → excluded, because the annotations cover
+the twelve declarations that were supported when they were written. That field
+is measured against a separate dataset version — see §9 — and this table is
+unchanged by it.
 
 ### Uncertainty
 
@@ -482,3 +484,368 @@ Nothing was tuned to produce these figures. The next step is a comparison
 against the OCR-robustness work on this same frozen dataset, so that any claimed
 improvement is a measured difference rather than an impression — and, before
 that comparison is quoted anywhere, human verification of the ground truth.
+
+---
+
+## 9. `unit_sale_price` on `our-eval-v0.2-usp-draft`
+
+> **Superseded by §10, not invalidated.** An accurate record of a real run
+> against `our-eval-v0.2-usp-draft`, which is preserved unchanged. Three cells of
+> its `unit_sale_price` ground truth were later corrected by a human verifier;
+> the corrected successor is measured in §10. Nothing below has been
+> recalculated, and the "NOT YET DEFENSIBLE" verdict it reaches still stands.
+
+### Why a second dataset version
+
+`unit_sale_price` entered `SUPPORTED_KEYS` after `our-eval-v0.1-draft` was
+frozen, and that set annotates twelve declarations rather than thirteen. The
+scorer therefore excluded all 28 of its cells and the field had **no metric of
+any kind** — correct behaviour, since an un-annotated field is not a negative,
+but it left a capability unmeasured.
+
+`our-eval-v0.2-usp-draft` exists to close that. It is `v0.1` **plus one
+column**: the same 28 photographs with byte-identical images and digests, the
+twelve existing annotations carried through verbatim, and `unit_sale_price`
+added. `v0.1` was not edited and its baseline above is untouched — carrying the
+twelve columns over unchanged is precisely what makes a difference in any of
+them a regression rather than a dataset change. On this run there was none:
+**all twelve carried-over per-field results are identical.**
+
+| | |
+|---|---|
+| Dataset | `our-eval-v0.2-usp-draft`, created 2026-08-30 |
+| Images | 28 photographs, 10 products — the same files as `v0.1` |
+| Annotator | `claude-opus-5-vision-draft` — **model-drafted, not human-verified** |
+| Pipeline | `tesseract` 0.2.0, unchanged; no OCR, model or preprocessing setting was touched |
+| Frozen | Yes — SHA-256 per image, enforced by validation |
+
+### Ground truth
+
+Six of the ten products declare a unit sale price and four do not. Notably the
+four DMart Premia packs **do not share** the declaration: the 200 g and 500 g
+packs carry it and name it in their legend box, while both 1 kg packs omit both.
+
+| State | Cells |
+|---|---:|
+| `present_and_readable` | 7 |
+| `present_but_unreadable` | 4 |
+| `not_present` | 17 |
+
+### Measured
+
+| Metric | Value | Denominator |
+|---|---:|---|
+| True positives | 1 | |
+| False positives | 0 | |
+| False negatives | 6 | |
+| True negatives | 17 | |
+| Fabricated | **0** | |
+| `correct_unread` | 0 | |
+| `missed_unread` | 4 | |
+| Precision | 1.000 | **1 detection** |
+| Recall | **0.143** | 7 readable declarations |
+| F1 | 0.250 | |
+| Value accuracy | 1.000 | **1 detection** |
+
+Uncertainty is reported across the whole run and is not separable per field; the
+one new committed reading moved `silent_error_rate` from 0.455 to 0.417 and
+`uncertain_rate` from 0.500 to 0.478 purely by joining the denominator —
+`confident_and_wrong` stayed at 5.
+
+**Read the three columns separately.** *Detection*: 1 of 7. *Normalised value*:
+the single detection was correct — `{amount: "2.91", currency: "INR", per_unit:
+"gram", per_measure: "mass"}`. *Uncertainty behaviour*: zero fabrications, and
+zero correct-unread — on four panels that name the declaration and hide its
+value, the pipeline reported nothing rather than reporting it unread.
+
+### Why the two good-looking numbers mean almost nothing
+
+Precision 1.000 and value accuracy 1.000 both have a denominator of **one**.
+Worse, the negatives never tested anything: across all 17 `not_present` panels
+OCR surfaced **no unit-price-like candidate text at all**, including
+`p005_01_back`, which prints `Bunback Price (Empty clean pouch) ₹ 1.00 / Ltr` —
+a real per-unit rupee price that is not this declaration and is the best
+false-positive trap in the set. It was never recognised, so the detector was
+never offered the chance to fail it.
+
+Quote neither figure. The only defensible statement from this run is the recall
+one, and even that rests on seven cells.
+
+### Error analysis — all ten misses
+
+Only **2 of the 11 positive cells** produced any unit-price-like text from OCR
+at all, so nine of the ten failures are upstream of the field extractor.
+
+| Sample | Outcome | Cause | Evidence |
+|---|---|---|---|
+| `p001_05` | **TP, value correct** | — | `UNIT SALE PRICE : ¥2.91 PER GRAM` — the ₹ glyph misread as ¥, which the extractor correctly does not propagate (it emits `currency: INR`) |
+| `p001_02` | FN | **OCR failure** | 37 blocks recognised, none from the declaration block — 6-point print at arm's length on a curved can |
+| `p001_04` | missed unread | **OCR failure** | 14 blocks; the truncated line never recognised |
+| `p001_06` | missed unread | **OCR failure** | left half of every line outside the frame |
+| `p002_01` | missed unread | **OCR total failure** | **0 blocks** recognised from the whole photograph |
+| `p002_04` | missed unread | **OCR failure** | 58 blocks, declaration block not among them (low light) |
+| `p002_03` | FN | **layout/association + unsupported unit** | label column (`USP (Per Tablet) ₹`) and value column (`350.00/23.33`) are separate OCR lines, and a line-oriented extractor cannot pair them. Even paired, `tablet` is not in the unit vocabulary |
+| `p003_03` | FN | **character confusion + layout** | embossed line read as `OH 8465 /-%0.93/9` — ₹→`%` and the trailing `g`→`9`, so no unit matches; and the `USP` keyword sits on a different line (symbol indirection) |
+| `p004_01` | FN | **orientation** | pack photographed on its side; `psm 3` runs with no orientation detection, so the table returns as mirrored text (`‘Ag 2s/n ales yun`) |
+| `p009_01` | FN | **OCR failure** | faint stamp on yellow film; 57 blocks, the rate line absent |
+| `p010_01` | FN | **currency glyph + keyword anchoring** | OCR read `Z 0.08 perg` — ₹→`Z`, so no currency token — and the `Unit Sale Price` keyword lives in a separate legend box. With neither anchor the detector declines **by design** |
+
+The pattern is not subtle, and it is not about the detector: **eight of ten
+failures are recognition, not interpretation.** Three sub-patterns are worth
+naming because each is a fixable engineering task rather than a limit:
+
+1. **The ₹ glyph is unreliable.** It was misread on three of the four panels
+   where it mattered (`¥`, `%`, `Z`). Since the no-keyword branch requires a
+   currency token, a lost ₹ turns a readable rate into a silent miss.
+2. **The keyword and the value are routinely on different lines.** Three of the
+   six declaring products use a legend box, a label column or symbol
+   indirection. A line-oriented extractor cannot reach any of them.
+3. **Orientation is not detected.** `osd` is installed; `psm 3` does not use it.
+
+None of these was acted on. Changing OCR configuration to improve this metric is
+exactly what a measurement run must not do; they are recorded as candidates for
+a separate, separately measured change.
+
+### Limitations
+
+- **Model-drafted, unverified.** The column was read by a model, not a person.
+  A per-sample verification worksheet now exists at
+  `ml/data/usp-evaluation-set/VERIFICATION-RECORD.md`: current state, evidence
+  location, whether the amount and the per-unit basis are each readable, and a
+  recommended verified state for all 28 photographs.
+- **Known contamination.** v0.1's reading rule 1 requires each photograph to be
+  judged without consulting another of the same product. Seven of the eleven
+  positive cells were drafted after the annotator had already read the value off
+  a closeup of the same panel. `ml/data/usp-evaluation-set/VERIFICATION.md`
+  names them and gives the order a verifier must work in.
+- **One cell is a known defect.** `p002_04_right` was annotated
+  `present_but_unreadable` *without the photograph being opened*, by inference
+  from a sister photograph. Re-inspection shows only an unidentifiable numeric
+  fragment, so presence cannot be established and `unknown` is the right state.
+  It was left in place rather than silently corrected, so that what was measured
+  and what is documented remain the same thing; correcting it changes no
+  headline metric (`missed_unread` 4 → 3 only).
+- **The four annotation states cannot express "inspected, indeterminate".**
+  `unknown` is documented as *not yet annotated*, and using it for a cell a
+  person examined and could not resolve conflates two different facts. It gives
+  the correct scoring behaviour (excluded) and is what the record recommends,
+  but it is a real schema limitation and is written up in the record rather than
+  worked around.
+- **Some photographs contain more than one package.** Neighbouring products are
+  in frame on at least `p006_02_front` and `p009_02_front`. OCR read none of
+  that text on this run, but a higher-recall engine could read a price off a
+  package that is not the subject and be charged a false positive against a
+  correctly annotated `not_present` cell.
+- **Seven readable positives across four independent label designs.** Four of
+  the positive cells are one panel photographed four ways; three more are one
+  tube photographed three ways.
+- **The negatives are untested**, as above.
+- **One cell moves the headline, in the flattering direction.** If a verifier
+  disagrees with `p001_02` — the most arguable cell, and one v0.1 already called
+  unreadable one line higher — it becomes `present_but_unreadable`, the readable
+  denominator drops to 6, and recall **rises** to 1/6 = 0.167. The per-sample
+  audit in `ml/data/usp-evaluation-set/VERIFICATION-RECORD.md` recommends
+  exactly that change and deliberately leaves it for a human to apply, precisely
+  because the drafting annotator would be improving its own score.
+
+### Conclusion
+
+**`unit_sale_price` metric: NOT YET DEFENSIBLE.** A precision or value-accuracy
+figure resting on one detection, against negatives that surfaced no candidate
+text, drafted by a model that had already seen the answer on a sister
+photograph, is not a number to publish or to put in a pitch.
+
+What this run *does* establish, and what it was worth doing for:
+
+- the field is now measurable at all, and the framework needed no change to do it;
+- the extractor **fabricated nothing** — on four panels naming a declaration it
+  could not read, it stayed silent rather than inventing a rate;
+- recall is poor and the reason is **recognition, not interpretation**, which
+  points the next piece of work at OCR rather than at patterns.
+
+**The gating next action is human verification, and the worksheet for it exists:**
+`ml/data/usp-evaluation-set/VERIFICATION-RECORD.md` carries all 28 cells with an
+evidence location, separate amount / per-unit readability fields, a contamination
+flag, a non-binding recommendation and a blank decision slot. Nine cells are
+flagged as requiring independent judgement. Working through it makes **recall**
+indicative; it does not make precision, F1 or value accuracy quotable, because
+no negative in this set surfaces candidate text — only more photographs fix that.
+
+This section measures extraction only. It says nothing about whether any package
+complies with rule 6(11); that requires the net-quantity band and a comparison
+against the retail sale price, both of which belong to the rules layer and need
+check types that are not registered.
+
+---
+
+## 10. First human corrections — `our-eval-v0.3-usp-partial`
+
+| | |
+|---|---|
+| Dataset | `our-eval-v0.3-usp-partial`, created 2026-08-31 |
+| Size | 28 photographs, **364 annotated fields** (28 × 13 declarations) |
+| Predecessors | `our-eval-v0.1-draft` and `our-eval-v0.2-usp-draft`, both **preserved unchanged** |
+| Pipeline | `tesseract` 0.2.0 — unchanged; no OCR, model or preprocessing setting was touched |
+| Run | 2026-08-31, 28/28 samples, **0 failures** |
+| Verification | **PARTIAL** — 34 of 364 cells reviewed by a person |
+
+### Why v0.3 exists
+
+A human verifier worked through the arguable cells of `our-eval-v0.2-usp-draft`
+across twelve recorded sessions and made **four ground-truth corrections**. The
+project's versioning contract forbids editing a published version in place —
+v0.1's README: *"Do not edit this version. Publish a new `dataset_version`
+instead"* — so the corrections were published as a successor rather than applied
+to either predecessor.
+
+**Both predecessors are intact.** v0.1's and v0.2's images, annotations,
+manifests and version labels are byte-unchanged, and §3 and §9 above remain
+accurate records of what was measured against them. Those sections are
+**superseded by v0.3, not invalidated**: they describe real runs against real
+artefacts that still exist and still validate.
+
+### The four human corrections
+
+| Session | Cell | Model draft | Human decision |
+|---|---|---|---|
+| 1 | `p007_01_back / date_of_manufacture` | `present_but_unreadable`, no value | `present_and_readable`, **`10 JUN 2026`** |
+| 2 | `p001_02_back_clean / unit_sale_price` | `present_and_readable`, `2.91 PER GRAM` | `present_but_unreadable`, no value |
+| 3 | `p001_04_right_clean / unit_sale_price` | `present_but_unreadable`, no value | `not_present`, no value |
+| 7 | `p002_04_right / unit_sale_price` | `present_but_unreadable`, no value | `not_present`, no value |
+
+One touches the twelve declarations inherited from v0.1; three touch the
+`unit_sale_price` column introduced by v0.2. A build-time assertion refuses to
+apply a correction to a cell that does not still hold the drafted value the log
+records, and a separate check confirms that **exactly** these four cells differ
+from v0.2, that **exactly one** twelve-column cell differs from v0.1, and that
+no other cell moved. Per-cell provenance, including every draft, decision,
+objection and correction, is in `ml/data/human-verification/VERIFICATION-LOG.md`.
+
+### Verification coverage — what is and is not human-reviewed
+
+| Provenance | v0.1 declarations | `unit_sale_price` | Total |
+|---|---:|---:|---:|
+| Human-confirmed | 20 | 8 | **28** |
+| Human-changed | 1 | 3 | **4** |
+| Human-reviewed, unresolved | 2 | 0 | **2** |
+| **Model-drafted, not reviewed** | **313** | **17** | **330** |
+| Basis | 336 | 28 | 364 |
+
+**This is not a human-verified ground-truth release.** 330 of 364 cells — 91% —
+remain as `claude-opus-5-vision-draft` wrote them. What *is* human-reviewed is
+the part that carries the `unit_sale_price` metric: all nine cells flagged for
+independent judgement, and all twelve cells where that declaration is present
+either readably or unreadably.
+
+### Two cells reviewed and deliberately left unresolved
+
+Neither has been converted into a confirmed value, and neither should be.
+
+- **`p007_01_back / batch_number`** — the pack prints `Batch No. :` with nothing
+  stamped against it. "Declared but blank" has no state in the four-state
+  schema. Held pending a policy decision; not converted to `not_present`, and no
+  batch number invented.
+- **`p004_01_back / consumer_care_contact`** — presence confirmed; the drafted
+  value `brand.sawai@pkmfoods.com` has **not** been confirmed character-for-character
+  against the photograph. The cell's *state* is human-confirmed, its *value
+  string* is still model-drafted. The schema cannot record that split, so it is
+  recorded in the log.
+
+### Provenance caveat — `p010_01_back / unit_sale_price`
+
+The cell holds `0.08 per g`, matching the model draft, and is recorded as
+human-confirmed. **It must not be described as an independently blinded human
+verification**, for three reasons documented in Session 12:
+
+1. The drafted value had already been disclosed to the verifier before judgement
+   — the session was expressly non-blind.
+2. The first human decision for the cell was wrong (a carry-forward of the
+   previous session's value) and survived an explicit re-check.
+3. The correction followed the assistant naming distinguishing features of the
+   panel, so the final value arrived after a material intervention by the party
+   whose draft was under review.
+
+The value is very probably right. **"Probably right" and "independently
+verified" are different claims**, and only the first is available here.
+Re-verification by a second person who has not seen the log is recommended
+before any account describes the `unit_sale_price` column as human-verified. It
+is a documentation matter, not a dataset defect: the value matches the draft, so
+there is nothing to apply.
+
+### The 17 model-drafted negatives
+
+Seventeen `unit_sale_price` cells annotated `not_present` remain **model-drafted
+and unreviewed**. They were not verified, and nothing here should be read as
+saying they were.
+
+They do not alter the figures below. The extractor produces **no
+`unit_sale_price` output on any of them**, so all score `true_negative` and
+`false_positive` is 0 regardless of what a review would conclude. The one thing
+a review could change is the recall denominator, if a cell annotated absent in
+fact carried a readable declaration. Of the seventeen, nine were re-inspected
+directly during the phase-15 audit and eight rest on v0.1's panel notes plus an
+OCR check finding no currency or price token; every declaration-bearing panel
+among them was directly inspected, and the eight are brand faces.
+
+**That is an assumption underneath the recall denominator, not a verified fact.**
+
+### Measured on v0.3
+
+Ten of the twelve previously scored declarations are **byte-identical** to their
+v0.2 values. Two moved, and only because ground truth was corrected:
+
+| Field | Counts (TP/FP/FN/TN/fab/CU/MU) | Precision | Recall | F1 | Value acc. |
+|---|---|---:|---:|---:|---:|
+| `date_of_manufacture` | 1 / 0 / 4 / 20 / 0 / 0 / 3 | 1.000 | **0.200** | 0.333 | 0.000 |
+| `unit_sale_price` | 1 / 0 / 5 / 19 / 0 / 0 / 3 | 1.000 | **0.167** | 0.286 | 1.000 |
+
+Against v0.2 those were `date_of_manufacture` recall 0.250 and `unit_sale_price`
+recall 0.143. **One correction moved a metric down and one moved it up** —
+`date_of_manufacture` fell because a cell the pipeline had missed *as unread* is
+now a readable declaration it missed outright.
+
+Aggregates, micro-averaged, computed with the same definitions §3 uses.
+
+> **Important evaluation limitation — read with the table, not after it.** These
+> figures are measured on `our-eval-v0.3-usp-partial`, where only **34 of 364
+> cells (9.3%) were human-reviewed** and **330 of 364 remain model-drafted and
+> unreviewed**. They therefore describe this partial-verification evaluation
+> artefact. **They must not be interpreted as performance against a fully
+> human-verified ground truth**, and no figure below should be quoted without
+> this sentence attached.
+
+| Metric | Over all 13 declarations | Over the twelve v0.1 declarations |
+|---|---:|---:|
+| Precision | **0.947** (18 / 19) | 0.944 (17 / 18) |
+| Recall | **0.200** (18 / 90) | 0.202 (17 / 84) |
+| F1 | **0.330** | 0.333 |
+| Value accuracy | **0.611** (11 of 18) | 0.588 (10 of 17) |
+| Fabricated | 1 | 1 |
+| Correct unread | **0** | 0 |
+| Missed unread | 24 | 21 |
+
+Uncertainty, unchanged from the v0.2 run because no cell carrying a prediction
+changed truth state: `uncertain_rate` 0.478, `uncertainty_precision` 0.429,
+**`silent_error_rate` 0.417**. CER and WER remain **unavailable** — no sample
+carries a `reference_text`.
+
+### What v0.3 does and does not license
+
+**It supports:** reporting `unit_sale_price` recall as **1 of 6 readable
+declarations (0.167)** on partially human-verified ground truth; stating that
+**no fabricated value and no false-positive detection were observed for that
+declaration in this 364-cell dataset** — an observation about this evaluation,
+not a property of the extractor, and one that does not generalise, since the
+dataset as a whole carries one fabrication and one false positive, both in
+`batch_number`; and reporting the twelve-declaration aggregate on ground truth
+one cell better than v0.1's.
+
+**It does not support:** calling the dataset human-verified; calling the
+`unit_sale_price` column independently verified; quoting precision, F1 or value
+accuracy for `unit_sale_price`, which still rest on a single detection against
+negatives that surface no candidate text; or any claim about legal compliance.
+
+This section measures extraction only. Whether a package complies with rule
+6(11) requires the net-quantity band and a comparison against the retail sale
+price — decisions for the rules layer, needing check types that are not
+registered.
