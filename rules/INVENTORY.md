@@ -35,12 +35,17 @@ this file**.
 Taken from `labelextract.fields.SUPPORTED_KEYS` / `UNSUPPORTED_KEYS`, not from
 documentation:
 
-- **Supported:** `net_quantity`, `retail_sale_price`, `date_of_manufacture`,
-  `date_of_packing`, `date_of_import`, `best_before`, `consumer_care_contact`,
-  `country_of_origin`, `manufacturer_name`, `packer_name`, `importer_name`,
-  `batch_number`, `other`
-- **NOT supported:** `common_or_generic_name`, `manufacturer_address`,
-  `unit_sale_price`
+- **Supported:** `net_quantity`, `retail_sale_price`, `unit_sale_price`,
+  `date_of_manufacture`, `date_of_packing`, `date_of_import`, `best_before`,
+  `consumer_care_contact`, `country_of_origin`, `manufacturer_name`,
+  `packer_name`, `importer_name`, `batch_number`, `other`
+- **NOT supported:** `common_or_generic_name`, `manufacturer_address`
+
+`unit_sale_price` entered the supported set on `feature/ml-label-extraction`
+after this inventory was written. **That changed extraction capability and
+nothing else** — no rule file names the key, no status below was re-decided,
+and the rule 6(11) entry is left exactly as it was for the rules owner to
+re-assess (see the note there).
 
 `ProductCategory` holds three internal grouping codes only —
 `packaged-commodity`, `packaged-food`, `packaged-non-food`. The system records
@@ -361,10 +366,10 @@ reactivating `LM-PC-0002` needs extraction support, not legal review.
 | | |
 |---|---|
 | **Quotation** | "The unit sale price shall be declared as- (i) 'Rs. _ per g' for pre-packaged commodities with net quantity of commodity …" with "Provided further that declaration of unit sale price is not required for the pre-packaged commodities in which retail sale price is equal to the unit sale price." |
-| **Evidence** | `unit_sale_price` — **NOT supported** by the extractor |
+| **Evidence** | `unit_sale_price` — **now supported** by the extractor (keyword-anchored; the printed unit is reported, never converted) |
 | **check_type** | `format_check` + `numeric_check` (the format depends on the net-quantity band, and the exemption is an arithmetic comparison) |
-| **Status** | `BLOCKED_BY_MISSING_EXTRACTION_FIELD` |
-| **Why** | Not extracted; and even with extraction, deciding the required *form* needs the net-quantity band and a comparison against retail sale price. **Note it is rule 6(11), not a clause of rule 6(1)** — a common mis-citation. |
+| **Status** | `BLOCKED_BY_MISSING_EXTRACTION_FIELD` — **stale as to the extraction half; needs a rules-owner re-assessment** |
+| **Why** | The extraction blocker named here is closed: `feature/ml-label-extraction` added a detector, and `Rs.2.91 per gram` reads correctly off the frozen evaluation set. The rest of the entry stands unchanged — deciding the required *form* still needs the net-quantity band, and the "not required where retail sale price equals unit sale price" proviso is still an arithmetic comparison, so `format_check` and `numeric_check` remain unregistered and this requirement remains unevaluable. The status line was **not** re-decided here: that is a legal-inventory judgement for the rules owner, not an ML change. **Note it is rule 6(11), not a clause of rule 6(1)** — a common mis-citation. |
 
 ### Rule 7 — principal display panel: area, size of numerals and letters
 
@@ -613,7 +618,16 @@ Entries appear under more than one status where more than one thing blocks them.
 2. **`format_check`** — unblocks rule 13 and rule 12(6) immediately, on
    evidence already extracted.
 3. **A disjunction check** — unblocks 6(1)(a).
-4. **Extracting `common_or_generic_name`** — the prerequisite for reactivating
-   `LM-PC-0002`, and unblocks part of rule 24.
+4. **Extracting `common_or_generic_name`** — a prerequisite for reactivating
+   `LM-PC-0002`, and unblocks part of rule 24. **Entry into `SUPPORTED_KEYS` is
+   necessary and not sufficient, and this entry originally implied otherwise.**
+   `feature/ml-label-extraction` measured the only anchor a pattern layer could
+   use — `COMMODITY :`, `Name of Commodity`, `Generic Name` — across the 674
+   lines the current pipeline reads from the 28 frozen photographs: it appears
+   on **1 panel of 28**. A detector at that recall would satisfy the letter of
+   the condition above while leaving absence of the field just as uninformative
+   as it is today, and reactivating on the strength of it would restore the
+   false violation on 27 of 28 panels. Whatever closes this must come with a
+   measured recall figure, not merely a key in a set.
 5. **`visual_check` plus PDP geometry** — unblocks rules 7 and 8, and only then
    should rule 9(1)(a) be approached through them.

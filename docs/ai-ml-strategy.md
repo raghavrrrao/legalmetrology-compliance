@@ -189,9 +189,9 @@ them is more credible than a round number with no provenance:
   only** — so a Hindi-only declaration is recognised as text and then not
   interpreted.
 - **Several declarations are not extracted at all.** Product and brand name,
-  generic name, manufacturer address and unit sale price need layout
-  understanding this layer does not have. The unsupported list is derived from
-  the code, not maintained by hand, so it cannot drift.
+  generic name and manufacturer address need layout understanding this layer
+  does not have. The unsupported list is derived from the code, not maintained
+  by hand, so it cannot drift.
 - **Tesseract is weaker than the neural engines on hard packaging** — foil,
   curved surfaces, decorative type. It was chosen for being free, offline,
   weightless and installable by six people on three operating systems, with the

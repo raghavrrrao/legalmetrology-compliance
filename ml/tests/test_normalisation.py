@@ -15,6 +15,7 @@ from labelextract.fields.normalisation import (
     normalise_price,
     normalise_quantity,
     normalise_text,
+    normalise_unit_price,
     parse_decimal,
 )
 
@@ -135,6 +136,71 @@ def test_tax_inclusivity_is_recorded_only_when_it_was_read():
 def test_a_price_with_too_many_decimals_is_uncertain():
     """`250.000` is a misread decimal point, not a retail price."""
     result = normalise_price("250.000")
+    assert is_uncertain(result) is True
+    assert "amount" not in result
+
+
+# --- unit sale price --------------------------------------------------------
+
+
+@pytest.mark.parametrize(
+    ("unit", "measure"),
+    [
+        ("gram", "mass"),
+        ("g", "mass"),
+        ("kg", "mass"),
+        ("ml", "volume"),
+        ("litre", "volume"),
+        ("piece", "count"),
+        ("n", "count"),
+    ],
+)
+def test_a_unit_price_records_which_family_of_units_it_is_per(unit, measure):
+    result = normalise_unit_price("2.91", unit)
+    assert result["amount"] == "2.91"
+    assert result["currency"] == "INR"
+    assert result["per_unit"] == unit
+    assert result["per_measure"] == measure
+    assert is_uncertain(result) is False
+
+
+def test_a_unit_price_keeps_the_unit_the_package_printed():
+    """Rule 6(11) prescribes the printed form, so no base conversion happens.
+
+    `Rs.200 per kg` and `Rs.0.20 per g` are the same rate and not the same
+    declaration. Restating one as the other would report a figure the package
+    never printed.
+    """
+    result = normalise_unit_price("200", "kg")
+    assert result["per_unit"] == "kg"
+    assert "base_quantity" not in result
+    assert "base_unit" not in result
+
+
+def test_a_unit_price_amount_is_an_exact_decimal_string():
+    result = normalise_unit_price("0.10", "g")
+    assert result["amount"] == "0.10"
+    assert isinstance(result["amount"], str)
+
+
+def test_an_unparseable_unit_price_amount_carries_no_value():
+    result = normalise_unit_price("12,5", "g")
+    assert is_uncertain(result) is True
+    assert "amount" not in result
+    # The unit is still reported, so the reading stays recognisable as a rate.
+    assert result["per_unit"] == "g"
+
+
+def test_an_unrecognised_unit_price_unit_is_uncertain():
+    result = normalise_unit_price("2.91", "dozen")
+    assert is_uncertain(result) is True
+    assert "per_measure" not in result
+    assert any("dozen" in reason for reason in result[REASONS_KEY])
+
+
+def test_a_unit_price_with_too_many_decimals_is_uncertain():
+    """Inherited from `normalise_price`: three decimals is a misread point."""
+    result = normalise_unit_price("2.9100", "g")
     assert is_uncertain(result) is True
     assert "amount" not in result
 

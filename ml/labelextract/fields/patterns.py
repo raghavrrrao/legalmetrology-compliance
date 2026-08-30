@@ -148,8 +148,76 @@ TAX_INCLUSIVE = re.compile(
 TAX_EXCLUSIVE = re.compile(r"excl(?:usive|\.)?\s*(?:of)?\s*all\s*tax", _I)
 
 #: Phrases that make a price line something other than the retail sale price.
+#:
+#: Deliberately still matching only the full phrasings, not the `USP`
+#: abbreviation. Widening it to the abbreviation - or to the `/kg` rate form -
+#: was tried and reverted: it suppressed `MRP Rs.200/kg` entirely, which is a
+#: retail sale price written as a rate and is the one declaration this project
+#: can least afford to drop. The narrower case it was meant to fix is handled
+#: in `rule_based._retail_sale_price`, where it can be applied only to the
+#: speculative no-keyword branch.
 NON_MRP_CONTEXT = re.compile(
     r"\bunit\s*(?:sale\s*)?price\b|\bper\s*(?:kg|g|ml|l|litre|liter|piece|pc)\b",
+    _I,
+)
+
+
+# --- unit sale price --------------------------------------------------------
+
+#: The phrasings that *name* the declaration and cannot mean anything else on a
+#: package. Used as the unread-declaration anchor, where a match is a positive
+#: claim that the label carries this declaration.
+UNIT_SALE_PRICE_ANCHOR = re.compile(r"\bunit\s*sale\s*price\b|\bunit\s*price\b", _I)
+
+#: `UNIT_SALE_PRICE_ANCHOR` plus the abbreviation labels actually print.
+#:
+#: `usp` is deliberately in the keyword and deliberately **not** in the anchor.
+#: On an Indian supplement or pharma label `USP` is at least as likely to mean
+#: *United States Pharmacopeia* as *unit sale price*, and the frozen evaluation
+#: set contains an effervescent-tablet tube where that reading is live. The
+#: split contains the damage: a keyword only ever contributes to a field when a
+#: per-unit price is read on the same line, whereas the anchor alone would let
+#: a pharmacopoeia marker be reported as an unread price declaration - a claim
+#: about the label that nothing on it supports.
+#:
+#: Every string the anchor matches is also matched here; a test asserts it, so
+#: the two cannot drift into disagreeing about what the keyword is.
+UNIT_SALE_PRICE_KEYWORD = re.compile(
+    r"\bunit\s*sale\s*price\b|\bunit\s*price\b|\busp\b", _I
+)
+
+#: An amount attached to *one* unit of measure: rule 6(11)'s own prescribed form
+#: ("Rs. _ per g") and the abbreviations that stand in for it on real packaging.
+#:
+#:     UNIT SALE PRICE : Rs.2.91 PER GRAM
+#:     Rs.0.93/g
+#:     Rs. 200 per kg
+#:     2.91 Rs. per gram
+#:
+#: The currency token is optional and captured, because whether one was read is
+#: what decides how far this pattern may be trusted on its own - see
+#: `rule_based._unit_sale_price`.
+#:
+#: A unit must follow the separator immediately, so the nutrition-panel form
+#: `per 100 g` cannot match. The written-out `per 1 kg` does not match either,
+#: and deliberately is not made to: `NON_DECLARATION_CONTEXT` claims any line
+#: containing `per <digit>` before this pattern is ever consulted, and loosening
+#: that guard to reach one unattested phrasing would let the whole nutrition
+#: panel back in.
+#:
+#: The leading guard refuses an amount that starts part-way through a printed
+#: number. `Rs.12,5 per g` is a decimal comma this project does not resolve by
+#: guessing; without the guard the engine would skip the unmatchable `12,` and
+#: commit to `5 per g` - a confident reading of a price the label never
+#: printed, which is exactly the failure this layer exists to avoid. With it,
+#: the line yields nothing.
+PER_UNIT_PRICE = re.compile(
+    rf"(?<![\d,.])"
+    rf"(?:(?P<currency>{_CURRENCY})\s*)?"
+    rf"(?P<amount>{_NUMBER})\s*"
+    rf"(?:{_CURRENCY})?\s*"
+    rf"(?:per\b|/)\s*"
+    rf"(?P<unit>{_UNITS})\b\.?",
     _I,
 )
 

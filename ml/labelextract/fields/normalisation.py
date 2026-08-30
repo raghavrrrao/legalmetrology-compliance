@@ -290,6 +290,51 @@ def normalise_price(
     return certain(**structured)
 
 
+# --- unit sale price --------------------------------------------------------
+
+
+def normalise_unit_price(
+    amount_text: str, unit_text: str, *, currency: str = "INR"
+) -> dict:
+    """Structure a unit sale price - an amount attached to one unit of measure.
+
+    Rule 6(11) prescribes the printed form ("Rs. _ per g"), so the unit the
+    package actually printed is the legally material part of this declaration.
+    That is why nothing here converts the amount onto a base unit the way
+    `normalise_quantity` does: `Rs. 2.91 per gram` and `Rs. 2910 per kilogram`
+    are the same rate but not the same declaration, and reporting a figure the
+    package never printed would put an invented number where evidence belongs.
+    `per_measure` is emitted instead, which is enough for a later check to know
+    which family of units it is looking at without any value being restated.
+
+    Nothing here is a legal decision. Whether the declared unit is the one the
+    net-quantity band requires, and whether the declaration was needed at all
+    given the retail sale price, are both questions for the rules layer against
+    this evidence.
+    """
+    unit = normalise_text(unit_text).lower().rstrip(".")
+    structured = normalise_price(amount_text, currency=currency)
+
+    if is_uncertain(structured):
+        # The amount could not be committed to. `normalise_price` has already
+        # said why; the unit is carried through so the reading is still
+        # recognisable as a *unit* price rather than a bare failure.
+        return {**structured, "per_unit": unit or None}
+
+    structured = {**structured, "per_unit": unit}
+
+    if unit in _MASS_TO_GRAMS:
+        structured["per_measure"] = "mass"
+    elif unit in _VOLUME_TO_MILLILITRES:
+        structured["per_measure"] = "volume"
+    elif unit in _COUNT_UNITS:
+        structured["per_measure"] = "count"
+    else:
+        return uncertain(f"unrecognised unit {unit!r}", **structured)
+
+    return structured
+
+
 # --- dates ------------------------------------------------------------------
 
 

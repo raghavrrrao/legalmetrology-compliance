@@ -27,7 +27,7 @@ Where it is weak, stated plainly
 - No layout understanding. Multi-line addresses, values in a column beside
   their label, and text wrapped mid-declaration are all missed.
 - Several declarations are not attempted at all - product/brand name, generic
-  name, manufacturer address, unit sale price. See `ml/README.md` for the full
+  name, manufacturer address. See `ml/README.md` for the full
   supported/unsupported list.
 
 None of this has been measured. `docs/evaluation-strategy.md` describes how it
@@ -61,6 +61,7 @@ from labelextract.fields.normalisation import (
     normalise_price,
     normalise_quantity,
     normalise_text,
+    normalise_unit_price,
     uncertain,
 )
 from labelextract.interfaces import FieldExtractor
@@ -81,6 +82,7 @@ SUPPORTED_KEYS: frozenset[LabelFieldKey] = frozenset(
     {
         LabelFieldKey.NET_QUANTITY,
         LabelFieldKey.RETAIL_SALE_PRICE,
+        LabelFieldKey.UNIT_SALE_PRICE,
         LabelFieldKey.BATCH_NUMBER,
         LabelFieldKey.DATE_OF_MANUFACTURE,
         LabelFieldKey.DATE_OF_PACKING,
@@ -131,9 +133,16 @@ UNSUPPORTED_KEYS: frozenset[LabelFieldKey] = frozenset(LabelFieldKey) - SUPPORTE
 #: - `manufacturer_name`, `packer_name`, `importer_name`, `other`,
 #:   `batch_number`, `country_of_origin`. Their patterns capture keyword *and*
 #:   value together, so a keyword with nothing after it never matches at all.
+#:
+#: `unit_sale_price` anchors on `UNIT_SALE_PRICE_ANCHOR` rather than on
+#: `UNIT_SALE_PRICE_KEYWORD` for the same shape of reason net quantity does:
+#: the keyword also matches the bare abbreviation `USP`, which on a supplement
+#: or pharma label routinely means *United States Pharmacopeia*. The full
+#: phrasings cannot mean anything else.
 _KEYWORD_ANCHORS: tuple[tuple[LabelFieldKey, re.Pattern[str]], ...] = (
     (LabelFieldKey.NET_QUANTITY, P.NET_QUANTITY_ANCHOR),
     (LabelFieldKey.RETAIL_SALE_PRICE, P.MRP_KEYWORD),
+    (LabelFieldKey.UNIT_SALE_PRICE, P.UNIT_SALE_PRICE_ANCHOR),
     (LabelFieldKey.BEST_BEFORE, dict(P.DATE_KEYWORDS)["best_before"]),
     (LabelFieldKey.DATE_OF_IMPORT, dict(P.DATE_KEYWORDS)["date_of_import"]),
 )
@@ -273,6 +282,7 @@ class RuleBasedFieldExtractor(FieldExtractor):
         return (
             self._net_quantity,
             self._retail_sale_price,
+            self._unit_sale_price,
             self._batch_number,
             self._dates,
             self._consumer_care_contact,
@@ -332,7 +342,7 @@ class RuleBasedFieldExtractor(FieldExtractor):
         for line in lines:
             if P.NON_MRP_CONTEXT.search(line.text):
                 # A unit price ("₹200 per kg") is a different declaration, and
-                # `LabelFieldKey.UNIT_SALE_PRICE` is not attempted yet.
+                # `_unit_sale_price` is the detector that reads it.
                 continue
 
             keyword = P.MRP_KEYWORD.search(line.text)
@@ -340,6 +350,20 @@ class RuleBasedFieldExtractor(FieldExtractor):
 
             if has_keyword:
                 amount = _amount_near(line.text, keyword)
+            elif P.UNIT_SALE_PRICE_KEYWORD.search(line.text):
+                # `USP: Rs.0.93/g` names a *different* declaration and carries
+                # exactly one amount. Without this, that one amount produced
+                # two fields - the unit sale price it is, and a speculative
+                # retail sale price - and `field_presence` passes on an
+                # uncertain field just as it does on a committed one, so a
+                # package declaring only a unit price would have been recorded
+                # as declaring an MRP.
+                #
+                # Applied only on this branch. A line that carries an MRP
+                # keyword *and* a unit-price keyword is still read for its MRP:
+                # the keyword is doing the anchoring there, and dropping a
+                # declared retail sale price is the more expensive mistake.
+                continue
             else:
                 # No keyword, so only a currency token can anchor this. A bare
                 # number on an unlabelled line is not a price.
@@ -369,6 +393,80 @@ class RuleBasedFieldExtractor(FieldExtractor):
                     normalized,
                     MATCHED_BY_KEYWORD if has_keyword else MATCHED_BY_PATTERN,
                     signature=normalized.get("amount"),
+                )
+            )
+        return found
+
+    # --- unit sale price ----------------------------------------------------
+
+    def _unit_sale_price(self, lines: list[_Line]) -> list[_Candidate]:
+        """Locate a unit sale price - rule 6(11)'s "Rs. _ per g" declaration.
+
+        This reads evidence and stops there. Rule 6(11) prescribes which unit
+        the declaration must use for which net-quantity band, and exempts a
+        package whose retail sale price equals its unit sale price; both are
+        comparisons for the rules layer to make against the extracted values,
+        and neither is attempted here. `normalise_unit_price` says the same
+        thing about the value itself.
+
+        Two levels of confidence, on the same principle the MRP detector uses:
+
+        - a unit-sale-price keyword introducing a per-unit amount is committed
+          to, because nothing else on a package is phrased that way;
+        - a bare `Rs.0.93/g` with no keyword is emitted **uncertain**, and only
+          when a currency token was actually read. Without one, `0.08 per g`
+          is indistinguishable from a nutrition figure or a comparison in
+          marketing copy, so nothing is emitted at all.
+
+        A line carrying an MRP keyword and no unit-sale-price keyword is left
+        alone entirely. `MRP Rs.200/kg` is one declaration written with a rate,
+        not two declarations, and reporting a second would record the package
+        as declaring something it never separately declared - which
+        `field_presence` would then pass on.
+        """
+        found: list[_Candidate] = []
+        for line in lines:
+            if P.NON_DECLARATION_CONTEXT.search(line.text):
+                # A nutrition-panel line. `2.5 g per 100 g` is a real rate and
+                # none of them is a price.
+                continue
+
+            keyword = P.UNIT_SALE_PRICE_KEYWORD.search(line.text)
+            has_keyword = keyword is not None
+
+            if has_keyword:
+                match = _per_unit_price_near(line.text, keyword)
+            else:
+                if P.MRP_KEYWORD.search(line.text):
+                    continue
+                match = P.PER_UNIT_PRICE.search(line.text)
+                if match is not None and not match.group("currency"):
+                    # No keyword and no currency: not enough to call this a
+                    # price at all.
+                    match = None
+
+            if match is None:
+                continue
+
+            normalized = normalise_unit_price(
+                match.group("amount"), match.group("unit")
+            )
+            if not has_keyword:
+                normalized = _mark_uncertain(
+                    normalized,
+                    "a per-unit price was read but no unit-sale-price keyword "
+                    "was found on this line",
+                )
+            found.append(
+                _candidate(
+                    LabelFieldKey.UNIT_SALE_PRICE,
+                    line,
+                    normalized,
+                    MATCHED_BY_KEYWORD if has_keyword else MATCHED_BY_PATTERN,
+                    signature=(
+                        normalized.get("amount"),
+                        normalized.get("per_unit"),
+                    ),
                 )
             )
         return found
@@ -693,6 +791,28 @@ def _amount_near(text: str, keyword: re.Match[str]) -> str | None:
     if match is None:
         match = P.PRICE.search(text[: keyword.start()])
     return _price_amount(match)
+
+
+def _per_unit_price_near(text: str, keyword: re.Match[str]) -> re.Match[str] | None:
+    """Read the per-unit price belonging to a unit-sale-price keyword.
+
+    Proximity works the way it does in `_amount_near`: what the keyword
+    introduces is the text *after* it. On
+    `UNIT SALE PRICE : Rs.2.91 PER GRAM (NET 120 GRAMS)` searching the whole
+    line first could attach the keyword to the net quantity instead.
+
+    The one concession is a label that prints the rate before the name of the
+    declaration, and it is allowed only when a currency token anchors it - a
+    bare number ahead of the keyword is far more likely to be something else on
+    the panel.
+    """
+    after = P.PER_UNIT_PRICE.search(text[keyword.end():])
+    if after is not None:
+        return after
+    before = P.PER_UNIT_PRICE.search(text[: keyword.start()])
+    if before is not None and before.group("currency"):
+        return before
+    return None
 
 
 def _mark_uncertain(normalized: dict, reason: str) -> dict:
