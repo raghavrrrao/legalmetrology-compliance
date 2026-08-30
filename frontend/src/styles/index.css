@@ -137,3 +137,115 @@ body {
   font-size: 0.85rem;
   color: var(--colour-muted);
 }
+
+/* --- scan + result screen -------------------------------------------------
+ *
+ * Layout only. Nothing here encodes meaning: the verdict's colour comes from
+ * the shared .status-badge--* tones the caller picks, so this file has no
+ * opinion about what "compliant" looks like.
+ */
+
+.app-nav {
+  display: flex;
+  gap: 1rem;
+}
+
+.app-nav a:hover {
+  color: var(--colour-text);
+}
+
+.field {
+  margin-bottom: 1rem;
+}
+
+.field label {
+  display: block;
+  font-weight: 600;
+  font-size: 0.9rem;
+  margin-bottom: 0.3rem;
+}
+
+.field input[type='text'],
+.field select {
+  width: 100%;
+  max-width: 24rem;
+  padding: 0.4rem 0.5rem;
+  border: 1px solid var(--colour-border);
+  border-radius: var(--radius);
+  font: inherit;
+}
+
+.field--actions {
+  display: flex;
+  gap: 0.5rem;
+  margin-bottom: 0;
+}
+
+.field--actions button {
+  padding: 0.45rem 1rem;
+  font: inherit;
+  border: 1px solid var(--colour-border);
+  border-radius: var(--radius);
+  background: var(--colour-surface);
+  cursor: pointer;
+}
+
+.field--actions button[type='submit'] {
+  background: var(--colour-text);
+  border-color: var(--colour-text);
+  color: var(--colour-surface);
+}
+
+.field--actions button:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+.result__verdict {
+  margin: 0 0 0.5rem;
+  font-size: 1.25rem;
+}
+
+.evidence {
+  margin: 0.5rem 0 0;
+  padding: 0.4rem 0.75rem;
+  border-left: 3px solid var(--colour-border);
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  font-size: 0.8rem;
+  white-space: pre-wrap;
+  color: var(--colour-muted);
+}
+
+.fields-table {
+  width: 100%;
+  border-collapse: collapse;
+  background: var(--colour-surface);
+  border: 1px solid var(--colour-border);
+  border-radius: var(--radius);
+  font-size: 0.9rem;
+}
+
+.fields-table th,
+.fields-table td {
+  padding: 0.4rem 0.6rem;
+  text-align: left;
+  border-bottom: 1px solid var(--colour-border);
+  vertical-align: top;
+}
+
+.fields-table th {
+  font-size: 0.8rem;
+  color: var(--colour-muted);
+}
+
+.recognised-text {
+  padding: 0.75rem;
+  background: var(--colour-surface);
+  border: 1px solid var(--colour-border);
+  border-radius: var(--radius);
+  font-size: 0.8rem;
+  white-space: pre-wrap;
+  word-break: break-word;
+  max-height: 20rem;
+  overflow-y: auto;
+}

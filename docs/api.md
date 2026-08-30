@@ -153,6 +153,54 @@ The endpoint reports *whether* each dependency answered, never *why* it did
 not. Error detail is logged server-side; the response says only `unavailable`,
 so it stays useful to the team without being useful to a scanner.
 
+### `POST /api/v1/images/`
+
+Upload a label photograph; receive the finished compliance result.
+
+Runs the whole flow inline - validate, store, OCR, extract, normalise,
+evaluate - and returns **201** with the complete `ComplianceCheck`. Extraction
+measures at a ~2.2 s median on the configured Tesseract pipeline
+(docs/evaluation-results.md), so there is nothing to poll. When that becomes
+slow enough to need a queue, `run_extraction` moves behind it and this response
+gains a `pending` shape additively.
+
+`multipart/form-data`:
+
+| Field | Required | Notes |
+|---|---|---|
+| `image` | yes | The photograph. Validated by `apps.images.validators` in full. |
+| `view_type` | no | A `ProductImage.ViewType` value. Defaults to `unspecified`. |
+| `category_code` | no | A `ProductCategory.code`. Determines which rules apply. An unknown code is a 400, never silently ignored - dropping it would produce a "category not known" result indistinguishable from omitting it. |
+
+**201** carries the verdict (`result`), the engine's plain-language
+explanation (`summary`), every declaration that was read with its normalised
+value and bounding box, and each finding with its rule code, legal reference,
+severity and evidence excerpt. `extraction.is_placeholder` says whether any
+real recognition happened; `product_category_code` is `null` when the commodity
+was not known.
+
+**201 even when nothing could be read.** An unreadable photograph still
+produces a stored, retrievable result whose verdict is `review_required` and
+whose summary explains why. That is an outcome, not a failed request.
+
+**400** for a missing file, a file the validators reject, an unknown
+`category_code` or an unknown `view_type`.
+
+### `GET /api/v1/compliance/<uuid>/`
+
+The same body as above, for a result already computed. Exists so a result
+survives a page reload and can be sent to a reviewer as a link. The id is a
+UUID so holding one result's link does not let you walk to another's.
+
+### Permissions on these two endpoints
+
+Both follow the deny-by-default rule and require an authenticated user, unless
+`DEMO_PUBLIC_ANALYSIS_API` is set. That setting **defaults to False** and is
+intended only for a local demonstration, where no login screen exists yet. It
+affects these two endpoints and nothing else, and uploads still go through
+validation and anonymous throttling either way. See
+`apps/compliance/api/permissions.py`.
+
 ## Planned endpoints
 
 Not implemented. Listed so branches do not invent conflicting shapes — agree
@@ -161,15 +209,14 @@ the contract here in a PR before building it.
 | Endpoint | Branch |
 |---|---|
 | `POST /api/v1/products/` | `feature/product-upload` |
-| `POST /api/v1/images/` | `feature/product-upload` |
 | `POST /api/v1/extraction/` | `feature/ocr-processing` |
-| `GET /api/v1/compliance/<id>/` | `feature/compliance-analysis` |
 | `GET /api/v1/rules/` | `feature/rule-management` |
 
 ### What already exists behind them
 
-The upload and extraction endpoints are the only missing layer, not the missing
-work. The services they will call are implemented and tested:
+`POST /api/v1/images/` and `GET /api/v1/compliance/<uuid>/` are now built and
+documented above; `POST /api/v1/extraction/` is not. The services all of them
+call are implemented and tested:
 
 - `apps.images.services.ingestion.ingest_product_image(upload, ...)` — validates
   and stores an upload, returning a `ProductImage`. Raises Django
@@ -186,20 +233,29 @@ work. The services they will call are implemented and tested:
 - `apps.extraction.services.extraction_service.ingest_and_extract(upload, ...)` —
   both, returning an `ExtractionOutcome(image, run)`.
 
-So `POST /api/v1/images/` is a serializer for the multipart body, a permission
-class, and a call to one of these. **A view must not re-implement validation or
-persistence**, and in particular must never write a `ProductImage` without going
-through the ingestion service — that is the only thing preventing an unvalidated
-file from reaching storage.
+`POST /api/v1/images/` is accordingly a serializer for the multipart body, a
+permission class, and a call to
+`apps.compliance.services.analysis_service.analyse_upload`, which composes
+`ingest_and_extract` with the compliance engine. **A view must not re-implement
+validation or persistence**, and in particular must never write a
+`ProductImage` without going through the ingestion service — that is the only
+thing preventing an unvalidated file from reaching storage.
 
-Three decisions are still open and belong in the endpoint's PR, not here:
+Two of the three decisions this section left open have now been made, for
+`POST /api/v1/images/` only:
 
-- **Synchronous or queued.** `run_extraction` runs inline today, which is fine
-  for a placeholder engine and will not be for a real one. If the endpoint
-  returns before extraction finishes, its response shape has to account for a
-  run that is still `pending`/`running`.
-- **Authentication.** `ProductImage.uploaded_by` is nullable and no endpoint
-  currently authenticates. Whether uploads require a user is an unmade decision.
+- **Synchronous or queued** — decided: synchronous. `run_extraction` runs
+  inline, which measures at a ~2.2 s median on the configured Tesseract
+  pipeline. When that becomes too slow, `run_extraction` moves behind a queue
+  and the response gains a `pending` shape additively.
+- **Authentication** — decided: authenticated by default, with an explicit,
+  default-off `DEMO_PUBLIC_ANALYSIS_API` switch for a local demonstration.
+  `ProductImage.uploaded_by` is filled in when there is a user and left null
+  when there is not.
+
+One remains open, because it is a change to shared error handling rather than
+to one endpoint:
+
 - **Whether rejection reasons reach the client.** As above, the envelope
   flattens every upload rejection to `validation_error`, so the UI cannot today
   tell "convert this file" from "this file is corrupt". Surfacing the validator

@@ -290,6 +290,25 @@ DEFAULT_EXTRACTION_ENGINE_VERSION = env(
 
 
 # ---------------------------------------------------------------------------
+# Demonstration mode
+# ---------------------------------------------------------------------------
+
+# Opens POST /api/v1/images/ and GET /api/v1/compliance/<id>/ to anonymous
+# callers. Nothing else is affected, and every upload still goes through
+# apps.images.validators in full.
+#
+# Default False, deliberately: the API denies by default (see REST_FRAMEWORK
+# above), there is no login screen yet, and a demonstration needs these two
+# endpoints reachable without one. Keeping the default closed means a clone, a
+# CI run and any deployment stay locked down, and the permissive value has to
+# be set on purpose in a git-ignored .env - the same reasoning as
+# CORS_ALLOW_ALL_ORIGINS never being enabled above.
+#
+# Enforced by apps.compliance.api.permissions.IsAuthenticatedOrDemoPublic.
+DEMO_PUBLIC_ANALYSIS_API = env.bool("DEMO_PUBLIC_ANALYSIS_API", default=False)
+
+
+# ---------------------------------------------------------------------------
 # Compliance rules
 # ---------------------------------------------------------------------------
 

@@ -256,11 +256,31 @@ reports a sample count, and that count is what ends up in the report.
 
 ### What has actually been measured
 
-**Nothing.** No frozen set exists in anyone's checkout that this repository
-knows about, no annotation has been written, and no CER, WER, precision, recall
-or F1 figure for this system has been computed. The infrastructure above makes
-measuring possible; it is not a measurement, and a report produced from a
-synthetic fixture is not one either.
+**A first baseline, on a set that is frozen but whose ground truth is not yet
+human-verified.**
+
+`our-eval-v0.1-draft` — 28 photographs of 10 packages, 336 annotated fields —
+exists in this checkout only, and `tesseract` 0.2.0 has been run against it:
+precision 0.944, recall 0.205, F1 0.337, value accuracy 0.588, silent error rate
+0.455, median 2.2 s per image. The full report, with per-field and per-condition
+results, failure analysis and limitations, is
+[`docs/evaluation-results.md`](../../docs/evaluation-results.md).
+
+Three things bound that claim, and all three matter:
+
+- **The annotations were drafted by a model, not a person**, and are pending
+  human verification (`our-evaluation-set/VERIFICATION.md`). Every annotation was
+  read off the photographs and none came from OCR output, so the set is not
+  contaminated by the system's own guesses — but it has not been checked, and
+  until it has, the numbers are provisional.
+- **CER and WER still do not exist.** No sample carries a hand transcription, so
+  the harness reports them as unavailable rather than estimating them.
+- **N = 28, from 10 products, four of which share one back-of-pack template.**
+  Several per-field denominators are in single figures.
+
+The set is not in Git — like everything else under `ml/data/`, it lives on one
+machine. What the repository carries is the code that reads it and the report it
+produced.
 
 ## This is a development set, not a training set
 
@@ -278,10 +298,13 @@ same as either of the two things it is easy to mistake it for:
   [`docs/evaluation-strategy.md`](../../docs/evaluation-strategy.md); these
   folders are the raw material for it, not a substitute for following it.
 
-**No accuracy, CER, WER or F1 figure for this system has been measured, and
-none may be quoted from a run against these images.** Running the CLI over a
-folder tells you what the pipeline does. It measures nothing until ground truth
-exists, the set is frozen, and the size and date are reported with the number.
+**No accuracy, CER, WER or F1 figure may be quoted from a run against the images
+in `raw/` or `evaluation/`.** Running the CLI over one of these folders tells you
+what the pipeline does; it measures nothing, because these folders carry no
+ground truth. The only figures that may be quoted are the ones measured against
+the frozen, annotated set in `our-evaluation-set/` and published in
+[`docs/evaluation-results.md`](../../docs/evaluation-results.md) — and those are
+quoted with their dataset version, size and date, or not at all.
 
 ## Running OCR against an image here
 

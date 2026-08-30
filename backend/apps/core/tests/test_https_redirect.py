@@ -106,12 +106,31 @@ def test_https_requests_are_not_redirected_even_when_enabled():
 # --- the URL convention ------------------------------------------------------
 
 
+#: Stand-in values for reversing a route that takes path parameters. Keyed by
+#: Django's converter class name, because that is what the resolver records.
+#: The values are never fetched - they exist only so `reverse()` can build a
+#: URL to check the shape of.
+_SAMPLE_ARGUMENT_BY_CONVERTER = {
+    "UUIDConverter": "00000000-0000-0000-0000-000000000000",
+    "IntConverter": "1",
+    "SlugConverter": "sample",
+    "StringConverter": "sample",
+    "PathConverter": "sample",
+}
+
+
 def test_api_routes_use_trailing_slashes():
     """The documented convention (docs/api.md): every API route ends in '/'.
 
     Asserted over the resolved URLconf rather than a hand-written list, so a
     route added later without a trailing slash fails here instead of producing
     a silent redirect that turns a POST into a GET.
+
+    Routes that take path parameters are reversed with a stand-in value for
+    each. Reversing them with no arguments - as this test originally did, when
+    every route was argument-less - raises `NoReverseMatch`, which would have
+    made the first parameterised endpoint in the project look like a broken
+    route rather than an unhandled case in the test.
     """
     from django.urls import get_resolver
 
@@ -126,7 +145,19 @@ def test_api_routes_use_trailing_slashes():
         # it needs an argument and it is not a real endpoint anyway.
         if name == "not-found":
             continue
-        url = reverse(f"v1:{name}")
+
+        converters = v1_resolver.reverse_dict[name][3]
+        kwargs = {}
+        for parameter, converter in converters.items():
+            sample = _SAMPLE_ARGUMENT_BY_CONVERTER.get(type(converter).__name__)
+            assert sample is not None, (
+                f"route {name!r} uses path converter "
+                f"{type(converter).__name__!r}, which this test has no sample "
+                f"value for - add one to _SAMPLE_ARGUMENT_BY_CONVERTER"
+            )
+            kwargs[parameter] = sample
+
+        url = reverse(f"v1:{name}", kwargs=kwargs)
         assert url.endswith("/"), f"API route {name!r} -> {url!r} lacks a trailing slash"
         assert url.startswith("/api/v1/"), f"{name!r} -> {url!r} is outside /api/v1/"
 

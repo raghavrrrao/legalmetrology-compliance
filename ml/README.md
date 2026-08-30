@@ -78,8 +78,12 @@ the numbers justify it, register a second engine *alongside* this one rather
 than replacing it. `registry` is keyed by name and version precisely so two
 engines can be compared on the same images.
 
-**No accuracy, CER, WER or F1 figure for this engine appears anywhere in this
-repository, because none has been measured on our data.**
+**That trade-off has now been measured once**, on 28 annotated photographs — see
+[`docs/evaluation-results.md`](../docs/evaluation-results.md) and the summary
+under [METRICS](#metrics). The measurement supports the concern: recall is 0.205,
+and the conditions that describe most hand-photographed retail packaging —
+cropped declarations, packs shot on their side, creased film — scored zero
+recall. CER and WER remain unmeasured.
 
 The engine is swappable without touching Django: `extraction_service.py` is the
 only backend module that reaches the runtime here - `registry`, `pipeline`,
@@ -376,19 +380,38 @@ number measured on one says nothing about performance on the other.
 
 ## METRICS
 
-**No accuracy has been measured. There is no CER, WER, precision, recall or F1
-figure for this system, and none may be quoted.**
-[`docs/evaluation-strategy.md`](../docs/evaluation-strategy.md) defines what
-will be measured and the method: a frozen, annotated, held-out set, reported
-with its size and date.
+**A first baseline has been measured. CER and WER still have not.** The full
+report — dataset, per-field and per-condition results, failure analysis and
+limitations — is [`docs/evaluation-results.md`](../docs/evaluation-results.md).
+[`docs/evaluation-strategy.md`](../docs/evaluation-strategy.md) defines the
+method it follows.
 
-What exists today is a **development check on one product** — six photographs
-of one aerosol can, ground truth transcribed by hand. It was enough to choose
-between preprocessing options. It is not enough to support any claim about how
-well this system reads labels, and one product cannot be a measurement of a
-system meant for every packaged commodity sold in India.
+`tesseract` 0.2.0 on `our-eval-v0.1-draft`, 28 photographs of 10 packages,
+2026-08-29:
 
-### The measuring apparatus exists; the measurement does not
+| | |
+|---|---:|
+| Precision | 0.944 (17/18) |
+| Recall | 0.205 (17/83) |
+| F1 | 0.337 |
+| Value accuracy | 0.588 |
+| Silent error rate | 0.455 |
+| Correct unread | 0 of 23 |
+| Median latency | 2202 ms |
+| CER / WER | unavailable — no hand transcription exists |
+
+Read that shape before the headline. Precision 0.944 does **not** mean the system
+is 94% right: it means that on the rare occasions it reports a declaration it has
+usually found a real one, while missing four readable declarations in five, never
+once correctly flagging an unreadable declaration as unread, and being wrong
+about half the time when it commits without hedging. Three caveats bound every
+number: the ground truth was drafted by a model and is **not yet
+human-verified**; N is 28, from 10 products, four of which share one
+back-of-pack template; and the Tesseract installation had `eng` data only, so the
+Devanagari and Gujarati content in 5 of 28 panels was unreadable by
+construction.
+
+### The apparatus, and how to re-run it
 
 `labelextract.evaluation` implements the method that document describes: a
 frozen dataset with a version and a checksum per image, hand-written
@@ -399,14 +422,15 @@ that reports a metric as unavailable rather than estimating it.
 cd ml
 python -m labelextract.evaluation.cli validate data/our-evaluation-set
 python -m labelextract.evaluation.cli run data/our-evaluation-set \
-    --pipeline tesseract --report evaluation-report.json
+    --pipeline tesseract --pipeline-version 0.2.0 \
+    --report data/our-evaluation-set/baseline-report-v0.2.0.json
 ```
 
-**No such dataset exists in this repository.** `ml/data/` is git-ignored in
-full, no annotation has been written, and none of the tests for this code is a
-measurement — they run over synthetic manifests and PNGs the tests build
-byte-by-byte. The format is documented in
-[`ml/data/README.md`](data/README.md).
+**The dataset is not in this repository.** `ml/data/` is git-ignored in full, so
+`our-eval-v0.1-draft` exists on one machine; what is committed is this code, the
+tests that pin the format, and the report. None of the tests is a measurement —
+they run over synthetic manifests and PNGs the tests build byte-by-byte. The
+format is documented in [`ml/data/README.md`](data/README.md).
 
 ## PRODUCT 001 — what changed between 0.1.0 and 0.2.0
 

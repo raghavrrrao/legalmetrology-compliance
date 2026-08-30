@@ -327,6 +327,10 @@ Intended strategy, to be finalised by whoever lands the first real model:
 
 ## Reporting performance honestly
 
+Measured figures live in [evaluation-results.md](evaluation-results.md) and
+nowhere else. If a number is not on that page with its dataset version, size and
+date, it has not been measured on our data.
+
 When you publish accuracy, character error rate, or field-extraction F1:
 
 - State the dataset, its size, and how it was collected.

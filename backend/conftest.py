@@ -42,6 +42,35 @@ def _no_ssl_redirect_in_tests(settings):
     settings.SECURE_SSL_REDIRECT = False
 
 
+@pytest.fixture(autouse=True)
+def _pin_runtime_configuration_in_tests(settings):
+    """Pin the settings a developer's local `.env` would otherwise decide.
+
+    `DEFAULT_EXTRACTION_ENGINE_NAME/VERSION` and `DEMO_PUBLIC_ANALYSIS_API` are
+    read from the repository-root `.env`, which is git-ignored. That made the
+    suite's result depend on an untracked file: several tests assert the
+    default pipeline is a placeholder, and they passed only because every
+    machine happened to have `null-engine` configured. Selecting the real
+    Tesseract pipeline for a demonstration - a config change, touching no code
+    - turned five of them red, which is the suite reporting the developer's
+    environment rather than the code.
+
+    Pinned here, in the same spirit as `_no_ssl_redirect_in_tests` above:
+    removing an environment artefact rather than coverage. A test that cares
+    about a different engine says so with `settings` or by passing
+    `engine_name` explicitly, which several already do. Nothing is hidden -
+    that a real engine can be configured is exercised by
+    `apps/extraction/tests/test_extraction_service_ocr.py`, and the demo
+    permission switch is asserted in both positions in
+    `apps/compliance/tests/test_analysis_api.py`.
+    """
+    settings.DEFAULT_EXTRACTION_ENGINE_NAME = "null-engine"
+    settings.DEFAULT_EXTRACTION_ENGINE_VERSION = "0.1.0"
+    # Deny-by-default is the shipped behaviour; a demo flag left on in a local
+    # .env must not silently satisfy a permission assertion.
+    settings.DEMO_PUBLIC_ANALYSIS_API = False
+
+
 def make_png_bytes(width: int = 64, height: int = 64) -> bytes:
     """Build a genuinely decodable single-colour PNG.
 

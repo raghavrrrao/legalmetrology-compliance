@@ -151,19 +151,29 @@ makes `field_presence` PASS and hides a real violation. A declaration we fail to
 find produces a review flag. The second failure is recoverable by a human; the
 first is invisible. See [evaluation-strategy.md](evaluation-strategy.md).
 
-## Metrics to be measured later
+## Metrics
 
-**No metric values exist yet, and none are published anywhere in this
-repository — including for the Tesseract engine that now ships.** Installing an
-engine is not the same as measuring one. The list below is what will be
-measured, not a claim about anything. See
-[evaluation-strategy.md](evaluation-strategy.md) for how.
+**Field extraction and operational metrics have been measured once; the rest
+have not.** Published values, with their dataset, size and date, live in
+[evaluation-results.md](evaluation-results.md) and nowhere else. See
+[evaluation-strategy.md](evaluation-strategy.md) for the method.
 
-- OCR: character error rate, word error rate
-- Field extraction: per-field precision, recall, F1
-- Classification: per-category accuracy, confusion matrix
-- End-to-end: agreement with a human reviewer's compliance determination
-- Operational: processing time per image, failure rate, `REVIEW_REQUIRED` rate
+| Metric | Status |
+|---|---|
+| OCR: character error rate, word error rate | **Not measured.** No hand transcription exists; the harness reports them unavailable rather than estimating them |
+| Field extraction: per-field precision, recall, F1 | **Measured** on `our-eval-v0.1-draft` (28 images, 10 products, 2026-08-29): micro precision 0.944, recall 0.205, F1 0.337 |
+| Uncertainty: uncertain rate, uncertainty precision, silent error rate | **Measured**: 0.500, 0.429, 0.455 |
+| Classification: per-category accuracy, confusion matrix | **Not measured.** No classifier exists |
+| End-to-end: agreement with a human reviewer's compliance determination | **Not measured**, and out of reach until verified `ComplianceRule` rows exist. Nothing measured so far touches compliance |
+| Operational: processing time per image, failure rate, `REVIEW_REQUIRED` rate | **Partly measured**: median 2202 ms per image, 0 crashes in 28, 2 of 28 `empty`. `REVIEW_REQUIRED` is a compliance-engine outcome and is not measured |
+
+The measured figures carry three caveats that must travel with them: the ground
+truth was drafted by a model and is **not yet human-verified**; N is 28, from 10
+products, four sharing one back-of-pack template; and the run had `eng` language
+data only. The number most worth attention is not the 0.944 precision but the
+0.455 silent error rate — nearly half of the readings the pipeline offered
+without hedging were wrong — and the fact that it correctly reported **zero** of
+23 present-but-unreadable declarations as unread.
 
 ## Known limitations to state openly
 
