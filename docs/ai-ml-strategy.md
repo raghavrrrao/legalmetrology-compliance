@@ -189,9 +189,17 @@ them is more credible than a round number with no provenance:
   only** — so a Hindi-only declaration is recognised as text and then not
   interpreted.
 - **Several declarations are not extracted at all.** Product and brand name,
-  generic name, manufacturer address and unit sale price need layout
-  understanding this layer does not have. The unsupported list is derived from
-  the code, not maintained by hand, so it cannot drift.
+  generic name and manufacturer address need layout understanding this layer
+  does not have. The unsupported list is derived from the code, not maintained
+  by hand, so it cannot drift.
+- **A declaration being extracted is not a claim that it is extracted well, and
+  never a claim that the matching rule can be evaluated.** `unit_sale_price` is
+  the current example: the extractor attempts it, it is newer than the frozen
+  evaluation set, and so **no precision or recall figure exists for it**. Nor
+  does reading it make rule 6(11) checkable — that needs the net-quantity band
+  and a comparison against the retail sale price, which are the rules layer's
+  to decide with check types that are not registered. Extraction capability and
+  legal-rule activation are separate decisions throughout this project.
 - **Tesseract is weaker than the neural engines on hard packaging** — foil,
   curved surfaces, decorative type. It was chosen for being free, offline,
   weightless and installable by six people on three operating systems, with the

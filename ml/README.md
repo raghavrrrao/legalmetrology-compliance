@@ -202,6 +202,7 @@ would be unexplainable in a tool whose output is meant to be evidence.
 |---|---|---|
 | Net quantity | `net_quantity` | `{quantity, unit, base_quantity, base_unit, measure, pack_count?}` |
 | MRP / retail sale price | `retail_sale_price` | `{amount (exact decimal string), currency, inclusive_of_all_taxes?}` — read from the text the MRP keyword introduces, skipping quantities |
+| Unit sale price | `unit_sale_price` | `{amount (exact decimal string), currency, per_unit, per_measure}` — the unit **as printed**; no base conversion. **Not yet measured — see below** |
 | Batch / lot number | `batch_number` | `{batch_number}` |
 | Date of manufacture | `date_of_manufacture` | `{date}` or `{year_month}` |
 | Date of packing | `date_of_packing` | `{date}` or `{year_month}` |
@@ -219,15 +220,44 @@ would be unexplainable in a tool whose output is meant to be evidence.
 | Declaration | Why not |
 |---|---|
 | **Product / brand name** | No reliable textual anchor. It is the largest text on the front panel, which is a *layout* signal this layer does not have |
-| **Common or generic name** (`common_or_generic_name`) | Same problem |
-| **Manufacturer address** (`manufacturer_address`) | Spans several lines below the name; needs real layout analysis |
-| **Unit sale price** (`unit_sale_price`) | Detected only well enough to *exclude* it from MRP matches |
+| **Common or generic name** (`common_or_generic_name`) | Same problem. A keyword-anchored detector (`COMMODITY :`, `Name of Commodity`) was investigated and **not** built: measured across the 674 lines the current pipeline reads from the 28 frozen photographs, such a keyword appears on **1 panel of 28**. `rules/INVENTORY.md` names entry into `SUPPORTED_KEYS` as the condition for reactivating `LM-PC-0002`, so shipping 3.6 % recall as "supported" would invite exactly the false `NON_COMPLIANT` on 27 of 28 panels that deactivating the rule was meant to prevent |
+| **Manufacturer address** (`manufacturer_address`) | Spans several lines below the name; needs real layout analysis. Distinguishing it from the packer, importer and consumer-care addresses needs the same. Measured on the frozen set: a manufacturer-name anchor appears on 4 of 28 panels and a 6-digit PIN on 5, and one panel prints `IN CASE OF CONSUMER COMPLAINTS, CONTACT: ADDRESS MENTIONED AT MANUFACTURED BY` — proof the roles are distinct in practice |
 | Any non-English text | Tesseract recognises Devanagari when `tesseract-ocr-hin` is installed; no pattern here matches it |
 
 `SUPPORTED_KEYS` and `UNSUPPORTED_KEYS` are exported from
 `labelextract.fields`, and `UNSUPPORTED_KEYS` is *derived* from the full
 vocabulary rather than maintained by hand — so this table cannot silently drift
 away from the code. A test asserts the two partition `LabelFieldKey`.
+
+### "Supported" means attempted, not measured, and never means compliant
+
+Three separate claims, and a row in the table above makes only the first:
+
+1. **The extractor attempts this declaration.** That is all `SUPPORTED_KEYS`
+   asserts. It is a statement about our code, not about any package.
+2. **The extractor reads it reliably.** A *separate* claim, and one only an
+   evaluation run can make. Twelve of the fourteen supported keys are annotated
+   in the frozen evaluation set and appear in the per-declaration table in
+   [`docs/evaluation-results.md`](../docs/evaluation-results.md).
+   **`unit_sale_price` is not one of them.** It was added after that set was
+   frozen, so all 28 of its cells score as `unknown` → excluded and the set
+   yields **no precision, no recall and no value accuracy** for it. What exists
+   is one correct reading on one panel, which is a demonstration and not a
+   measurement. Quote no accuracy figure for this field; there is none, and the
+   frozen set cannot produce one — that needs the key annotated across the
+   samples and re-published under a new `dataset_version`.
+3. **The corresponding legal requirement can now be evaluated.** Not implied by
+   either of the above, and **not true for rule 6(11)**. Reading a unit sale
+   price off a label says nothing about whether one was required — that turns
+   on the net-quantity band, and the rule exempts a package whose retail sale
+   price equals its unit sale price. Both are decisions for the rules layer,
+   both need `format_check` and `numeric_check`, and neither check type is
+   registered. This package extracts evidence; `apps.rules` decides what it
+   means. See `rules/INVENTORY.md` for the requirement's status.
+
+Nothing on this branch activated a legal rule. `LM-PC-0002` and every other
+inactive rule remain `is_active: false`, and extraction work is never on its own
+a reason to change that.
 
 ### Precision over recall, on purpose
 
@@ -271,6 +301,11 @@ a declaration" are different answers:
 | `Made in India` | emitted, **uncertain** — the same wording introduces a manufacturing town |
 | `Made in a facility that also processes nuts` | **not emitted** — it is prose, not a declaration |
 | `MRP for 500 g pack: 250` | emitted as `250`; the quantity is skipped, never taken as the price |
+| `UNIT SALE PRICE : ₹2.91 PER GRAM` | emitted, certain — and **not** also emitted as a retail sale price |
+| `₹0.08 per g` | emitted, **uncertain** — a rate with no keyword naming the declaration |
+| `0.08 per g` | **not emitted** — no currency and no keyword is not enough to call it a price |
+| `MRP ₹200/kg` | emitted as a retail sale price only. One declaration written as a rate, not two |
+| `Ascorbic Acid USP` | **not emitted, and not reported unread** — on a supplement label `USP` is *United States Pharmacopeia* |
 | `MRP incl. of all taxes` (price on another line) | **not emitted** — no guess is made |
 | `Best Before 25/12/2026` | emitted, certain |
 | `Best Before` / `25/12/2026` on two lines | emitted, **uncertain** — adjacency is an inference, not a reading |

@@ -125,6 +125,12 @@ is a property of the environment, not a finding about the engine.
 - **One annotator, one pass, no adjudication.** There is no inter-annotator
   agreement figure because there is only one annotator, and that annotator is a
   model.
+- **The annotated vocabulary is fixed at the twelve declarations supported when
+  the set was frozen.** A declaration the extractor learns to read afterwards
+  scores as `unknown` → excluded on every sample, which is correct — an
+  un-annotated field is not a negative — but it means new extraction capability
+  is unmeasurable against this version by construction. `unit_sale_price` is in
+  that position today.
 
 ---
 
@@ -198,6 +204,17 @@ five.
 
 `date_of_import` and `importer_name` are not declared on any panel in this set —
 all 28 are domestically packed. They are unmeasured, not perfect.
+
+`unit_sale_price` became a supported declaration *after* this set was frozen, so
+it has **no row above and no metric at all**. Every one of its 28 cells is
+`unknown` → excluded, because the annotations cover the twelve declarations that
+were supported when they were written. Re-running the baseline with the detector
+in place reproduces every number in this table unchanged and adds one committed
+reading — `₹2.91 per gram` off `p001_05_declaration_closeup`, confidence 0.83 —
+that nothing scores. **One correct reading is not a measurement.** A precision
+or recall figure for this declaration requires annotating the key across the set
+and re-freezing it as a new `dataset_version`; the frozen set was not edited to
+produce a number. See `ml/data/our-evaluation-set/VERIFICATION.md`.
 
 ### Uncertainty
 

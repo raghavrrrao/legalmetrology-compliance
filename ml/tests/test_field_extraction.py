@@ -400,11 +400,18 @@ def test_the_unsupported_list_is_derived_not_maintained_by_hand():
     [
         LabelFieldKey.MANUFACTURER_ADDRESS,
         LabelFieldKey.COMMON_OR_GENERIC_NAME,
-        LabelFieldKey.UNIT_SALE_PRICE,
     ],
 )
 def test_unsupported_declarations_are_declared_unsupported(key):
-    """These are not extracted, and the code says so rather than the docs alone."""
+    """These are not extracted, and the code says so rather than the docs alone.
+
+    Both need layout understanding this line-oriented layer does not have: an
+    address runs across several lines below the name that owns it, and a
+    generic name is identified by being the most prominent text on the front
+    panel. `unit_sale_price` used to sit here and no longer does - it has a
+    keyword and a printed form prescribed by rule 6(11) itself, so it needed a
+    detector rather than layout analysis. See `test_unit_sale_price.py`.
+    """
     assert key in UNSUPPORTED_KEYS
 
 
