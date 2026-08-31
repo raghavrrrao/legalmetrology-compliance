@@ -296,10 +296,48 @@ DURATION = re.compile(
 
 # --- batch / lot ------------------------------------------------------------
 
+#: The qualifier a batch keyword may carry - `No.`, `Number`, `Code` - is part
+#: of the *keyword*, never part of the value. Saying so explicitly is not
+#: redundant with the optional group below it, because that group is optional:
+#: on `Batch No. & Use By Date` the engine matched `No.` as the qualifier,
+#: found no value after it, backtracked, matched the qualifier as *empty*, and
+#: committed to `No` as the batch code.
+#:
+#: Measured on `our-eval-v0.3-usp-partial`, that one backtrack produced the
+#: whole dataset's only fabricated value - `p007_01_back`, a pack printing
+#: `Batch No. :` with nothing stamped against it - and one confident wrong
+#: reading on `p010_01_back`, whose legend line reads `Batch No. & Use By Date`.
+#: Both were emitted `uncertain: False`, which is the worst failure this layer
+#: has: `field_presence` passes on them and a reviewer is shown `No` as if it
+#: were a production code.
+#:
+#: The `\b` after each word is what keeps a genuine code that merely *begins*
+#: with those letters matching. There is no word boundary between `NO` and `1`,
+#: so `Batch: NO123` and `Batch Code: CODE45` are unaffected.
+_NOT_A_BATCH_VALUE = r"(?!(?:nos?|number|code)\b)"
+
 BATCH_NUMBER = re.compile(
     r"\b(?:batch|lot|b\.?\s*no|l\.?\s*no|bn)\b\.?\s*"
     r"(?:no\.?|number|code|#)?\s*[:.\-]?\s*"
+    rf"{_NOT_A_BATCH_VALUE}"
     r"(?P<value>[A-Za-z0-9][A-Za-z0-9\-/]{1,19})",
+    _I,
+)
+
+#: The phrasings that *name* a batch declaration and cannot mean anything else
+#: on a package, used where a keyword with no readable value has to be reported
+#: as an observation (`rule_based._KEYWORD_ANCHORS`).
+#:
+#: Narrower than `BATCH_NUMBER`'s own keyword alternation, and deliberately:
+#: `lot` and `batch` are ordinary English words - "a lot of", "batch cooked" -
+#: and an unread observation is a positive claim about what the label says.
+#: Requiring the qualifier is what makes the phrase unambiguous. Every string
+#: this matches is also matched by `BATCH_NUMBER`'s keyword prefix; a test
+#: asserts it, so the two cannot drift into disagreeing.
+BATCH_NUMBER_ANCHOR = re.compile(
+    r"\b(?:batch|lot)\b\.?\s*(?:nos?\.?|number|code)\b"
+    r"|\b(?:b|l)\.?\s*no\b\.?"
+    r"|\bbn\b\.?\s*(?:nos?\.?|number|code)\b",
     _I,
 )
 
@@ -319,7 +357,19 @@ EMAIL = re.compile(r"[A-Za-z0-9._%+\-]+@[A-Za-z0-9.\-]+\.[A-Za-z]{2,}")
 
 #: Indian toll-free numbers, the strongest single signal that a line is a
 #: consumer-care declaration.
-TOLL_FREE_PHONE = re.compile(r"\b1[\s\-]?800[\s\-]?\d{2,4}[\s\-]?\d{3,4}\b")
+#:
+#: Two or three groups after the `1800`, not exactly two. Indian toll-free
+#: numbers are printed in several groupings and the label chooses one:
+#: `1800 123 4567`, `1800 22 1234`, `1800-10-22-221`, `18001234567`. The
+#: two-group form missed the four-group printing entirely - measured on
+#: `p003_03_right`, whose panel reads `TOLL FREE: 1800-10-22-221` and which the
+#: extractor located as a consumer-care declaration and then reported with no
+#: phone number read.
+#:
+#: The `\b` at the front is what keeps this out of the FSSAI licence numbers
+#: that crowd the same panel: `10018022005492` contains `1800` but no word
+#: boundary before it, so it cannot match.
+TOLL_FREE_PHONE = re.compile(r"\b1[\s\-]?800(?:[\s\-]?\d{2,4}){2,3}\b")
 
 #: A ten-digit Indian mobile number, optionally with the country code.
 MOBILE_PHONE = re.compile(r"(?:\+?91[\s\-]?)?\b[6-9]\d{4}[\s\-]?\d{5}\b")
