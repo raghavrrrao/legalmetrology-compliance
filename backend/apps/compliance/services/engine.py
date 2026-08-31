@@ -6,9 +6,15 @@ records the result with its evidence.
     Product + ExtractionRun
         -> applicable rules      (category, effective date, active)
         -> evaluate each         (via apps.rules.checks validators)
-        -> violations + evidence (verified rules only)
+        -> findings              (every outcome: passed, failed, inconclusive)
+        -> violations + evidence (failures against verified rules only)
         -> overall result
         -> ComplianceCheck row
+
+Findings and violations are both written, and the difference is the point. A
+finding records what a rule concluded; a violation records that a package was
+found wanting. Every violation has a finding; most findings have no violation.
+See `ComplianceFinding` for why both exist.
 
 The verdict logic is deliberately conservative, and the three rules below are
 the ones to preserve if this file is ever rewritten:
@@ -29,6 +35,7 @@ the ones to preserve if this file is ever rewritten:
 
 from __future__ import annotations
 
+import json
 import logging
 import time
 
@@ -39,6 +46,7 @@ from apps.catalog.models import Product
 from apps.compliance.models import (
     ComplianceCheck,
     ComplianceEvidence,
+    ComplianceFinding,
     ComplianceViolation,
 )
 from apps.extraction.models import ExtractionRun
@@ -109,6 +117,11 @@ def evaluate(
     passed: list[ComplianceRule] = []
     failed: list[tuple[ComplianceRule, CheckOutcome]] = []
     inconclusive: list[tuple[ComplianceRule, CheckOutcome]] = []
+    #: Every outcome, in evaluation order, with whether it was downgraded.
+    #: Collected alongside the three buckets rather than derived from them
+    #: afterwards, because the downgrade below rewrites an outcome and the
+    #: original status would not be recoverable from the buckets.
+    outcomes: list[tuple[ComplianceRule, CheckOutcome, bool]] = []
 
     for rule in rules:
         outcome = _evaluate_rule(rule, context)
@@ -119,23 +132,21 @@ def evaluate(
         # matter what its validator concluded. It is downgraded to a review
         # signal here, at the one place it can be enforced for every rule.
         if outcome.status is CheckStatus.FAILED and not rule.is_verified:
-            inconclusive.append(
-                (
-                    rule,
-                    CheckOutcome(
-                        status=CheckStatus.INCONCLUSIVE,
-                        message=(
-                            f"{outcome.message} This rule has not been verified "
-                            f"against the authoritative legal text, so it is "
-                            f"flagged for human review rather than reported as "
-                            f"a violation."
-                        ),
-                        field_key=outcome.field_key,
-                        evidence_excerpt=outcome.evidence_excerpt,
-                        bounding_box=outcome.bounding_box,
-                    ),
-                )
+            downgraded = CheckOutcome(
+                status=CheckStatus.INCONCLUSIVE,
+                message=(
+                    f"{outcome.message} This rule has not been verified "
+                    f"against the authoritative legal text, so it is "
+                    f"flagged for human review rather than reported as "
+                    f"a violation."
+                ),
+                field_key=outcome.field_key,
+                evidence_excerpt=outcome.evidence_excerpt,
+                bounding_box=outcome.bounding_box,
+                details=outcome.details,
             )
+            inconclusive.append((rule, downgraded))
+            outcomes.append((rule, downgraded, True))
             continue
 
         if outcome.status is CheckStatus.PASSED:
@@ -144,8 +155,10 @@ def evaluate(
             failed.append((rule, outcome))
         else:
             inconclusive.append((rule, outcome))
+        outcomes.append((rule, outcome, False))
 
-    _record_violations(check, failed, extraction_run, context)
+    violations = _record_violations(check, failed, extraction_run, context)
+    _record_findings(check, outcomes, context, violations)
 
     result, summary = _decide(
         product=product,
@@ -196,13 +209,18 @@ def _record_violations(
     failed: list[tuple[ComplianceRule, CheckOutcome]],
     run: ExtractionRun,
     context: CheckContext,
-) -> None:
+) -> dict[str, ComplianceViolation]:
     """Persist each failure with the evidence that supports it.
 
     Takes `context` so the linking extracted field comes from the map already
     loaded once in `CheckContext.from_run`, rather than a fresh query per
     violation.
+
+    Returns the violations by rule code, so `_record_findings` can point each
+    failed finding at the violation it became without re-querying. A rule code
+    is unique per check because `applicable_rules` returns each rule once.
     """
+    violations: dict[str, ComplianceViolation] = {}
     for rule, outcome in failed:
         violation = ComplianceViolation.objects.create(
             compliance_check=check,
@@ -224,6 +242,100 @@ def _record_violations(
             excerpt=outcome.evidence_excerpt,
             bounding_box=outcome.bounding_box,
         )
+        violations[rule.code] = violation
+    return violations
+
+
+#: `CheckStatus` is the checks package's runtime vocabulary; `Status` is the
+#: database's. Mapped here rather than shared so a stored finding stays
+#: readable if the runtime enum is ever extended - the same split
+#: `extraction_service._STATUS_MAP` makes for extraction.
+_FINDING_STATUS = {
+    CheckStatus.PASSED: ComplianceFinding.Status.PASSED,
+    CheckStatus.FAILED: ComplianceFinding.Status.FAILED,
+    CheckStatus.INCONCLUSIVE: ComplianceFinding.Status.INCONCLUSIVE,
+}
+
+
+def _record_findings(
+    check: ComplianceCheck,
+    outcomes: list[tuple[ComplianceRule, CheckOutcome, bool]],
+    context: CheckContext,
+    violations: dict[str, ComplianceViolation],
+) -> None:
+    """Persist every rule outcome, not only the failures.
+
+    This is what makes `rules_passed` and `rules_inconclusive` more than
+    counters: each one now has a row naming the rule, the declaration it
+    concerns, what was read, how confident the reader was, and why the
+    validator concluded what it did.
+
+    Nothing here decides anything. Every value is copied from a `CheckOutcome`
+    the validator already produced or from the rule row as it stood when it was
+    evaluated. Written with `bulk_create` so evaluating fifty rules costs one
+    insert rather than fifty - the query-count regression tests in
+    `test_engine_queries.py` bound this.
+    """
+    rows = []
+    for rule, outcome, downgraded in outcomes:
+        # The reading behind this outcome, when there is one. `context.field`
+        # reads the map loaded once per check, so this is not a query.
+        extracted = context.field(outcome.field_key) if outcome.field_key else None
+        rows.append(
+            ComplianceFinding(
+                compliance_check=check,
+                rule=rule,
+                violation=violations.get(rule.code),
+                status=_FINDING_STATUS[outcome.status],
+                downgraded_from_failed=downgraded,
+                rule_code=rule.code,
+                title=rule.title,
+                requirement=rule.requirement,
+                legal_reference=rule.legal_reference,
+                severity=rule.severity,
+                check_type=rule.check_type,
+                field_key=outcome.field_key or "",
+                extracted_field=extracted,
+                # Snapshotted from the reading rather than followed through the
+                # foreign key: None stays None. A missing confidence means the
+                # engine did not report one, never zero.
+                extracted_confidence=(
+                    extracted.confidence if extracted is not None else None
+                ),
+                message=outcome.message,
+                evidence_excerpt=outcome.evidence_excerpt,
+                bounding_box=outcome.bounding_box,
+                details=_json_safe_details(outcome.details, rule_code=rule.code),
+            )
+        )
+    if rows:
+        ComplianceFinding.objects.bulk_create(rows)
+
+
+def _json_safe_details(details, *, rule_code: str) -> dict:
+    """Return `details` if the JSON column can store it, else an empty dict.
+
+    Validator diagnostics are validator-shaped by design, and `details` is
+    typed as a plain `Mapping` with nothing enforcing its contents. A `Path` or
+    a `datetime` in there would otherwise surface as an adaptation error from
+    inside `bulk_create`, after the check and its violations had been written -
+    turning a cosmetic diagnostic into a failed compliance evaluation.
+
+    Dropped rather than raised, because `details` is debugging output: losing it
+    must not cost the user their result. The loss is logged with the rule code
+    so it is fixable.
+    """
+    if not details:
+        return {}
+    try:
+        return json.loads(json.dumps(dict(details)))
+    except (TypeError, ValueError):
+        logger.warning(
+            "Rule %s produced diagnostics that are not JSON-serialisable; "
+            "the finding is recorded without them",
+            rule_code,
+        )
+        return {}
 
 
 def _decide(

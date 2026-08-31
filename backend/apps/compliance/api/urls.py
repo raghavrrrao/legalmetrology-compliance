@@ -9,6 +9,7 @@ from django.urls import path
 from apps.compliance.api import views
 
 urlpatterns = [
+    path("", views.ComplianceEvaluationView.as_view(), name="compliance-evaluate"),
     path(
         "<uuid:pk>/",
         views.ComplianceCheckDetailView.as_view(),

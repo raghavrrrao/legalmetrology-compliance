@@ -114,7 +114,7 @@ Conventions:
 
 ### Service layer (`backend/apps/*/services/`)
 
-Owns orchestration and business rules. Three services exist today:
+Owns orchestration and business rules. Four services exist today:
 
 - `images/services/ingestion.py` — validates an upload and stores it as a
   `ProductImage`, filling every column from what the bytes were measured to be
@@ -125,7 +125,12 @@ Owns orchestration and business rules. Three services exist today:
   **The only backend module that reaches the ML runtime** — `registry`,
   `pipeline`, `exceptions`, and any engine behind them.
 - `compliance/services/engine.py` — determines applicable rules, evaluates
-  them, records violations and evidence, decides the overall result.
+  them, records a finding for every outcome plus violations and evidence for
+  the failures, and decides the overall result.
+- `compliance/services/analysis_service.py` — composition only, with three
+  entry points into that line: `analyse_upload(file)` runs all of it,
+  `analyse_image(image)` re-reads a stored photograph, and `evaluate_run(run)`
+  judges a reading that already exists without reading the photograph again.
 
 `labelextract.contracts` is the one deliberate exception to that boundary. It
 is a dependency-free vocabulary, not an implementation, and
@@ -145,6 +150,8 @@ Own persistence and data invariants. Notable decisions:
 | `ExtractionRun` is a FK to image, not a OneToOne | Re-running a better engine must not destroy the readings that existing compliance results cite. |
 | `ComplianceCheck` is a FK, not a OneToOne | Rules change; re-evaluating adds a result rather than rewriting history. |
 | `ComplianceViolation` snapshots the rule's severity and reference | An amended rule must not silently change what a past finding meant. |
+| `ComplianceFinding` records every rule examined, `ComplianceViolation` only the failures | They answer different questions. "What is wrong with this package?" is the violation list; "what was actually checked, and on what evidence?" is the finding list, and a user needs the second before they can trust the first. A pass and an undecidable rule have no violation to hang off. |
+| `ComplianceFinding.extracted_confidence` is a snapshot column, not a join | The confidence behind a finding must survive the reading being deleted, and reaching it through the foreign key would be a query per finding on the write paths. |
 | JSON only for `raw_output`, `parameters`, `normalized_value`, `bounding_box` | Genuinely variable shapes. Everything the engine queries is relational. |
 
 ### ML boundary (`ml/`)

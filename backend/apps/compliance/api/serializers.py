@@ -28,19 +28,24 @@ from __future__ import annotations
 
 from rest_framework import serializers
 
+from apps.catalog.models import ProductCategory
 from apps.compliance.models import (
     ComplianceCheck,
     ComplianceEvidence,
+    ComplianceFinding,
     ComplianceViolation,
 )
 from apps.extraction.api.serializers import (
     ExtractedFieldSerializer,
     ExtractionRunSerializer,
 )
+from apps.extraction.models import ExtractionRun
 from apps.images.api.serializers import ProductImageSerializer
 
 __all__ = [
     "ComplianceCheckSerializer",
+    "ComplianceEvaluationRequestSerializer",
+    "ComplianceFindingSerializer",
     "EvidenceSerializer",
     "ExtractedFieldSerializer",
     "ExtractionRunSerializer",
@@ -54,6 +59,12 @@ class EvidenceSerializer(serializers.ModelSerializer):
 
     Attached even to a finding of absence: the text we *did* read is the
     justification for concluding a declaration was not there.
+
+    No confidence here, deliberately. It would mean following
+    `extracted_field` per evidence row - a query each on the POST paths, which
+    do not prefetch - to reach a number `ComplianceFinding` already snapshots
+    as a plain column. A client that wants the confidence behind a violation
+    reads that violation's finding, which is linked to it.
     """
 
     class Meta:
@@ -90,6 +101,134 @@ class ViolationSerializer(serializers.ModelSerializer):
         read_only_fields = fields
 
 
+class ComplianceFindingSerializer(serializers.ModelSerializer):
+    """One rule's outcome, with everything needed to check it by hand.
+
+    The complete trace, not only the failures: a rule that passed and a rule
+    that could not be decided each get a row here. `violations` remains the
+    list of things found wrong with the package; this is the list of what was
+    actually examined.
+
+    Reading one finding answers, in order:
+
+        rule_code, title, requirement   what was required, and by whose words
+        legal_reference                 where that requirement comes from
+        check_type                      which deterministic check asked it
+        field_key                       which declaration it concerns
+        evidence_excerpt, bounding_box  what was read, and where on the image
+        extracted_confidence            how sure the reader was
+        status                          what the check concluded
+        message                         why, in plain language
+        severity                        triage ranking only, no legal weight
+
+    Three of these are easy to misread and are worth stating plainly:
+
+    - **`status` is three-valued.** `inconclusive` is not a soft fail. It means
+      the check could not be decided - usually because the photograph was not
+      readable - and treating it as either a pass or a violation is the single
+      most damaging thing a client can do with this data.
+    - **`extracted_confidence` is recorded, not enforced.** No rule in this
+      repository conditions its outcome on it, so a `passed` finding built on a
+      low-confidence reading is still `passed`. The number is exposed precisely
+      so that cannot happen silently: a client showing a finding should show
+      what the reading behind it was worth. `null` means the OCR engine did not
+      report a confidence, and is not zero.
+    - **`downgraded_from_failed` means the check failed but the rule is not
+      verified** against the authoritative legal text, so the engine recorded
+      it as inconclusive rather than as a violation. It is surfaced because a
+      reviewer needs to see the safeguard fire, not infer it from a rule code.
+    """
+
+    class Meta:
+        model = ComplianceFinding
+        fields = [
+            "id",
+            "rule_code",
+            "title",
+            "requirement",
+            "legal_reference",
+            "check_type",
+            "severity",
+            "status",
+            "downgraded_from_failed",
+            "field_key",
+            "extracted_confidence",
+            "message",
+            "evidence_excerpt",
+            "bounding_box",
+            "details",
+            "violation",
+        ]
+        read_only_fields = fields
+
+
+class ComplianceEvaluationRequestSerializer(serializers.Serializer):
+    """The JSON body of `POST /api/v1/compliance/`.
+
+    Two fields, and what is *absent* from them is the important part. There is
+    no rule code, no check type, no severity, no engine name and no threshold.
+    A caller cannot choose which rules run or how strictly - applicability is
+    answered by `engine.applicable_rules` from the loaded rule set and the
+    commodity's category, and nothing in a request reaches that decision.
+
+    That is not defensive coding for its own sake. A compliance verdict a
+    client could steer by picking its own rules would be worth nothing.
+    """
+
+    extraction_run_id = serializers.UUIDField(
+        help_text=(
+            "The reading to evaluate, as returned by "
+            "POST /api/v1/extraction/. The verdict is drawn from this stored "
+            "reading; the photograph is not read again."
+        ),
+    )
+    category_code = serializers.SlugField(
+        required=False,
+        allow_blank=True,
+        help_text=(
+            "ProductCategory.code for the commodity, when it is known. "
+            "Determines which rules apply. Ignored when the run's image is "
+            "already linked to a product - that product's category wins, and "
+            "silently reassigning it would rewrite a record the caller did "
+            "not ask to change. Omitting it is honest and supported: the "
+            "result then says the category was unknown rather than assuming "
+            "one."
+        ),
+    )
+
+    def validate_extraction_run_id(self, value):
+        """Resolve the run now, so an unknown id is a 400 and not a 500.
+
+        Returns the row rather than the id: the view would otherwise fetch it
+        again, and a second lookup is a second chance for the two to disagree.
+        """
+        try:
+            return ExtractionRun.objects.select_related(
+                "image", "image__product", "image__product__category"
+            ).get(pk=value)
+        except ExtractionRun.DoesNotExist:
+            raise serializers.ValidationError(
+                f"No extraction run with id {value}."
+            ) from None
+
+    def validate_category_code(self, value: str) -> str:
+        """Reject a category that does not exist, rather than ignoring it.
+
+        A typo'd code that was silently dropped would produce a
+        REVIEW_REQUIRED result reading "the commodity category is not known" -
+        which looks identical to not having sent one, and would send the user
+        looking for the problem in the photograph instead of in their request.
+        """
+        if not value:
+            return ""
+        if not ProductCategory.objects.filter(code=value, is_active=True).exists():
+            raise serializers.ValidationError(
+                f"No active product category with code {value!r}. Load "
+                f"categories with `manage.py seed_categories`."
+            )
+        return value
+
+
 class ComplianceCheckSerializer(serializers.ModelSerializer):
     """The full result: verdict, explanation, findings, and what was read.
 
@@ -107,6 +246,7 @@ class ComplianceCheckSerializer(serializers.ModelSerializer):
         source="get_result_display", read_only=True
     )
     violations = ViolationSerializer(many=True, read_only=True)
+    findings = ComplianceFindingSerializer(many=True, read_only=True)
     extraction = ExtractionRunSerializer(source="extraction_run", read_only=True)
     image = ProductImageSerializer(source="extraction_run.image", read_only=True)
     product_category_code = serializers.SerializerMethodField()
@@ -128,6 +268,7 @@ class ComplianceCheckSerializer(serializers.ModelSerializer):
             "completed_at",
             "product_category_code",
             "violations",
+            "findings",
             "extraction",
             "image",
         ]

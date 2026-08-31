@@ -174,10 +174,10 @@ gains a `pending` shape additively.
 
 **201** carries the verdict (`result`), the engine's plain-language
 explanation (`summary`), every declaration that was read with its normalised
-value and bounding box, and each finding with its rule code, legal reference,
-severity and evidence excerpt. `extraction.is_placeholder` says whether any
-real recognition happened; `product_category_code` is `null` when the commodity
-was not known.
+value and bounding box, and the two finding lists described under
+[Findings and violations](#findings-and-violations) below.
+`extraction.is_placeholder` says whether any real recognition happened;
+`product_category_code` is `null` when the commodity was not known.
 
 **201 even when nothing could be read.** An unreadable photograph still
 produces a stored, retrievable result whose verdict is `review_required` and
@@ -276,19 +276,111 @@ image does not sit in `processing` forever, and the exception is then re-raised
 rather than filed away as "the photograph was unreadable". The client gets the
 generic 500 body; the traceback is logged server-side and never returned.
 
+### `POST /api/v1/compliance/`
+
+Evaluate a reading that already exists against the applicable rules.
+
+The second half of the two-step path. `POST /api/v1/extraction/` answers "what
+does the label say?"; this answers "what do the rules make of that?" — without
+reading the photograph again.
+
+```
+POST /api/v1/extraction/  ->  ExtractionRun id  ->  POST /api/v1/compliance/
+```
+
+Re-reading would not merely be slow: OCR is not guaranteed identical across
+runs and the engine may be reconfigured in between, so a finding could cite a
+value the user was never shown. Evaluating the stored run is what keeps the
+reading the user saw and the verdict they were given based on the same
+evidence.
+
+`application/json`:
+
+| Field | Required | Notes |
+|---|---|---|
+| `extraction_run_id` | yes | The reading to evaluate, as returned by `POST /api/v1/extraction/`. An unknown id is a 400. |
+| `category_code` | no | A `ProductCategory.code`. Determines which rules apply. Ignored when the run's image is already linked to a product — that product's category wins. An unknown code is a 400, never silently ignored. |
+
+**There is no rule, check-type, severity, engine or threshold parameter, and
+there must never be one.** Applicability is answered by
+`engine.applicable_rules` from the loaded rule set and the commodity's category
+alone. A verdict a client could steer by choosing its own rules would be worth
+nothing.
+
+**201** with the same `ComplianceCheck` body `POST /api/v1/images/` returns.
+201 rather than 200 because an evaluation is a new record: evaluating the same
+run twice creates two checks, which is how a result from before a rule was
+loaded stays comparable with one from after.
+
+**201 even when no conclusion could be drawn.** An unreadable reading, an
+unknown commodity category, or no loaded rules each produce a stored result
+whose verdict is `review_required` and whose summary says which of those it
+was.
+
+**400** for a missing, malformed or unknown `extraction_run_id`, or an unknown
+`category_code`.
+
 ### `GET /api/v1/compliance/<uuid>/`
 
 The same body as above, for a result already computed. Exists so a result
 survives a page reload and can be sent to a reviewer as a link. The id is a
 UUID so holding one result's link does not let you walk to another's.
 
-### Permissions on the three analysis endpoints
+### Findings and violations
 
-All three — upload-and-analyse, upload-and-extract, and reading a stored result
-back — follow the deny-by-default rule and require an authenticated user, unless
+A compliance result carries **two** lists, and they are not the same list.
+
+| Key | What it is |
+|---|---|
+| `findings` | One entry per rule that was **examined**, whatever it concluded — `passed`, `failed` or `inconclusive`. |
+| `violations` | One entry per rule the package was found to **fail**. A subset of the above; each `findings[].violation` holds the id of its violation, or `null`. |
+
+`violations` answers "what is wrong with this package?". `findings` answers
+"what was actually checked, and on what evidence?" — which a user needs before
+they can trust the first answer, and which was previously only available as the
+`rules_passed` / `rules_failed` / `rules_inconclusive` counters.
+
+Each finding carries:
+
+| Field | Meaning |
+|---|---|
+| `rule_code`, `title`, `requirement` | What was required, in the rule's own words. Snapshotted, so an amended rule cannot change what a past finding meant. |
+| `legal_reference` | Where that requirement comes from. |
+| `check_type` | Which registered deterministic check asked the question. |
+| `field_key` | Which declaration it concerns. |
+| `status` | `passed` / `failed` / `inconclusive`. |
+| `message` | What was observed and why, in plain language. |
+| `evidence_excerpt`, `bounding_box` | What was read, and where on the image. |
+| `extracted_confidence` | How sure the OCR/ML layer was about the reading behind this finding. |
+| `severity` | Triage ranking only. It carries **no legal weight** — `rules/SCHEMA.md` says so, and the UI must not present it as one. |
+| `downgraded_from_failed` | The check failed, but the rule is not verified against the authoritative legal text, so the engine recorded it as inconclusive rather than as a violation. |
+| `details` | Validator diagnostics. Shape is validator-specific. |
+| `violation` | Id of the violation this became, or `null`. |
+
+Three of these are easy to misread:
+
+- **`inconclusive` is not a soft fail.** It means the check could not be
+  decided, usually because the photograph was not readable. Treating it as
+  either a pass or a violation is the most damaging thing a client can do with
+  this data — it is the difference between "your package is illegal" and "we
+  could not read your photo".
+- **`extracted_confidence` is recorded, not enforced.** No rule in this
+  repository conditions its outcome on it, so a `passed` finding built on a
+  low-confidence reading is still `passed`. The number is exposed precisely so
+  that cannot happen silently: a client showing a finding should show what the
+  reading behind it was worth. `null` means the OCR engine did not report a
+  confidence, and is **not** zero.
+- **`downgraded_from_failed` is a legal safeguard firing**, not a data problem.
+  An unverified rule can flag a package for human review; it can never tell a
+  user their package breaks the law.
+
+### Permissions on the four analysis endpoints
+
+All four — upload-and-analyse, upload-and-extract, evaluate-a-reading, and
+reading a stored result back — follow the deny-by-default rule and require an authenticated user, unless
 `DEMO_PUBLIC_ANALYSIS_API` is set. That setting **defaults to False** and is
 intended only for a local demonstration, where no login screen exists yet. It
-affects these three endpoints and nothing else, and uploads still go through
+affects these four endpoints and nothing else, and uploads still go through
 validation and anonymous throttling either way. See
 `apps/core/api/permissions.py` (re-exported from
 `apps/compliance/api/permissions.py`, which is where it used to live).
