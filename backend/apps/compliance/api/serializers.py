@@ -43,6 +43,7 @@ from apps.extraction.models import ExtractionRun
 from apps.images.api.serializers import ProductImageSerializer
 
 __all__ = [
+    "ComplianceCheckListSerializer",
     "ComplianceCheckSerializer",
     "ComplianceEvaluationRequestSerializer",
     "ComplianceFindingSerializer",
@@ -52,6 +53,21 @@ __all__ = [
     "ProductImageSerializer",
     "ViolationSerializer",
 ]
+
+
+def _product_category_code(check: ComplianceCheck) -> str | None:
+    """The category whose rules were considered, or None if none was known.
+
+    Shared by the list and detail serializers so the two cannot drift. Null is
+    load-bearing: it is the difference between "we checked the rules for
+    packaged food and found nothing wrong" and "we did not know what this
+    commodity is, so we could not know which rules apply". The engine reports
+    the second as REVIEW_REQUIRED and a client needs to be able to say why.
+    """
+    product = check.product
+    if product is None or product.category_id is None:
+        return None
+    return product.category.code
 
 
 class EvidenceSerializer(serializers.ModelSerializer):
@@ -277,13 +293,77 @@ class ComplianceCheckSerializer(serializers.ModelSerializer):
     def get_product_category_code(self, check: ComplianceCheck) -> str | None:
         """The category whose rules were considered, or null if none was known.
 
-        Null is load-bearing: it is the difference between "we checked the
-        rules for packaged food and found nothing wrong" and "we did not know
-        what this commodity is, so we could not know which rules apply". The
-        engine reports the second as REVIEW_REQUIRED and the UI needs to be
-        able to say why.
+        See `_product_category_code`, which the list serializer shares.
         """
-        product = check.product
-        if product is None or product.category_id is None:
-            return None
-        return product.category.code
+        return _product_category_code(check)
+
+
+class ComplianceCheckListSerializer(serializers.ModelSerializer):
+    """One row of inspection history - the verdict and how to reach the rest.
+
+    Deliberately **not** `ComplianceCheckSerializer`. That serializer embeds
+    every finding, every violation, each violation's evidence, the whole
+    reading, and the image metadata; a history page of twenty results would
+    return a few hundred kilobytes of evidence excerpts and bounding boxes that
+    a list cannot display, to answer a question ("what was checked, when, and
+    what came out?") that needs none of it.
+
+    So this exposes only what a history row shows or navigates by:
+
+        id                              the link to the full result
+        result, result_display          the verdict, and its human label
+        status                          lifecycle of the evaluation itself
+        created_at, completed_at        when it was asked for, and finished
+        product_category_code           whose rules were considered, or null
+        engine_version                  which engine produced it
+        extraction_run_id               the reading it was drawn from
+        findings_count                  rules examined
+        violations_count                rules the package failed
+
+    `status` and `result` are the two different questions the model already
+    separates and the list keeps separate: `status` says whether the evaluation
+    ran, `result` says what it concluded. A row whose status is `failed` has no
+    verdict to show, and collapsing the two here would invent one.
+
+    The two counts are **annotated on the queryset**, not read from the stored
+    `rules_*` columns and not counted per row in Python. They count the rows the
+    detail endpoint would actually return, which is the honest answer for a
+    check written before `ComplianceFinding` existed - its stored
+    `rules_evaluated` is non-zero and it has no findings.
+
+    Everything omitted here is on `GET /api/v1/compliance/<uuid>/`, which stays
+    the single source of the full trace: `summary`, `findings`, `violations`,
+    evidence excerpts, bounding boxes, confidences, and the reading itself.
+    """
+
+    result_display = serializers.CharField(
+        source="get_result_display", read_only=True
+    )
+    extraction_run_id = serializers.UUIDField(read_only=True)
+    product_category_code = serializers.SerializerMethodField()
+    # Populated by ComplianceCheckListView.get_queryset. Declared read-only
+    # integers rather than left implicit so the response shape is stated here,
+    # with the rest of the contract, and not only in the view's annotation.
+    findings_count = serializers.IntegerField(read_only=True)
+    violations_count = serializers.IntegerField(read_only=True)
+
+    class Meta:
+        model = ComplianceCheck
+        fields = [
+            "id",
+            "status",
+            "result",
+            "result_display",
+            "created_at",
+            "completed_at",
+            "engine_version",
+            "extraction_run_id",
+            "product_category_code",
+            "findings_count",
+            "violations_count",
+        ]
+        read_only_fields = fields
+
+    def get_product_category_code(self, check: ComplianceCheck) -> str | None:
+        """See `_product_category_code`, shared with the detail serializer."""
+        return _product_category_code(check)

@@ -102,6 +102,45 @@ outage, and polling is the point of it.
 > demonstration; a real deployment needs a shared cache. Noted rather than
 > pre-built.
 
+## Pagination
+
+Every endpoint that returns a **collection** is paginated, with DRF's
+page-number style and one shared class,
+`apps.core.api.pagination.DefaultPageNumberPagination`. An unpaginated
+collection is not an option: it is a response whose size is decided by how long
+the system has been running.
+
+| Query parameter | Default | Notes |
+|---|---|---|
+| `page` | 1 | 1-based. Out of range or non-numeric is a **404** with code `not_found`. |
+| `page_size` | 20 | Capped at **100**. A malformed value (`abc`, `0`, `-1`) falls back to the default rather than erroring — a client that mistypes a page size still wants its results. |
+
+The body is always the same four keys:
+
+```json
+{
+  "count": 42,
+  "next": "https://host/api/v1/compliance/?page=3",
+  "previous": "https://host/api/v1/compliance/?page=1",
+  "results": []
+}
+```
+
+- **`count`** is how many results exist in total, not how many this page holds.
+- **`next` / `previous`** are absolute URLs, or `null` at either end. Follow them
+  rather than building page numbers, so a later change to the page size does not
+  break a client.
+- **`results`** is always a list, and is empty — never `null`, never a 404 — when
+  there is nothing to return.
+
+**A paginated endpoint must have a total order.** Sorting only by a timestamp is
+not one: timestamps collide, and an unstable sort under pagination shows one row
+on two pages and omits another, silently. Every list endpoint orders by its sort
+key *and* a unique tie-breaker.
+
+The class is not registered as `DEFAULT_PAGINATION_CLASS`; each list view names
+it, so a response shape is a property of the endpoint rather than of a global.
+
 ## CORS
 
 Explicit origins only, from `CORS_ALLOWED_ORIGINS`. `CORS_ALLOW_ALL_ORIGINS` is
@@ -320,11 +359,97 @@ was.
 **400** for a missing, malformed or unknown `extraction_run_id`, or an unknown
 `category_code`.
 
+### `GET /api/v1/compliance/`
+
+The compliance results already stored, newest first. The history behind the two
+endpoints above: what has been checked, when, and what came out.
+
+This is the list an inspections/history screen draws, and each row's `id` is the
+link to the full result. It is **additive** — `POST` to the same path is
+unchanged.
+
+**Paginated**, per the [Pagination](#pagination) section: `?page=`, `?page_size=`
+(default 20, capped at 100), and the standard `count` / `next` / `previous` /
+`results` envelope.
+
+**Ordering is `created_at` descending, with the check's `id` as tie-breaker.**
+Fixed, not a query parameter. The tie-breaker is not decoration: `created_at` is
+not unique — two evaluations in the same transaction, a seeded demonstration, or
+simply a coarse system clock produce equal timestamps — and an unstable sort
+under pagination hides rows. `id` is a random UUID, so as a tie-break it is
+arbitrary but *fixed*, which is the property pagination needs.
+
+**No filters.** Not `result`, not a date range, not search. The repository has no
+filtering convention and no filter backend installed, and this endpoint does not
+invent one ahead of a client that needs it. Adding a filter later is additive
+under the versioning rules at the top of this page, and the indexes it would use
+(`check_result_idx`, and `created_at`) already exist.
+
+Each row carries **only** what a history list shows or navigates by:
+
+| Field | Meaning |
+|---|---|
+| `id` | The check's UUID. The link to `GET /api/v1/compliance/<uuid>/`. |
+| `status` | Lifecycle of the *evaluation*: `pending` / `running` / `completed` / `failed`. |
+| `result` | The **verdict**: `compliant` / `partially_compliant` / `non_compliant` / `review_required`. |
+| `result_display` | The verdict's human label, from the model's own choices. |
+| `created_at` | When the evaluation was recorded. The sort key. ISO 8601, UTC. |
+| `completed_at` | When it finished, or `null`. |
+| `engine_version` | Which engine version produced it, so old and new results stay comparable. |
+| `extraction_run_id` | The reading it was drawn from. |
+| `product_category_code` | Whose rules were considered, or `null` when the commodity was not known. |
+| `findings_count` | How many rules were examined. |
+| `violations_count` | How many the package was found to fail. |
+
+`status` and `result` are two different questions and stay separate: `status`
+says whether the evaluation ran, `result` says what it concluded. A row whose
+status is `failed` has no verdict to show, and a client that collapses the two
+invents one.
+
+The two counts are computed **in the database**, and they count the rows the
+detail endpoint would actually return — not the stored `rules_*` columns. For a
+check written before findings were recorded, those differ, and the row count is
+the honest number.
+
+**Not included, deliberately:** `summary`, `findings`, `violations`, evidence
+excerpts, bounding boxes, confidences, the reading, and image metadata. A page of
+twenty results would otherwise carry a few hundred kilobytes of evidence a list
+cannot display. All of it is on the detail endpoint below, which remains the
+single source of the full trace.
+
+**Empty history is `200` with `count: 0` and `results: []`**, never a 404.
+"Nothing has been evaluated yet" is a state the screen must be able to draw.
+
+> **Known limitation — results are not scoped to the requesting user.** Every
+> caller the permission class lets through sees **every** stored check.
+> `ComplianceCheck` records `requested_by`, but it is not filtered on, and a
+> check requested anonymously has no owner at all.
+>
+> This is the **same** limitation `GET /api/v1/compliance/<uuid>/` already has —
+> a result is addressable by anyone who can reach the endpoint, with no object
+> ownership enforced — made more visible: the detail endpoint requires guessing
+> a UUID, and this one lists them. It is a real widening of the existing
+> exposure and is recorded here rather than half-fixed, because scoping the list
+> to `request.user` would leave anonymous demonstration checks unreachable by
+> anybody and would still not stop a direct fetch by id. Object ownership
+> belongs to the authentication work, not to a list view.
+>
+> Until then: `DEMO_PUBLIC_ANALYSIS_API` defaults to `False`, so an unauthenticated
+> caller reaches none of this, and the endpoint must not be opened publicly on a
+> deployment holding real submissions.
+
 ### `GET /api/v1/compliance/<uuid>/`
 
-The same body as above, for a result already computed. Exists so a result
-survives a page reload and can be sent to a reviewer as a link. The id is a
-UUID so holding one result's link does not let you walk to another's.
+The same body as `POST /api/v1/compliance/`, for a result already computed.
+Exists so a result survives a page reload and can be sent to a reviewer as a
+link. The id is a UUID so holding one result's link does not let you walk to
+another's by subtracting one.
+
+This is the **complete trace**, and the list endpoint above deliberately is not:
+`summary`, `findings`, `violations`, evidence, bounding boxes, confidences and
+the reading are all here and only here. A client lists with
+`GET /api/v1/compliance/` and fetches this for the one result the user opened.
+The same not-scoped-to-a-user limitation noted above applies here too.
 
 ### Findings and violations
 
@@ -395,6 +520,10 @@ displays the reading should evaluate the stored run rather than upload twice.
 `GET /api/v1/compliance/<uuid>/` backs the frontend route `/result/<uuid>`,
 which is what makes a result reloadable and sendable as a link.
 
+`GET /api/v1/compliance/` is not called by the frontend yet. It exists for the
+inspections/history screen, which is a separate piece of work; the contract is
+documented above so that screen consumes it rather than negotiating a new one.
+
 One consequence of the response shape is worth stating, because it looks like a
 gap and is not: **`ProductImageSerializer` exposes no URL, and no endpoint
 serves the stored bytes back.** The frontend therefore draws its evidence
@@ -403,14 +532,21 @@ as the coordinate space that `bounding_box` is expressed in. A result opened
 from a link shows the findings and their excerpts, and says the photograph is
 not available on that device rather than showing an empty frame.
 
-### Permissions on the four analysis endpoints
+### Permissions on the five analysis endpoints
 
-All four — upload-and-analyse, upload-and-extract, evaluate-a-reading, and
-reading a stored result back — follow the deny-by-default rule and require an authenticated user, unless
+All five — upload-and-analyse, upload-and-extract, evaluate-a-reading, reading a
+stored result back, and listing stored results — follow the deny-by-default rule
+and require an authenticated user, unless
 `DEMO_PUBLIC_ANALYSIS_API` is set. That setting **defaults to False** and is
 intended only for a local demonstration, where no login screen exists yet. It
-affects these four endpoints and nothing else, and uploads still go through
-validation and anonymous throttling either way. See
+affects these five endpoints and nothing else, and uploads still go through
+validation and anonymous throttling either way.
+
+**What the permission class does not do is authorisation.** It answers "may this
+caller reach the analysis API?", never "is this result theirs?" — no endpoint
+here enforces object ownership, so any caller who gets through can read any
+stored result, and `GET /api/v1/compliance/` now lists them rather than
+requiring a UUID to be guessed. See the note under that endpoint. See
 `apps/core/api/permissions.py` (re-exported from
 `apps/compliance/api/permissions.py`, which is where it used to live).
 
@@ -491,6 +627,8 @@ discards that record along with the exception — the image is then left in
   to `camelCase` at the boundary, in one place per endpoint.
 - Return `201` with the created object for creates; `204` with no body for
   deletes.
+- Collections are paginated with `DefaultPageNumberPagination` and ordered by a
+  sort key **plus a unique tie-breaker**. See [Pagination](#pagination).
 - Validation belongs in serializers. Business logic belongs in
   `apps/*/services/`, never in a view.
 - Never return a partially-built object with fabricated fields to make a
