@@ -186,20 +186,112 @@ whose summary explains why. That is an outcome, not a failed request.
 **400** for a missing file, a file the validators reject, an unknown
 `category_code` or an unknown `view_type`.
 
+### `POST /api/v1/extraction/`
+
+Upload a label photograph; receive **what was read off it**, and nothing more.
+
+The same upload and the same pipeline as the endpoint above, stopping one stage
+earlier:
+
+```
+image -> validate -> OCR -> field extraction -> normalisation -> [this response]
+                                             -> rule engine -> findings -> verdict
+```
+
+That separation is the point of the endpoint, not a limitation of it. A reading
+is an observation about a photograph; a verdict is a claim about a package under
+the Legal Metrology (Packaged Commodities) Rules, 2011. Only the rule engine
+makes the second, and only from verified rules. Use this endpoint when you want
+the first on its own — evaluating the extractor, checking what a photograph
+actually contains, or building a UI step that shows the reading before any
+determination is offered.
+
+`multipart/form-data`:
+
+| Field | Required | Notes |
+|---|---|---|
+| `image` | yes | The photograph. Validated by `apps.images.validators` in full — the same path as `POST /api/v1/images/`. |
+| `view_type` | no | A `ProductImage.ViewType` value. Defaults to `unspecified`. |
+
+There is deliberately **no `category_code`**. A category selects which rules
+apply, and no rule is consulted here. Nothing is created but a `ProductImage`
+and an `ExtractionRun`: no `Product`, no `ComplianceCheck`.
+
+**201** carries the run and the stored image:
+
+```json
+{
+  "id": "…",
+  "engine_name": "tesseract",
+  "engine_version": "0.2.0",
+  "is_placeholder": false,
+  "status": "completed",
+  "produced_usable_output": true,
+  "processing_ms": 2202,
+  "recognised_text": "…",
+  "error_code": "",
+  "error_message": "",
+  "fields_read": [
+    {
+      "field_key": "net_quantity",
+      "raw_value": "Net Qty: 500 g",
+      "normalized_value": {"quantity": 500, "unit": "g", "uncertain": false},
+      "confidence": 0.87,
+      "bounding_box": {"x": 4, "y": 4, "width": 300, "height": 18}
+    }
+  ],
+  "unread_declarations": [],
+  "image": {"id": "…", "image_format": "png", "width": 1024, "height": 768, "…": "…"}
+}
+```
+
+The body has no `result`, `summary` or `violations` key and must never grow
+one. A test asserts their absence.
+
+Four fields are load-bearing and a client should not ignore any of them:
+
+- **`produced_usable_output`** — false means the label was not read well enough
+  to be judged against. An absent declaration in that case says nothing about
+  the package.
+- **`is_placeholder`** — true means no recognition happened at all. This is the
+  shipped default until an OCR engine is selected in `.env`.
+- **`confidence`** — `null` means the engine did not report one. It is not zero
+  and not certainty.
+- **`unread_declarations`** — declarations the label named whose values could
+  not be read. Empty means "the engine reported none", not "everything was
+  read". This is the difference between asking for a better photograph and
+  reporting a possible contravention.
+
+**201 even when nothing could be read.** An unreadable photograph produces a
+stored run with `status` `empty` or `failed`, `produced_usable_output` false,
+and an `error_code` saying which. That is an outcome, not a failed request.
+
+**400** for a missing file, an unknown `view_type`, or a file the validators
+reject — too large, not a decodable image, a format outside the allowlist, or a
+decompression bomb. Nothing is stored and no run is created.
+
+**500** only for an engine that ran and then broke its own output contract,
+which is a bug rather than an outcome. The failed run is recorded first, so the
+image does not sit in `processing` forever, and the exception is then re-raised
+rather than filed away as "the photograph was unreadable". The client gets the
+generic 500 body; the traceback is logged server-side and never returned.
+
 ### `GET /api/v1/compliance/<uuid>/`
 
 The same body as above, for a result already computed. Exists so a result
 survives a page reload and can be sent to a reviewer as a link. The id is a
 UUID so holding one result's link does not let you walk to another's.
 
-### Permissions on these two endpoints
+### Permissions on the three analysis endpoints
 
-Both follow the deny-by-default rule and require an authenticated user, unless
+All three — upload-and-analyse, upload-and-extract, and reading a stored result
+back — follow the deny-by-default rule and require an authenticated user, unless
 `DEMO_PUBLIC_ANALYSIS_API` is set. That setting **defaults to False** and is
 intended only for a local demonstration, where no login screen exists yet. It
-affects these two endpoints and nothing else, and uploads still go through
+affects these three endpoints and nothing else, and uploads still go through
 validation and anonymous throttling either way. See
-`apps/compliance/api/permissions.py`.
+`apps/core/api/permissions.py` (re-exported from
+`apps/compliance/api/permissions.py`, which is where it used to live).
 
 ## Planned endpoints
 
@@ -209,14 +301,13 @@ the contract here in a PR before building it.
 | Endpoint | Branch |
 |---|---|
 | `POST /api/v1/products/` | `feature/product-upload` |
-| `POST /api/v1/extraction/` | `feature/ocr-processing` |
 | `GET /api/v1/rules/` | `feature/rule-management` |
 
 ### What already exists behind them
 
-`POST /api/v1/images/` and `GET /api/v1/compliance/<uuid>/` are now built and
-documented above; `POST /api/v1/extraction/` is not. The services all of them
-call are implemented and tested:
+All three of `POST /api/v1/images/`, `POST /api/v1/extraction/` and
+`GET /api/v1/compliance/<uuid>/` are now built and documented above. The
+services they call are implemented and tested:
 
 - `apps.images.services.ingestion.ingest_product_image(upload, ...)` — validates
   and stores an upload, returning a `ProductImage`. Raises Django
@@ -233,16 +324,17 @@ call are implemented and tested:
 - `apps.extraction.services.extraction_service.ingest_and_extract(upload, ...)` —
   both, returning an `ExtractionOutcome(image, run)`.
 
-`POST /api/v1/images/` is accordingly a serializer for the multipart body, a
-permission class, and a call to
+`POST /api/v1/extraction/` is accordingly a serializer for the multipart body,
+a permission class, and a call to `ingest_and_extract`. `POST /api/v1/images/`
+is the same three things plus a call to
 `apps.compliance.services.analysis_service.analyse_upload`, which composes
 `ingest_and_extract` with the compliance engine. **A view must not re-implement
 validation or persistence**, and in particular must never write a
 `ProductImage` without going through the ingestion service — that is the only
 thing preventing an unvalidated file from reaching storage.
 
-Two of the three decisions this section left open have now been made, for
-`POST /api/v1/images/` only:
+Two of the three decisions this section left open have now been made, and both
+apply to `POST /api/v1/images/` and `POST /api/v1/extraction/` alike:
 
 - **Synchronous or queued** — decided: synchronous. `run_extraction` runs
   inline, which measures at a ~2.2 s median on the configured Tesseract

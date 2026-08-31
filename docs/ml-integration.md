@@ -14,6 +14,50 @@ engine that already ships does and does not do.
 > The placeholder `null-engine` is still the shipped default and has not been
 > removed. Selecting Tesseract is step 5 below.
 
+## The integration at a glance
+
+Every figure below is measured and sourced. Nothing here is a vendor number, a
+paper's number, or a projection. Where the repository has not measured
+something, this table says so instead of estimating it.
+
+| | |
+|---|---|
+| **Problem** | Read the declarations printed on a photograph of a package label into structured, attributed fields. Not to decide whether a package complies with anything. |
+| **Input** | `labelextract.ImageRef` — a path plus the format, byte size and pixel dimensions measured during validation. Over HTTP: one JPEG, PNG or WebP, at least 32 px on each side, at most `MAX_IMAGE_UPLOAD_SIZE_MB` (default 10 MB) and `MAX_IMAGE_PIXELS` (default 50 M). |
+| **Output** | `labelextract.ExtractionResult` → one `ExtractionRun` plus one `ExtractedLabelField` per declaration read, each with `raw_value`, `normalized_value`, `confidence` (nullable) and `bounding_box` (nullable). Field keys come from `LabelFieldKey`, which is an extraction vocabulary and not a list of legal requirements. |
+| **Model** | **None trained, fine-tuned or downloaded.** Recognition is Tesseract 5.4.0.20240606 (leptonica 1.84.1, `eng` data only); field extraction is `RuleBasedFieldExtractor` — keyword-anchored regular expressions, no learned parameters, no weights to ship. |
+| **Preprocessing** | `PillowPreprocessor`, upscaling to `UPSCALE_TO_DIMENSION`. Returns a new `ImageRef`; the original photograph is evidence and is never overwritten. Any resize is recorded as `source_dimensions`/`preprocessed_dimensions` in run metadata so bounding boxes are not silently mismatched to the source. |
+| **Metrics** | On `our-eval-v0.1-draft` (28 images, `tesseract` 0.2.0): precision 0.944, recall 0.205, F1 0.337, value accuracy 0.588, silent error rate 0.455. CER and WER are **unavailable** — no sample carries a hand-transcribed reference text, and the harness reports them as null rather than estimating them. Full run in [evaluation-results.md](evaluation-results.md). |
+| **Latency** | Per image, as recorded by the pipeline: min 1002 ms, median 2202 ms, mean 2039 ms, max 3309 ms; 57.1 s for all 28. This is why `POST /api/v1/extraction/` is synchronous. |
+| **Hardware** | Development machine: i5, 8 GB RAM, Python 3.11.1, Windows, CPU only. Tesseract is CPU-only here and **no GPU path exists**, so none of these figures depend on one. |
+| **Limitations** | Recall 0.205 means most declarations present on these labels were *not* found. Silent error rate 0.455 means that when the extractor did commit to a value, it was wrong about half the time. English only at the extraction layer. 28 images is a draft set, not a benchmark. The `unread_declarations` channel did not fire once on real photographs, so an empty list is weak evidence. **This is nowhere near good enough to be relied on for a legal determination**, and no part of the system claims otherwise. |
+| **Integration** | `extraction_service` is the only backend module importing the ML runtime; `POST /api/v1/extraction/` is the reading over HTTP; `POST /api/v1/images/` carries the same reading on into the rule engine. The backend treats every field as an observation about a photograph, never as legal truth — the compliance engine reaches its own conclusion from verified rules, and reports `review_required` when the reading was not usable. |
+
+## Where the backend reaches it
+
+Two things are worth separating: the *import* boundary, which is about which
+Python module may touch the ML runtime, and the *HTTP* boundary, which is where
+a reading leaves the backend.
+
+| Boundary | Where |
+|---|---|
+| Import | `backend/apps/extraction/services/extraction_service.py` — the only backend module that reaches `registry`, `pipeline`, `exceptions` or any engine |
+| HTTP, reading only | `POST /api/v1/extraction/` — the reading, with no rule applied |
+| HTTP, reading + verdict | `POST /api/v1/images/` — the same reading, carried on into the rule engine |
+
+Both endpoints call the same service over the same validated upload. Neither
+lets a client choose an engine: the pipeline is resolved from
+`DEFAULT_EXTRACTION_ENGINE_NAME`/`_VERSION`, so an engine change is a
+configuration change and never a request parameter. If you want to compare two
+engines on the same image, call `run_extraction(image, engine_name=...)` from a
+management command or a test — each call produces a new run and destroys
+nothing.
+
+`POST /api/v1/extraction/` is the endpoint to point at while evaluating an
+engine, because nothing between the pipeline and the response has an opinion
+about what the reading means. Its full request and response shapes are in
+[api.md](api.md).
+
 ## The contract
 
 ```
@@ -295,6 +339,14 @@ Then confirm the integration end to end:
 ```bash
 cd backend && pytest apps/extraction
 ```
+
+That includes `apps/extraction/tests/test_extraction_api.py`, which drives your
+engine through `POST /api/v1/extraction/`. Most of it stubs recognition so it
+can assert a known reading, but
+`test_the_real_configured_pipeline_can_be_driven_through_the_endpoint` takes
+the fakes away and runs whichever engine is configured — it is what catches a
+registry name, an `ImageRef` field or the result contract drifting apart from
+the backend.
 
 ## Versioning
 
