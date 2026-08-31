@@ -210,6 +210,15 @@ pre {
   color: var(--colour-faint);
 }
 
+.breadcrumb a {
+  color: inherit;
+  text-decoration: underline;
+}
+
+.breadcrumb a:hover {
+  color: var(--colour-text);
+}
+
 .breadcrumb li:last-child {
   color: var(--colour-text);
   font-weight: 600;
@@ -1054,6 +1063,118 @@ pre {
 .empty-state p {
   margin: 0 auto;
   max-width: 34rem;
+}
+
+/* --- inspection history --------------------------------------------------- */
+
+/*
+ * One card per stored assessment, at every width. History is a handful of short
+ * facts and a link, so the row reflows from stacked on a phone to a single line
+ * on a desktop without a second markup tree - and nothing here scrolls
+ * sideways. No selector below maps a verdict to a colour; the badge and the
+ * chips carry their own tone, chosen by the component from the raw status.
+ */
+
+.history-list {
+  display: flex;
+  flex-direction: column;
+  gap: 0.75rem;
+}
+
+.history-item {
+  display: flex;
+  flex-direction: column;
+  gap: 0.65rem;
+  padding: 0.9rem 1.1rem;
+  background: var(--colour-surface);
+  border: 1px solid var(--colour-border);
+  border-radius: var(--radius);
+  box-shadow: var(--shadow-card);
+}
+
+.history-item__head {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.5rem;
+}
+
+.history-item__title {
+  margin: 0;
+  font-family: var(--font-serif);
+  font-size: 1rem;
+  font-weight: 700;
+}
+
+.history-item__title a {
+  color: var(--colour-text);
+  text-decoration: none;
+  border-bottom: 1px solid var(--colour-border-strong);
+}
+
+.history-item__title a:hover {
+  border-bottom-color: var(--colour-primary);
+}
+
+/* The link is the only interactive element in the card, so its focus ring is
+   what a keyboard user navigates the list by. Same ring as the form fields. */
+.history-item__title a:focus-visible,
+.breadcrumb a:focus-visible {
+  outline: 2px solid var(--colour-primary);
+  outline-offset: 2px;
+}
+
+.history-item__meta {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(11rem, 1fr));
+  gap: 0.5rem 1.25rem;
+  margin: 0;
+  font-size: 0.85rem;
+}
+
+.history-item__meta dt {
+  font-size: 0.72rem;
+  font-weight: 700;
+  letter-spacing: 0.05em;
+  text-transform: uppercase;
+  color: var(--colour-faint);
+}
+
+.history-item__meta dd {
+  margin: 0;
+  overflow-wrap: anywhere;
+}
+
+.history-item__counts {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.4rem;
+}
+
+.history-item__note {
+  margin: 0;
+  font-size: 0.82rem;
+  color: var(--colour-muted);
+}
+
+/* --- pagination ----------------------------------------------------------- */
+
+.pagination {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.75rem;
+  margin-top: 1.25rem;
+}
+
+.pagination__status {
+  margin: 0;
+  flex: 1 1 12rem;
+  text-align: center;
+  font-size: 0.85rem;
+  color: var(--colour-muted);
 }
 
 /* --- tables --------------------------------------------------------------- */

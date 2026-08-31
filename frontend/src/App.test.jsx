@@ -5,7 +5,7 @@
  * backend, and it tells the truth about what the system can currently do.
  */
 
-import { render, screen, waitFor } from '@testing-library/react';
+import { render, screen, waitFor, within } from '@testing-library/react';
 import { MemoryRouter } from 'react-router-dom';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
@@ -65,6 +65,37 @@ describe('layout', () => {
     expect(
       await screen.findByText(/not a legal determination/i),
     ).toBeInTheDocument();
+    await screen.findByText(/version v1/i);
+  });
+
+  it('routes /inspections to the stored history', async () => {
+    fetch.mockResolvedValue({
+      ok: true,
+      status: 200,
+      json: async () => ({ count: 0, next: null, previous: null, results: [] }),
+    });
+
+    renderApp('/inspections');
+
+    expect(
+      await screen.findByRole('heading', { level: 1, name: /^inspections$/i }),
+    ).toBeInTheDocument();
+    expect(fetch.mock.calls[0][0]).toContain('/api/v1/compliance/');
+  });
+
+  it('offers the history and the scan workspace as separate navigation items', async () => {
+    fetch.mockResolvedValue({ ok: true, status: 200, json: async () => healthBody() });
+
+    renderApp();
+
+    const nav = screen.getByRole('navigation', { name: /main/i });
+    expect(
+      within(nav).getByRole('link', { name: /inspections/i }),
+    ).toHaveAttribute('href', '/inspections');
+    expect(within(nav).getByRole('link', { name: /new scan/i })).toHaveAttribute(
+      'href',
+      '/scan',
+    );
     await screen.findByText(/version v1/i);
   });
 

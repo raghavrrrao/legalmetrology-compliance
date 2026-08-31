@@ -11,6 +11,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import {
   evaluateExtractionRun,
+  fetchComplianceHistory,
   fetchComplianceResult,
 } from './complianceService.js';
 import { extractLabel } from './extractionService.js';
@@ -18,6 +19,8 @@ import {
   complianceBody,
   extractionBody,
   findingBody,
+  historyBody,
+  historyRowBody,
 } from '../test/fixtures.js';
 
 function jsonResponse(body, status = 200) {
@@ -261,5 +264,101 @@ describe('fetchComplianceResult', () => {
     expect(fetch.mock.calls[0][1].method).toBe('GET');
     expect(result.findings).toHaveLength(1);
     expect(result.result).toBe('review_required');
+  });
+});
+
+describe('fetchComplianceHistory', () => {
+  it('gets the collection and maps a row onto the frontend naming', async () => {
+    fetch.mockResolvedValue(jsonResponse(historyBody({ count: 42 })));
+
+    const page = await fetchComplianceHistory();
+
+    expect(fetch.mock.calls[0][0]).toContain('/api/v1/compliance/');
+    expect(fetch.mock.calls[0][1].method).toBe('GET');
+
+    expect(page.count).toBe(42);
+    expect(page.results).toHaveLength(1);
+    expect(page.results[0]).toEqual({
+      id: historyRowBody().id,
+      status: 'completed',
+      result: 'review_required',
+      resultDisplay: 'Review required',
+      createdAt: '2026-08-30T12:00:00Z',
+      completedAt: '2026-08-30T12:00:01Z',
+      engineVersion: '0.1.0',
+      extractionRunId: historyRowBody().extraction_run_id,
+      productCategoryCode: null,
+      findingsCount: 4,
+      violationsCount: 2,
+    });
+  });
+
+  it('follows the API page URL unchanged rather than building one', async () => {
+    const nextUrl = 'http://localhost:8000/api/v1/compliance/?page=3';
+    fetch.mockResolvedValue(jsonResponse(historyBody({ previous: nextUrl })));
+
+    const page = await fetchComplianceHistory({ url: nextUrl });
+
+    expect(String(fetch.mock.calls[0][0])).toBe(nextUrl);
+    // Passed through as the backend built it, for the caller to follow next.
+    expect(page.previous).toBe(nextUrl);
+    expect(page.next).toBeNull();
+  });
+
+  it('keeps an unreported count null rather than reporting zero', async () => {
+    const row = historyRowBody();
+    delete row.findings_count;
+    delete row.violations_count;
+    fetch.mockResolvedValue(jsonResponse(historyBody({ results: [row] })));
+
+    const page = await fetchComplianceHistory();
+
+    expect(page.results[0].findingsCount).toBeNull();
+    expect(page.results[0].violationsCount).toBeNull();
+  });
+
+  it('does not report the page length as the total when count is absent', async () => {
+    const body = historyBody();
+    delete body.count;
+    fetch.mockResolvedValue(jsonResponse(body));
+
+    const page = await fetchComplianceHistory();
+
+    expect(page.count).toBeNull();
+    expect(page.results).toHaveLength(1);
+  });
+
+  it('maps an empty history to an empty list, not to an error', async () => {
+    fetch.mockResolvedValue(
+      jsonResponse({ count: 0, next: null, previous: null, results: [] }),
+    );
+
+    const page = await fetchComplianceHistory();
+
+    expect(page).toEqual({ count: 0, next: null, previous: null, results: [] });
+  });
+
+  it('survives a response whose results are not a list', async () => {
+    fetch.mockResolvedValue(jsonResponse({ count: 1, results: null }));
+
+    const page = await fetchComplianceHistory();
+
+    expect(page.results).toEqual([]);
+    expect(page.next).toBeNull();
+  });
+
+  it('surfaces the error envelope as an ApiError', async () => {
+    fetch.mockResolvedValue(
+      jsonResponse(
+        { error: { code: 'not_found', message: 'Invalid page.' } },
+        404,
+      ),
+    );
+
+    await expect(fetchComplianceHistory()).rejects.toMatchObject({
+      name: 'ApiError',
+      status: 404,
+      code: 'not_found',
+    });
   });
 });

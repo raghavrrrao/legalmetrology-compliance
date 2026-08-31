@@ -8,6 +8,11 @@ import { Link, NavLink, Outlet } from 'react-router-dom';
  * `aria-current`, which is both what the design's underline hangs off and what
  * a screen reader announces.
  *
+ * "Inspections" is the stored history and "New scan" is the workspace that
+ * adds to it - the two are separate items because they are separate screens,
+ * and collapsing them would leave one of the app's two working screens with no
+ * route in the navigation at all.
+ *
  * Pages render into `<Outlet />` and should not repeat chrome. The disclaimer
  * in the footer is deliberate and belongs on every page - see the note there.
  */
@@ -25,7 +30,8 @@ export function AppLayout() {
           <NavLink to="/" end>
             Home
           </NavLink>
-          <NavLink to="/scan">Inspections</NavLink>
+          <NavLink to="/inspections">Inspections</NavLink>
+          <NavLink to="/scan">New scan</NavLink>
         </nav>
       </header>
 

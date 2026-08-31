@@ -520,9 +520,11 @@ displays the reading should evaluate the stored run rather than upload twice.
 `GET /api/v1/compliance/<uuid>/` backs the frontend route `/result/<uuid>`,
 which is what makes a result reloadable and sendable as a link.
 
-`GET /api/v1/compliance/` is not called by the frontend yet. It exists for the
-inspections/history screen, which is a separate piece of work; the contract is
-documented above so that screen consumes it rather than negotiating a new one.
+`GET /api/v1/compliance/` backs the frontend route `/inspections`, which lists
+the stored assessments and links each row to `/result/<uuid>` for the full
+trace. The screen follows the `next` / `previous` URLs in the envelope rather
+than building `?page=` itself, and offers no filter, sort or search, because
+this endpoint has none to offer.
 
 One consequence of the response shape is worth stating, because it looks like a
 gap and is not: **`ProductImageSerializer` exposes no URL, and no endpoint

@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 
-import { formatFileSize, humaniseCode } from './format.js';
+import { formatDateTime, formatFileSize, humaniseCode } from './format.js';
 
 describe('formatFileSize', () => {
   it.each([
@@ -35,5 +35,23 @@ describe('humaniseCode', () => {
   it('returns an empty string for empty input', () => {
     expect(humaniseCode('')).toBe('');
     expect(humaniseCode(null)).toBe('');
+  });
+});
+
+describe('formatDateTime', () => {
+  it('renders an ISO timestamp as a readable local date and time', () => {
+    const rendered = formatDateTime('2026-08-30T12:00:00Z');
+
+    // The exact wording is the reader's locale's business; that the timestamp
+    // was understood at all is this file's.
+    expect(rendered).toMatch(/2026/);
+    expect(rendered).not.toMatch(/invalid/i);
+  });
+
+  it('returns null for a missing or unparseable value', () => {
+    expect(formatDateTime(null)).toBeNull();
+    expect(formatDateTime('')).toBeNull();
+    expect(formatDateTime('not-a-date')).toBeNull();
+    expect(formatDateTime(undefined)).toBeNull();
   });
 });
