@@ -1,11 +1,17 @@
 /**
  * Compliance analysis client.
  *
- * Three calls, matching the three shapes the backend offers:
+ * Four calls, matching the four shapes the backend offers:
  *
  *   evaluateExtractionRun()  POST /api/v1/compliance/   the two-step path
  *   fetchComplianceResult()  GET  /api/v1/compliance/<uuid>/
+ *   fetchComplianceHistory() GET  /api/v1/compliance/   the stored results
  *   analyseImage()           POST /api/v1/images/       the one-shot path
+ *
+ * The list and the detail endpoint return different shapes of the same records,
+ * so they get different mappers: `mapResult` for the full trace, `mapHistoryRow`
+ * for a row of history. A history row is not a thin `ComplianceResult` and is
+ * deliberately not modelled as one - see `mapHistoryRow`.
  *
  * Follows the shape `healthService.js` set - a thin function per endpoint that
  * returns plain data and lets `ApiError` propagate - and maps the API's
@@ -236,4 +242,112 @@ export async function analyseImage(file, options = {}) {
   });
 
   return mapResult(data);
+}
+
+/**
+ * @typedef {object} ComplianceHistoryRow
+ * @property {string} id                  the link to /result/<id>
+ * @property {string} status              lifecycle of the evaluation itself
+ * @property {string} result              the verdict
+ * @property {string} resultDisplay       the verdict's label, from the backend
+ * @property {string|null} createdAt      ISO 8601, the sort key
+ * @property {string|null} completedAt
+ * @property {string} engineVersion
+ * @property {string|null} extractionRunId
+ * @property {string|null} productCategoryCode
+ * @property {number|null} findingsCount  null means "not reported"
+ * @property {number|null} violationsCount
+ */
+
+/**
+ * @typedef {object} ComplianceHistoryPage
+ * @property {number|null} count      total stored results, null if not reported
+ * @property {string|null} next       absolute URL of the next page, or null
+ * @property {string|null} previous
+ * @property {ComplianceHistoryRow[]} results
+ */
+
+/**
+ * One row of inspection history.
+ *
+ * The list endpoint is deliberately a different, lighter shape than the detail
+ * endpoint - no findings, no violations, no evidence, no reading - so this maps
+ * only what a history row shows or navigates by. Nothing is filled in from
+ * elsewhere: a row is not a partial `ComplianceResult` and must not be used as
+ * one, which is why it gets its own mapper and its own typedef.
+ *
+ * The two counts stay `null` when the key is absent, exactly as
+ * `extractedConfidence` does above: "the server did not report a count" is not
+ * zero, and a row from a backend predating the counts must not claim that no
+ * rule was examined. `status` and `result` are carried separately because the
+ * backend keeps them separate - one says whether the evaluation ran, the other
+ * says what it concluded - and collapsing them here would invent a verdict for
+ * a check that never produced one.
+ *
+ * @returns {ComplianceHistoryRow}
+ */
+function mapHistoryRow(row) {
+  return {
+    id: row.id,
+    status: row.status,
+    result: row.result,
+    resultDisplay: row.result_display || '',
+    createdAt: row.created_at ?? null,
+    completedAt: row.completed_at ?? null,
+    engineVersion: row.engine_version || '',
+    extractionRunId: row.extraction_run_id ?? null,
+    productCategoryCode: row.product_category_code ?? null,
+    findingsCount: typeof row.findings_count === 'number' ? row.findings_count : null,
+    violationsCount:
+      typeof row.violations_count === 'number' ? row.violations_count : null,
+  };
+}
+
+/**
+ * A page of history, with the pagination the caller needs to walk it.
+ *
+ * `next` and `previous` are passed through as the backend built them - absolute
+ * URLs, or null at either end - and are the only way this app moves between
+ * pages. Building `?page=n` here would hardcode a page size the server owns and
+ * would silently break the first time it changes.
+ *
+ * `count` stays null rather than falling back to `results.length` when the key
+ * is missing: the length of one page is not the number of stored results, and a
+ * screen that printed it as a total would state a number nothing counted.
+ *
+ * @returns {ComplianceHistoryPage}
+ */
+function mapHistoryPage(data) {
+  // Defensive rather than trusting: `results` drives a `.map` and a non-list
+  // here would take the whole screen down over a malformed response.
+  const results = Array.isArray(data?.results) ? data.results : [];
+
+  return {
+    count: typeof data?.count === 'number' ? data.count : null,
+    next: data?.next ?? null,
+    previous: data?.previous ?? null,
+    results: results.map(mapHistoryRow),
+  };
+}
+
+/**
+ * List the compliance results already stored, newest first.
+ *
+ * `GET /api/v1/compliance/` - the history the Inspections screen draws. Each
+ * row's `id` opens the full result at `/result/<id>`, which is still the only
+ * place the trace lives; nothing on this endpoint is a substitute for it.
+ *
+ * Pass `url` to follow a `next` or `previous` from a page already fetched.
+ * Absent, the first page is requested. The URL goes to `apiClient` unchanged -
+ * it is absolute, and `apiClient` resolves it as given - so the sequence of
+ * pages is the server's, not one this file reconstructed.
+ *
+ * @param {{url?: string|null, signal?: AbortSignal}} [options]
+ * @returns {Promise<ComplianceHistoryPage>}
+ * @throws {import('./apiClient.js').ApiError}
+ */
+export async function fetchComplianceHistory(options = {}) {
+  const { url, ...requestOptions } = options;
+
+  return mapHistoryPage(await apiClient.get(url || 'compliance/', requestOptions));
 }

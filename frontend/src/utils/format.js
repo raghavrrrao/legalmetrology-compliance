@@ -33,3 +33,28 @@ export function humaniseCode(value) {
   const spaced = String(value).replace(/[_-]+/g, ' ').trim();
   return spaced.charAt(0).toUpperCase() + spaced.slice(1);
 }
+
+/**
+ * An ISO 8601 timestamp as a readable local date and time, or null.
+ *
+ * Null in, null out - and for anything that is not a parseable date too, so a
+ * malformed or absent `created_at` renders as an em dash rather than as
+ * "Invalid Date". The caller pairs the result with a `<time dateTime>` holding
+ * the raw value, which is the machine-readable one.
+ *
+ * Formatted in the reader's own locale and timezone. The API sends UTC; a
+ * reviewer works in local time, and converting is presentation, not data.
+ */
+export function formatDateTime(value) {
+  if (!value) {
+    return null;
+  }
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) {
+    return null;
+  }
+  return date.toLocaleString(undefined, {
+    dateStyle: 'medium',
+    timeStyle: 'short',
+  });
+}

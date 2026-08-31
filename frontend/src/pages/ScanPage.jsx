@@ -103,7 +103,9 @@ export function ScanPage() {
       <div className="page-header">
         <div>
           <ol className="breadcrumb">
-            <li>Inspections</li>
+            <li>
+              <Link to="/inspections">Inspections</Link>
+            </li>
             <li>{result ? `Result ${result.id.slice(0, 8)}` : 'New inspection'}</li>
           </ol>
           <h1 className="page-title">

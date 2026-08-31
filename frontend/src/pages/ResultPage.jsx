@@ -66,7 +66,9 @@ export function ResultPage() {
       <div className="page-header">
         <div>
           <ol className="breadcrumb">
-            <li>Inspections</li>
+            <li>
+              <Link to="/inspections">Inspections</Link>
+            </li>
             <li>Result {String(checkId).slice(0, 8)}</li>
           </ol>
           <h1 className="page-title">Compliance assessment</h1>

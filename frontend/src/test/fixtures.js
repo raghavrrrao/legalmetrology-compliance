@@ -107,3 +107,45 @@ export function complianceBody(overrides = {}) {
     ...overrides,
   };
 }
+
+/**
+ * One row of `GET /api/v1/compliance/`, with every field the list serializer
+ * declares - and none of the fields it deliberately leaves out.
+ *
+ * Kept separate from `complianceBody` on purpose. The list and the detail
+ * endpoint return different shapes of the same record, and a fixture that
+ * blurred them would let a test pass against a response the API never sends.
+ */
+export function historyRowBody(overrides = {}) {
+  return {
+    id: '11111111-2222-3333-4444-555555555555',
+    status: 'completed',
+    result: 'review_required',
+    result_display: 'Review required',
+    created_at: '2026-08-30T12:00:00Z',
+    completed_at: '2026-08-30T12:00:01Z',
+    engine_version: '0.1.0',
+    extraction_run_id: '99999999-8888-7777-6666-555555555555',
+    product_category_code: null,
+    findings_count: 4,
+    violations_count: 2,
+    ...overrides,
+  };
+}
+
+/** The paginated envelope of `GET /api/v1/compliance/`. */
+export function historyBody(overrides = {}) {
+  const body = {
+    count: 1,
+    next: null,
+    previous: null,
+    results: [historyRowBody()],
+    ...overrides,
+  };
+  // `count` follows the rows unless a test says otherwise, so a fixture with
+  // three rows does not silently claim there is one.
+  if (!('count' in overrides) && Array.isArray(body.results)) {
+    body.count = body.results.length;
+  }
+  return body;
+}

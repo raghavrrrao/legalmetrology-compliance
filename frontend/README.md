@@ -23,8 +23,14 @@ says so.
 | Route | What it is |
 |---|---|
 | `/` | Backend health, and the honesty notices about the engine and the rule set. |
+| `/inspections` | The stored assessments, newest first. Each row opens its result. |
 | `/scan` | Upload a label, watch it be read, read the verdict. |
 | `/result/:checkId` | A stored result, fetched by id. What a shared link opens. |
+
+`Inspections` and `New scan` are separate navigation items because they are
+separate screens: one lists what has been assessed, the other adds to it. The
+breadcrumbs on the scan and result screens have always named an *Inspections*
+parent; `/inspections` is the route that makes that name lead somewhere.
 
 ## The flow
 
@@ -42,6 +48,40 @@ retry that does not re-upload.
 
 `analyseImage` (the one-shot path) is still exported and tested — a caller that
 wants only a verdict should not have to make two requests.
+
+## The history
+
+```
+GET /api/v1/compliance/  ->  { count, next, previous, results }  ->  /inspections
+                                                    row id       ->  /result/<uuid>
+```
+
+`fetchComplianceHistory` in `services/complianceService.js` is the only caller,
+and `useComplianceHistory` holds one page of it — there is no store, because
+nothing outside the Inspections screen reads it.
+
+**Pages are moved through by the API's own `next` / `previous` URLs**, held in
+the hook and passed back to the service unchanged. No `?page=n` is built in the
+browser: the page size is the server's to choose, and a client that
+reconstructed the sequence would walk a different one the moment it changed. The
+controls are disabled at the ends rather than hidden, and the total shown is the
+endpoint's `count` — omitted entirely, never estimated from the page length,
+if a response carries none.
+
+**No filter, no sort control, no search box.** The endpoint offers none of them,
+and a control that appeared to narrow a list it cannot narrow would misrepresent
+what the user is looking at.
+
+A history row is not a thin compliance result and is not modelled as one: the
+list endpoint returns the verdict, the timestamps and two counts, and nothing
+else. The findings, the violations, the evidence and the reading are on
+`/result/<uuid>`, which the row links to.
+
+> **The history is not scoped to the viewer.** Every caller the backend lets
+> through sees every stored check — a documented backend limitation (see
+> [docs/api.md](../docs/api.md)). The frontend does **not** filter rows to
+> conceal it: filtering in a browser is not authorisation, and hiding the
+> records would hide the limitation without fixing it.
 
 ## Rules this code is held to
 
@@ -71,6 +111,11 @@ error `details` are stringified per field rather than interpolated as markup.
 The three approved screens (Inspection Workspace, Compliance Assessment, Mobile
 Compliance Workspace) are the visual target. Six elements in them have no
 backing data, and were adapted rather than faked.
+
+The **Inspections history has no Figma screen**. Rather than invent a second
+design language for it, it is built from the tokens, cards, badges, count chips
+and empty states the approved screens already use — one card per assessment at
+every width, so the row reflows on a phone instead of scrolling sideways.
 
 | Figma element | What is implemented | Why |
 |---|---|---|
