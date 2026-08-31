@@ -98,6 +98,24 @@ a legal determination can be audited.
   error envelope, CSRF and credentials once.
 - Every `VITE_` variable is public. Secrets never go here.
 
+One service module per backend app, and they follow the same dependency
+direction the backend does: `services/extractionService.js` owns the mapping of
+a reading and knows nothing about compliance; `services/complianceService.js`
+imports those mappers so the reading inside a result is mapped by exactly the
+same code as the reading returned on its own. Compliance may depend on
+extraction; extraction must never depend on compliance.
+
+`hooks/useLabelAnalysis.js` runs the two-step flow (extract, then evaluate the
+stored run) and holds the extraction run id, so a retried verdict re-evaluates
+the reading already on screen instead of uploading the photograph again.
+
+`utils/compliance.js` is the only file that maps a backend status to an
+appearance, and it is presentation-only: partial lookups with a neutral
+fallback, so a status this build has never seen renders as unrecognised rather
+than inheriting a colour that would flatter it. It derives no verdict,
+thresholds no confidence, and combines no statuses - that is the rule against
+compliance logic in the browser, made checkable in one file.
+
 ### API layer (`backend/apps/*/api/`)
 
 Owns HTTP: routing, serialization, request validation, status codes, the error
@@ -230,7 +248,7 @@ touching shared files.
 | Field extraction | `ml/labelextract/fields/` | `feature/label-field-extraction` | English patterns landed. Layout-dependent declarations - name, brand, address - still open |
 | Rule dataset | `rules/definitions/` | `feature/legal-rules-dataset` | Six rules from rule 6 of the LMPC Rules landed; three active, three inactive pending a disjunction check and narrower categories. Legal counter-review still open - see `rules/SOURCES.md` |
 | Rule engine & validators | `backend/apps/rules/checks/`, `backend/apps/compliance/` | `feature/compliance-rule-engine` | |
-| Frontend UI | `frontend/src/` | `feature/frontend-dashboard` | |
+| Frontend UI | `frontend/src/` | `feature/frontend-dashboard` | Scan, result and permalink screens landed against the real two-step API. Authentication UI, a result history list and rule browsing are still open — none has a backing endpoint yet |
 | Authentication | `backend/apps/accounts/` | `feature/authentication` | |
 
 **Shared files — announce changes before editing:**
@@ -252,7 +270,7 @@ Things we did **not** build, and why. Revisit each when its trigger fires.
 | Token / JWT authentication | No endpoint in the base requires a user. Session auth plus deny-by-default permissions covers it safely. | `feature/authentication` adds real login. |
 | Cloud object storage | Local `MEDIA_ROOT` is configurable via `DJANGO_MEDIA_ROOT`; the storage backend is a Django setting. | Deployment across more than one server. |
 | Split settings (base/dev/prod) | The differences are a handful of values already read from the environment. | The environments genuinely diverge in structure. |
-| Frontend state library | One page, one hook. Adding Redux now would be ceremony. | Cross-page shared state appears. |
+| Frontend state library | Three pages, one hook each, and the only shared state is a result the API can be asked for again by id. Adding Redux now would be ceremony. | State has to outlive a route change, or two screens must stay in step. |
 | Ruff / Python linter | No Python linter. Nothing in the current code violates a rule it would catch, and it is one more toolchain for six people to install. ESLint was added for JavaScript because six people write JSX and hook-dependency bugs are silent. | Python style disagreements start costing review time. |
 | `ProductClassifier` interface | No caller and no implementation. Its signature would be a guess. | `feature/product-classification`. |
 | Extra models beyond the current nine | Adding schema later is a migration; adding half-designed schema now is a liability. | A feature actually needs it. |

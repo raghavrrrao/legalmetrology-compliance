@@ -374,6 +374,35 @@ Three of these are easy to misread:
   An unverified rule can flag a package for human review; it can never tell a
   user their package breaks the law.
 
+### Which endpoints the frontend actually calls
+
+Recorded here because the choice is not obvious from the endpoint list, and
+because a second client should make the same one.
+
+The scan screen uses the **two-step path**, not the one-shot one:
+
+```
+POST /api/v1/extraction/   ->  ExtractionRun id
+POST /api/v1/compliance/   ->  ComplianceCheck   (that id, no re-upload)
+```
+
+It needs the reading on screen next to the verdict, so that a reviewer can
+check a finding against the text it was drawn from. `POST /api/v1/images/`
+returns both in one response and remains supported - `analyseImage` in
+`frontend/src/services/complianceService.js` still calls it - but a client that
+displays the reading should evaluate the stored run rather than upload twice.
+
+`GET /api/v1/compliance/<uuid>/` backs the frontend route `/result/<uuid>`,
+which is what makes a result reloadable and sendable as a link.
+
+One consequence of the response shape is worth stating, because it looks like a
+gap and is not: **`ProductImageSerializer` exposes no URL, and no endpoint
+serves the stored bytes back.** The frontend therefore draws its evidence
+overlay over the `File` the user selected, using `image.width` / `image.height`
+as the coordinate space that `bounding_box` is expressed in. A result opened
+from a link shows the findings and their excerpts, and says the photograph is
+not available on that device rather than showing an empty frame.
+
 ### Permissions on the four analysis endpoints
 
 All four — upload-and-analyse, upload-and-extract, evaluate-a-reading, and
