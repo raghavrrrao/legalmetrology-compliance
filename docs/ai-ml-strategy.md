@@ -218,6 +218,31 @@ them is more credible than a round number with no provenance:
   one pack photographed on its side came back as mirrored text because `psm 3`
   runs without orientation detection. Better patterns would not have recovered
   any of them.
+
+  Measured again across the whole set in `docs/evaluation-results.md` §11.2:
+  **55 of 97 scored disagreements are values the engine never read**, against 9
+  it read exactly and the extractor failed to use. Recognition, not
+  interpretation, is the binding constraint.
+- **Tesseract's `eng` model cannot output `₹` at all**, and this is a property
+  of the character set rather than of any photograph. `₹ 0.08 per g` was
+  re-recognised from its own bounding box at 2×, 4× and 6× under three
+  page-segmentation modes and came back as `%`, `<`, `&` or nothing; the same
+  string *rendered* as clean 64 px type in three fonts came back as `=`, `O`,
+  `=`. No preprocessing fixes it and **no character substitution may be written
+  to paper over it** — a rule turning `Z` into `₹` would manufacture a currency
+  the engine never read, which is the fabricated-value failure this whole design
+  exists to prevent. The practical consequence is that the extractor's
+  "a per-unit rate with no keyword is a price only if a currency token was read"
+  branch can never fire on a label printing the symbol rather than `Rs.`.
+  Measuring `tesseract-ocr-hin`, which carries the glyph, is the recommended
+  next step; guessing it is not.
+- **Tesseract's orientation detection is not usable as an auto-rotate on this
+  data.** Run over the 28 frozen photographs — all of them upright — it reported
+  a 180° or 270° rotation on 7 and failed outright on 7 more, and the
+  confidences of its wrong answers (0.07–1.30) overlap those of its right ones
+  (0.15–5.69), so no threshold separates them. Applied, it cost a true positive,
+  a fifth of the value accuracy and 54% more latency. Sideways text is a real
+  failure mode; this is not the mechanism for it.
 - **Tesseract is weaker than the neural engines on hard packaging** — foil,
   curved surfaces, decorative type. It was chosen for being free, offline,
   weightless and installable by six people on three operating systems, with the

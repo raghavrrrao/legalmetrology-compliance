@@ -131,18 +131,30 @@ UNSUPPORTED_KEYS: frozenset[LabelFieldKey] = frozenset(LabelFieldKey) - SUPPORTE
 #:   marked uncertain when it finds the keyword and no contact details, so
 #:   there is nothing left unresolved to report.
 #: - `manufacturer_name`, `packer_name`, `importer_name`, `other`,
-#:   `batch_number`, `country_of_origin`. Their patterns capture keyword *and*
-#:   value together, so a keyword with nothing after it never matches at all.
+#:   `country_of_origin`. Their patterns capture keyword *and* value together,
+#:   so a keyword with nothing after it never matches at all.
 #:
 #: `unit_sale_price` anchors on `UNIT_SALE_PRICE_ANCHOR` rather than on
 #: `UNIT_SALE_PRICE_KEYWORD` for the same shape of reason net quantity does:
 #: the keyword also matches the bare abbreviation `USP`, which on a supplement
 #: or pharma label routinely means *United States Pharmacopeia*. The full
 #: phrasings cannot mean anything else.
+#:
+#: `batch_number` used to sit in the excluded list for the same reason the
+#: names do - its pattern captured keyword and value together, so a bare
+#: `Batch No. :` produced no field and nothing to report. That was only true
+#: because the pattern was silently capturing the keyword's own qualifier as
+#: the value: `Batch No.` yielded the batch code `No`. Since
+#: `patterns._NOT_A_BATCH_VALUE` stopped that, a named batch declaration whose
+#: value could not be read produces nothing at all, which is exactly the state
+#: this mechanism exists to name. It anchors on `BATCH_NUMBER_ANCHOR` - the
+#: phrasings carrying an explicit qualifier - rather than on the bare `batch`
+#: and `lot` stems, which are ordinary English words.
 _KEYWORD_ANCHORS: tuple[tuple[LabelFieldKey, re.Pattern[str]], ...] = (
     (LabelFieldKey.NET_QUANTITY, P.NET_QUANTITY_ANCHOR),
     (LabelFieldKey.RETAIL_SALE_PRICE, P.MRP_KEYWORD),
     (LabelFieldKey.UNIT_SALE_PRICE, P.UNIT_SALE_PRICE_ANCHOR),
+    (LabelFieldKey.BATCH_NUMBER, P.BATCH_NUMBER_ANCHOR),
     (LabelFieldKey.BEST_BEFORE, dict(P.DATE_KEYWORDS)["best_before"]),
     (LabelFieldKey.DATE_OF_IMPORT, dict(P.DATE_KEYWORDS)["date_of_import"]),
 )
@@ -183,7 +195,12 @@ class RuleBasedFieldExtractor(FieldExtractor):
     name = NAME
     version = VERSION
 
-    def __init__(self, *, require_net_quantity_keyword: bool = True) -> None:
+    def __init__(
+        self,
+        *,
+        require_net_quantity_keyword: bool = True,
+        read_name_from_next_line: bool = True,
+    ) -> None:
         """
         Args:
             require_net_quantity_keyword: When True (the default), a quantity
@@ -193,8 +210,13 @@ class RuleBasedFieldExtractor(FieldExtractor):
                 in the nutrition panel. Do not turn it off without measuring
                 precision on an annotated set first - `docs/evaluation-strategy.md`
                 explains why a false "present" is the more damaging error here.
+            read_name_from_next_line: When True (the default), a name keyword
+                that ends its line takes its value from the line below, marked
+                uncertain for it. Off, only the keyword's own line is read.
+                Measured on `our-eval-v0.3-usp-partial`; see `_names`.
         """
         self.require_net_quantity_keyword = require_net_quantity_keyword
+        self.read_name_from_next_line = read_name_from_next_line
 
     def extract(self, ocr: OcrResult, image: ImageRef) -> tuple[ExtractedField, ...]:
         lines = _lines_from(ocr)
@@ -681,7 +703,7 @@ class RuleBasedFieldExtractor(FieldExtractor):
 
     def _names(self, lines: list[_Line]) -> list[_Candidate]:
         found: list[_Candidate] = []
-        for line in lines:
+        for position, line in enumerate(lines):
             for key_value, pattern in P.NAME_DECLARATIONS:
                 match = pattern.search(line.text)
                 if match is None:
@@ -689,7 +711,48 @@ class RuleBasedFieldExtractor(FieldExtractor):
                 value = normalise_text(match.group("value")).strip(
                     P.TRAILING_PUNCTUATION
                 )
-                if not value:
+                evidence = line.text
+                from_next_line = False
+                if not _could_be_a_name(value) and self.read_name_from_next_line:
+                    # The keyword ends its line and the name is printed below
+                    # it. The same shape of layout `_dates` already looks one
+                    # line ahead for, and looked at here for the same reason:
+                    # `Manufactured by:` with nothing after it is a declaration
+                    # whose value a person can read and this extractor cannot.
+                    #
+                    # One line, only when the keyword's own line carries no
+                    # usable name at all, and always marked uncertain - because
+                    # "the next line" is a guess about layout that a
+                    # line-oriented reader cannot check. The line below a
+                    # `Marketed by:` that ends a panel is as likely to be a
+                    # customer-care number as a company name.
+                    candidate_line = (
+                        lines[position + 1] if position + 1 < len(lines) else None
+                    )
+                    if candidate_line is not None:
+                        candidate_value = normalise_text(candidate_line.text).strip(
+                            P.TRAILING_PUNCTUATION
+                        )
+                        if _could_be_a_name(candidate_value):
+                            value = candidate_value
+                            evidence = f"{line.text} {candidate_line.text}"
+                            from_next_line = True
+
+                if not _could_be_a_name(value):
+                    # The keyword introduced something that is not a name. On
+                    # `p007_01_back` OCR read `Manufactured by: #` - the
+                    # company name is printed on the next line and the glyph
+                    # between them was recognised as `#` - and this detector
+                    # emitted `#` as the manufacturer's name. That is a
+                    # committed reading of a declaration whose value was not
+                    # read, and `field_presence` passes on it.
+                    #
+                    # Dropped rather than emitted uncertain: a name is a free
+                    # text field, so there is no ambiguity to report - the
+                    # captured characters simply are not a name. The keyword
+                    # having been seen is a real observation, but not one this
+                    # extractor can make safely; see `_KEYWORD_ANCHORS` for why
+                    # the name keywords are not unread-declaration anchors.
                     continue
 
                 values: dict[str, Any] = {"name": value}
@@ -699,16 +762,24 @@ class RuleBasedFieldExtractor(FieldExtractor):
                 # following lines together with its address, and this extractor
                 # reads one line. What we captured is a prefix of the
                 # declaration, not necessarily the whole of it.
+                normalized = uncertain(
+                    "the name may continue onto following lines; the "
+                    "address is not extracted",
+                    **values,
+                )
+                if from_next_line:
+                    normalized = _mark_uncertain(
+                        normalized,
+                        "the name was read from the line after the keyword; it "
+                        "may belong to a different declaration",
+                    )
                 found.append(
                     _candidate(
                         LabelFieldKey(key_value),
                         line,
-                        uncertain(
-                            "the name may continue onto following lines; the "
-                            "address is not extracted",
-                            **values,
-                        ),
+                        normalized,
                         MATCHED_BY_KEYWORD,
+                        raw_value=evidence,
                         signature=value.casefold(),
                     )
                 )
@@ -882,6 +953,27 @@ def _first_date_in(text: str) -> dict | None:
 
 def _looks_like_a_date(value: str) -> bool:
     return _first_date_in(value) is not None
+
+
+#: The weakest test that separates a name from OCR noise: a name contains at
+#: least one letter.
+#:
+#: Deliberately not stronger - no word list, no length floor, no capitalisation
+#: rule - because company names on Indian packaging are genuinely varied ("3M
+#: India", "ITC Ltd", "S. K. Foods", a single-initial proprietor) and every
+#: stricter rule would drop one of them. It is aimed at exactly one observed
+#: failure: a keyword whose value line was not recognised, leaving a stray glyph
+#: (`#`, `:`, `>`, `*`) behind for the pattern's `.+` to capture. Any letter at
+#: all excludes those, and excluding no more than those is the point.
+#:
+#: `\w` minus digits and underscore rather than `[A-Za-z]`, so a Devanagari or
+#: accented name is not rejected by a rule that was only ever meant to catch
+#: punctuation.
+_HAS_A_LETTER = re.compile(r"[^\W\d_]")
+
+
+def _could_be_a_name(value: str) -> bool:
+    return bool(value) and _HAS_A_LETTER.search(value) is not None
 
 
 def _resolve(candidates: list[_Candidate]) -> tuple[ExtractedField, ...]:

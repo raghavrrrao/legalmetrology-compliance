@@ -47,7 +47,7 @@ from __future__ import annotations
 
 import logging
 import re
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from pathlib import Path
 from typing import Any, Mapping, Sequence
 
@@ -55,6 +55,7 @@ from labelextract.contracts import BoundingBox, ImageRef, OcrResult, TextBlock
 from labelextract.exceptions import (
     EngineNotAvailableError,
     InvalidImageError,
+    LabelExtractError,
     OcrFailureError,
 )
 from labelextract.imageio import readable_path
@@ -68,21 +69,40 @@ logger = logging.getLogger(__name__)
 #: the Tesseract binary, whose version is recorded per run in `OcrResult.raw`.
 #: Bump it whenever a change would make two runs incomparable.
 NAME = "tesseract"
-VERSION = "0.2.0"
+#: 0.3.0 adds the empty-result page-segmentation retry
+#: (`TesseractOptions.fallback_page_segmentation_mode`). Nothing else about the
+#: engine or the preprocessing moved; the primary mode is still 3 and the
+#: preprocessing is still EXIF/grayscale/2x-upscale/autocontrast.
+VERSION = "0.3.0"
+
+#: The configuration 0.3.0 supersedes: identical, minus the retry. Registered
+#: so the retry can be isolated and re-measured on any image rather than taken
+#: on trust.
+PREVIOUS_VERSION = "0.2.0"
 
 #: The original configuration, kept registered rather than replaced.
 #:
 #: 0.2.0 changed the page-segmentation mode and turned on upscaling, which
-#: makes its output incomparable with anything recorded under 0.1.0. Both are
-#: registered so a stored `ExtractionRun` from before the change is still
-#: reproducible, and so the improvement can be re-measured on any image rather
-#: than taken on trust:
+#: makes its output incomparable with anything recorded under 0.1.0. All three
+#: are registered so a stored `ExtractionRun` from before a change is still
+#: reproducible, and so each change can be re-measured on any image rather than
+#: taken on trust:
 #:
 #:     python -m labelextract.cli LABEL.jpg --pipeline-version 0.1.0
 #:     python -m labelextract.cli LABEL.jpg --pipeline-version 0.2.0
+#:     python -m labelextract.cli LABEL.jpg --pipeline-version 0.3.0
 #:
 #: It is frozen. Nothing about it should be tuned again - that is what makes it
 #: a baseline.
+#:
+#: **What a pipeline version does and does not freeze.** It pins the engine and
+#: preprocessing *configuration* written out in each factory below. It does
+#: **not** pin `labelextract.fields.patterns`, which every registered pipeline
+#: imports from one module: a pattern corrected today changes what 0.1.0 reads
+#: as well. That has always been true here and is stated rather than implied,
+#: because it is the difference between "re-runnable" and "byte-reproducible".
+#: A run whose extraction rules must be reproduced exactly needs the commit,
+#: not the version string.
 BASELINE_VERSION = "0.1.0"
 
 #: Tesseract language codes are passed to a subprocess argument. Only ISO 639-2
@@ -127,8 +147,66 @@ class TesseractOptions:
     #: original size, 3 found no text at all on two of the six images. The two
     #: settings were chosen together and should be changed together.
     page_segmentation_mode: int = 3
+    #: Page-segmentation mode retried when the primary mode recognised
+    #: **nothing at all**. None disables the retry.
+    #:
+    #: Mode 3 does not degrade gracefully: on a photograph whose layout it
+    #: cannot resolve it returns zero words rather than a poor reading, and the
+    #: pipeline reports EMPTY. Measured over the 28 photographs of
+    #: `our-eval-v0.3-usp-partial`, mode 3 returned nothing on 2 of them
+    #: (`p002_01_back`, a cylindrical tube shot side-on; `p006_02_front`, a
+    #: glare-lit printed film). Modes 6, 11 and 12 each read text on both.
+    #:
+    #: The trigger is **zero recognised blocks**, not "few" or "low
+    #: confidence". A threshold would be a number nobody measured, and it would
+    #: quietly re-segment images the primary mode read perfectly well; zero is
+    #: the one case where there is nothing to lose, because the alternative
+    #: outcome is already "we recognised no text on this label".
+    #:
+    #: **11, not 6**, and the difference was measured rather than reasoned
+    #: about. Modes 4, 6, 11 and 12 were each tried as the fallback over the
+    #: whole set:
+    #:
+    #: | Fallback | Chars recovered | Scored effect |
+    #: |---|---|---|
+    #: | 4 | 0 | mode 4 also reads nothing on those two images |
+    #: | 6 | +1344 | **fabricated a retail sale price** on `p002_01_back` |
+    #: | 11 | +876 | **no scored change at all** |
+    #: | 12 | +843 | no scored change at all |
+    #:
+    #: Mode 6 recovers the most characters and is rejected for it. The extra
+    #: text it finds on a badly lit curved surface includes the line
+    #: `4 rs ne rm`, which the speculative no-keyword branch of the price
+    #: detector reads as a retail sale price of 4 - a committed value for a
+    #: declaration a human could not read, which is the single failure this
+    #: architecture exists to prevent. Mode 11 recovers 65% as many characters
+    #: and produced no such reading.
+    #:
+    #: Neither of these is a better *primary* mode. Over the whole set mode 6
+    #: reads ~43% more characters and more of them are wrong (value accuracy
+    #: 0.611 -> 0.429, silent error rate 0.417 -> 0.571), and mode 11 costs
+    #: four true positives (recall 0.200 -> 0.156). That is precisely why this
+    #: is a fallback: it only ever runs where the alternative is no reading at
+    #: all.
+    #:
+    #: Cost: one extra Tesseract pass on the images that produced nothing, and
+    #: none on the images that did - median latency over the set was unchanged.
+    #: See ml/README.md.
+    #:
+    #: **It doubles the worst-case processing bound**, from `timeout_seconds` to
+    #: twice it, because each pass carries its own cap. That is the correct
+    #: reading of "one retry" and it stays bounded - the retry cannot chain, so
+    #: two passes is the maximum however pathological the image. Set this to
+    #: None where a single hard cap matters more than reading a difficult
+    #: photograph.
+    fallback_page_segmentation_mode: int | None = 11
     #: OCR engine mode. 3 = "whichever of legacy/LSTM is available"; modern
     #: builds resolve this to the LSTM recogniser.
+    #:
+    #: Measured on `our-eval-v0.3-usp-partial`: mode 1 (LSTM only) produced a
+    #: byte-identical report to mode 3, confirming that this build resolves 3
+    #: to the LSTM recogniser. Left at 3, which also works on a build that has
+    #: only the legacy engine.
     engine_mode: int = 3
     #: Hard cap on a single recognition, in seconds. Unbounded processing on a
     #: hostile or pathological image is a denial-of-service vector.
@@ -147,12 +225,34 @@ class TesseractOptions:
                 raise ValueError(f"Not a valid Tesseract language code: {code!r}")
         if not 0 <= self.page_segmentation_mode <= 13:
             raise ValueError("page_segmentation_mode must be within 0-13")
+        if self.fallback_page_segmentation_mode is not None and not (
+            0 <= self.fallback_page_segmentation_mode <= 13
+        ):
+            raise ValueError(
+                "fallback_page_segmentation_mode must be within 0-13 or None"
+            )
         if not 0 <= self.engine_mode <= 3:
             raise ValueError("engine_mode must be within 0-3")
         if self.timeout_seconds <= 0:
             raise ValueError("timeout_seconds must be positive")
         if not 0 <= self.minimum_word_confidence <= 100:
             raise ValueError("minimum_word_confidence must be within 0-100")
+
+    @property
+    def retries_segmentation(self) -> bool:
+        """Whether an empty first pass is worth a second one.
+
+        A fallback equal to the primary mode is not an error and not a retry:
+        Tesseract is deterministic, so re-running the same mode over the same
+        pixels returns the same nothing at twice the cost. Reporting it as
+        "no retry configured" is the accurate description of what will happen,
+        and it keeps `TesseractOptions(page_segmentation_mode=6)` - a perfectly
+        reasonable thing for a caller to write - from raising.
+        """
+        return (
+            self.fallback_page_segmentation_mode is not None
+            and self.fallback_page_segmentation_mode != self.page_segmentation_mode
+        )
 
     @property
     def language_argument(self) -> str:
@@ -324,28 +424,83 @@ class TesseractOcrEngine(OcrEngine):
 
     def recognise(self, image: ImageRef) -> OcrResult:
         path = readable_path(image)
-        data = self._runner.word_data(path, self.options)
+        options = self.options
 
-        try:
-            words = _words_from(data, self.options.minimum_word_confidence)
-        except (KeyError, TypeError, ValueError) as exc:
-            # The engine ran but produced something we cannot read. An
-            # operational failure, recorded as such - not a bug in our code and
-            # not a claim that the package had no text on it.
-            raise OcrFailureError(
-                f"Tesseract output could not be parsed: {exc.__class__.__name__}"
-            ) from exc
-
+        words = self._recognise_with(path, options)
         blocks = _lines_from(words)
+
+        fallback_mode: int | None = None
+        if not blocks and options.retries_segmentation:
+            # Nothing at all was recognised. There is no reading to protect, so
+            # a second segmentation strategy costs only time. See
+            # `TesseractOptions.fallback_page_segmentation_mode` for why the
+            # trigger is zero rather than a threshold.
+            retry = replace(
+                options,
+                page_segmentation_mode=options.fallback_page_segmentation_mode,
+                fallback_page_segmentation_mode=None,
+            )
+            try:
+                retry_words = self._recognise_with(path, retry)
+            except LabelExtractError as exc:
+                # The retry is a *second chance*, not part of the answer. The
+                # primary pass already completed and produced a valid finding -
+                # "this photograph was read and nothing usable was recognised" -
+                # and letting an optional extra attempt turn that into
+                # `FAILED`/`ocr_failed` would replace an actionable result
+                # ("retake the panel") with a misleading one ("we could not
+                # process this image"). It would also mean turning the fallback
+                # *on* could make a run fail that succeeded with it off.
+                #
+                # The same rule `ExtractionPipeline` applies to `release()` and
+                # to `unread_declarations()`: secondary work cannot be allowed
+                # to overrule the outcome of the work it is supplementing.
+                #
+                # Scoped to `LabelExtractError` deliberately - every operational
+                # failure this package raises descends from it, and anything
+                # that does not is a bug in an engine and must still surface
+                # loudly rather than be recorded as an empty photograph.
+                #
+                # Only the exception's class is logged. The message can carry
+                # Tesseract's own stderr, and nothing about a user's label
+                # belongs in our logs.
+                logger.warning(
+                    "Fallback page-segmentation pass (--psm %s) failed with %s "
+                    "after --psm %s recognised nothing; keeping the empty "
+                    "result from the primary pass",
+                    retry.page_segmentation_mode,
+                    exc.__class__.__name__,
+                    options.page_segmentation_mode,
+                )
+            else:
+                retry_blocks = _lines_from(retry_words)
+                if retry_blocks:
+                    words, blocks = retry_words, retry_blocks
+                    fallback_mode = retry.page_segmentation_mode
+
         return OcrResult(
             blocks=blocks,
             raw={
                 "engine": NAME,
                 "pipeline_version": VERSION,
                 "tesseract_version": self._runner.version(),
-                "languages": list(self.options.languages),
-                "page_segmentation_mode": self.options.page_segmentation_mode,
-                "engine_mode": self.options.engine_mode,
+                "languages": list(options.languages),
+                # The mode whose output this result carries, which is the
+                # fallback's when the fallback produced it. A stored run must
+                # say what actually read the pixels, not what was asked for
+                # first.
+                "page_segmentation_mode": (
+                    fallback_mode
+                    if fallback_mode is not None
+                    else options.page_segmentation_mode
+                ),
+                "requested_page_segmentation_mode": options.page_segmentation_mode,
+                #: True when the primary mode recognised nothing and the retry
+                #: did. Recorded so a disappointing run is diagnosable later,
+                #: and so the frequency of the retry is measurable rather than
+                #: assumed.
+                "used_fallback_segmentation": fallback_mode is not None,
+                "engine_mode": options.engine_mode,
                 "word_count": len(words),
                 "line_count": len(blocks),
                 # Word-level detail, kept so field extraction can be improved
@@ -353,6 +508,21 @@ class TesseractOcrEngine(OcrEngine):
                 "words": [word.as_dict() for word in words],
             },
         )
+
+    def _recognise_with(
+        self, path: Path, options: TesseractOptions
+    ) -> tuple[_Word, ...]:
+        """One Tesseract pass, parsed into words."""
+        data = self._runner.word_data(path, options)
+        try:
+            return _words_from(data, options.minimum_word_confidence)
+        except (KeyError, TypeError, ValueError) as exc:
+            # The engine ran but produced something we cannot read. An
+            # operational failure, recorded as such - not a bug in our code and
+            # not a claim that the package had no text on it.
+            raise OcrFailureError(
+                f"Tesseract output could not be parsed: {exc.__class__.__name__}"
+            ) from exc
 
 
 # --- parsing ----------------------------------------------------------------
@@ -551,6 +721,44 @@ def build_pipeline() -> ExtractionPipeline:
     )
 
 
+def build_previous_pipeline() -> ExtractionPipeline:
+    """The 0.2.0 configuration: 0.3.0 without the empty-result retry.
+
+    Registered so the retry can be isolated on any image. Everything else is
+    written out explicitly, for the same reason `build_baseline_pipeline` does
+    it: a factory that inherits a default stops reproducing the version it
+    names as soon as the default moves.
+
+        python -m labelextract.cli LABEL.jpg --pipeline-version 0.2.0
+        python -m labelextract.cli LABEL.jpg --pipeline-version 0.3.0
+
+    The two differ on exactly one photograph in ten or so - the retry only
+    fires where the primary mode recognised nothing at all.
+    """
+    from labelextract.fields import RuleBasedFieldExtractor
+    from labelextract.preprocessing import (
+        UPSCALE_TO_DIMENSION,
+        PillowPreprocessor,
+        PreprocessingConfig,
+    )
+
+    return ExtractionPipeline(
+        name=NAME,
+        version=PREVIOUS_VERSION,
+        ocr_engine=TesseractOcrEngine(
+            TesseractOptions(
+                page_segmentation_mode=3,
+                fallback_page_segmentation_mode=None,
+                engine_mode=3,
+            )
+        ),
+        preprocessor=PillowPreprocessor(
+            PreprocessingConfig(min_dimension=UPSCALE_TO_DIMENSION)
+        ),
+        field_extractor=RuleBasedFieldExtractor(),
+    )
+
+
 def build_baseline_pipeline() -> ExtractionPipeline:
     """The 0.1.0 configuration, registered alongside `build_pipeline`.
 
@@ -569,7 +777,15 @@ def build_baseline_pipeline() -> ExtractionPipeline:
         name=NAME,
         version=BASELINE_VERSION,
         ocr_engine=TesseractOcrEngine(
-            TesseractOptions(page_segmentation_mode=6, engine_mode=3)
+            # `fallback_page_segmentation_mode=None` is not an omission. 0.1.0
+            # ran one Tesseract pass and reported EMPTY when it found nothing,
+            # and a frozen reference that quietly acquired a retry would stop
+            # reproducing the runs recorded against it.
+            TesseractOptions(
+                page_segmentation_mode=6,
+                fallback_page_segmentation_mode=None,
+                engine_mode=3,
+            )
         ),
         preprocessor=PillowPreprocessor(
             PreprocessingConfig(min_dimension=None, max_dimension=None)

@@ -186,6 +186,44 @@ Modes 3, 4, 6, 11 and 12 were each run over all six photographs:
 Mode 3 and the upscaling were chosen together and should be changed together —
 mode 3 on un-upscaled images is worse than what it replaced.
 
+Those five modes were re-measured over all **28** photographs of
+`our-eval-v0.3-usp-partial` in pipeline 0.3.0, and mode 3 remains the right
+primary mode. The full table is
+[`docs/evaluation-results.md`](../docs/evaluation-results.md) §11.5; the short
+version is that mode 6 reads 43% more characters and more of them are wrong
+(value accuracy 0.611 → 0.429, silent error rate 0.417 → 0.571), and mode 11
+raises value accuracy to 0.714 by finding four fewer true positives.
+
+### One retry, and only when nothing at all was recognised
+
+Mode 3 does not degrade gracefully. On a photograph whose layout it cannot
+resolve it returns **zero** words rather than a poor reading, and the pipeline
+reports `EMPTY` — which tells a reviewer nothing except "take another photo".
+It did that on 2 of the 28 photographs: a cylindrical tube shot side-on and a
+glare-lit printed film.
+
+Since 0.3.0, an empty first pass is retried once with `--psm 11`
+(`TesseractOptions.fallback_page_segmentation_mode`). Three things make this
+safe rather than a second guess at the right mode:
+
+- **The trigger is zero recognised blocks**, not "few" or "low confidence". A
+  threshold would be a number nobody measured and would re-segment images the
+  primary mode read perfectly well. Zero is the one case where there is nothing
+  to lose, because the alternative outcome is already "we recognised no text".
+- **It cannot chain.** The retry runs with its own fallback cleared.
+- **It is recorded.** `OcrResult.raw` carries
+  `requested_page_segmentation_mode`, the mode that actually produced the
+  result, and `used_fallback_segmentation`.
+
+**11, not 6, and the difference was measured.** Mode 6 recovers the most
+characters of the four candidates and was rejected for it: among the extra text
+it finds on the side-on tube is the line `4 rs ne rm`, which the price
+detector's speculative no-keyword branch reads as a retail sale price of 4 —
+on a panel whose price a human annotator recorded as unreadable. Mode 11
+recovers 876 characters, moves both photographs out of `EMPTY`, and **changed no
+scored outcome at all**. Median latency over the set was unchanged, because the
+retry only ever runs where the first pass produced nothing.
+
 ## FIELD EXTRACTION
 
 `fields/rule_based.py`, behind `interfaces.FieldExtractor`. Deterministic
@@ -203,7 +241,7 @@ would be unexplainable in a tool whose output is meant to be evidence.
 | Net quantity | `net_quantity` | `{quantity, unit, base_quantity, base_unit, measure, pack_count?}` |
 | MRP / retail sale price | `retail_sale_price` | `{amount (exact decimal string), currency, inclusive_of_all_taxes?}` — read from the text the MRP keyword introduces, skipping quantities |
 | Unit sale price | `unit_sale_price` | `{amount (exact decimal string), currency, per_unit, per_measure}` — the unit **as printed**; no base conversion. **Recall 1/6 on `our-eval-v0.3-usp-partial` — see below** |
-| Batch / lot number | `batch_number` | `{batch_number}` |
+| Batch / lot number | `batch_number` | `{batch_number}` — the keyword's own `No.` / `Number` / `Code` is never taken as the value; a named batch declaration with no readable code is reported unread instead |
 | Date of manufacture | `date_of_manufacture` | `{date}` or `{year_month}` |
 | Date of packing | `date_of_packing` | `{date}` or `{year_month}` |
 | Date of import | `date_of_import` | `{date}` or `{year_month}` |
@@ -214,6 +252,21 @@ would be unexplainable in a tool whose output is meant to be evidence.
 | Packer name | `packer_name` | `{name}` — always flagged uncertain |
 | Importer name | `importer_name` | `{name}` — always flagged uncertain |
 | "Marketed by" | `other` | `{name, declaration: "marketed_by"}` |
+
+Two rules apply to every name in that list, both added in 0.3.0 and both
+measured (`docs/evaluation-results.md` §11.5):
+
+- **A name contains at least one letter.** `Manufactured by: #` is not a
+  manufacturer called `#`; it is a keyword whose value line was not recognised.
+  Deliberately no stronger than that — no word list, no length floor, no
+  capitalisation rule — because `3M India`, `S. K. Foods` and `A1 Foods` are all
+  real and every stricter rule drops one of them.
+- **A name keyword that ends its line takes the line below**, and says so:
+  the field carries `the name was read from the line after the keyword; it may
+  belong to a different declaration`, and `raw_value` quotes both lines. The
+  same one-line lookahead `_dates` already uses, for the same layout. It is a
+  guess about layout, which is why it is never committed to silently, and it is
+  turned off with `RuleBasedFieldExtractor(read_name_from_next_line=False)`.
 
 ### NOT supported — do not claim otherwise
 
@@ -448,8 +501,44 @@ limitations — is [`docs/evaluation-results.md`](../docs/evaluation-results.md)
 [`docs/evaluation-strategy.md`](../docs/evaluation-strategy.md) defines the
 method it follows.
 
-`tesseract` 0.2.0 on `our-eval-v0.1-draft`, 28 photographs of 10 packages,
-2026-08-29:
+### Latest — `tesseract` 0.3.0 on `our-eval-v0.3-usp-partial`, 2026-08-31
+
+28 photographs, 364 annotated cells, **34 of them human-reviewed and 330
+model-drafted**. That last clause is not a footnote: these figures measure the
+pipeline against a *partially verified* artefact and must never be quoted as
+performance against human ground truth.
+
+| | 0.2.0 | **0.3.0** |
+|---|---:|---:|
+| Precision | 0.947 (18/19) | **1.000** (19/19) |
+| Recall | 0.200 (18/90) | **0.211** (19/90) |
+| F1 | 0.330 | **0.349** |
+| Value accuracy | 0.611 | **0.684** |
+| Silent error rate | 0.417 (5/12) | **0.300** (3/10) |
+| Fabricated values | 1 | **0** |
+| Correct unread | 0 of 24 | **1** of 25 |
+| Photographs returning `EMPTY` | 2 of 28 | **0 of 28** |
+| Median latency | 1,126 ms | 1,081 ms |
+| CER / WER | unavailable | unavailable |
+
+Read the shape, not the headline. **Precision 1.000 does not mean the system is
+right**: it means that across 19 detections on 28 photographs it did not report
+a declaration that was not there, while still missing roughly four readable
+declarations in five. The recall gain is one cell. What actually improved is the
+*failure behaviour* — no fabricated value, one fewer confident wrong reading in
+three, and no photograph that comes back saying nothing at all.
+
+Where the remaining recall is lost was measured before anything was changed:
+**55 of the 97 scored disagreements are values OCR never read**, against 9 it
+read exactly and the extractor did not use. `₹` is unreadable by construction —
+Tesseract's `eng` model cannot emit the glyph, reproduced on clean synthetic
+type as well as on the photographs. `docs/evaluation-results.md` §11 has the
+diagnosis, the full experiment record including the rejected experiments, and
+the next task.
+
+### First baseline — `tesseract` 0.2.0 on `our-eval-v0.1-draft`, 2026-08-29
+
+28 photographs of 10 packages:
 
 | | |
 |---|---:|
@@ -482,11 +571,33 @@ that reports a metric as unavailable rather than estimating it.
 
 ```bash
 cd ml
+# The first baseline, against the v0.1 artefact.
 python -m labelextract.evaluation.cli validate data/our-evaluation-set
 python -m labelextract.evaluation.cli run data/our-evaluation-set \
     --pipeline tesseract --pipeline-version 0.2.0 \
     --report data/our-evaluation-set/baseline-report-v0.2.0.json
+
+# The current run, against the partially human-verified v0.3 artefact.
+python -m labelextract.evaluation.cli validate data/hv-evaluation-set
+python -m labelextract.evaluation.cli run data/hv-evaluation-set \
+    --pipeline tesseract --pipeline-version 0.3.0 \
+    --report data/hv-evaluation-set/report-v0.3.0.json
 ```
+
+Three pipeline versions stay registered — 0.1.0, 0.2.0 and 0.3.0 — so a stored
+run keeps resolving and any single change can be isolated on one image:
+
+```bash
+python -m labelextract.cli LABEL.jpg --pipeline-version 0.2.0   # no retry
+python -m labelextract.cli LABEL.jpg --pipeline-version 0.3.0   # with it
+```
+
+A version pins the **engine and preprocessing configuration** written out in
+each factory. It does not pin `fields/patterns.py`, which every registered
+pipeline imports from one module: a pattern corrected today changes what 0.1.0
+reads too. That has always been true and is stated rather than implied — a run
+whose extraction rules must be reproduced exactly needs the commit, not the
+version string.
 
 **The dataset is not in this repository.** `ml/data/` is git-ignored in full, so
 `our-eval-v0.1-draft` exists on one machine; what is committed is this code, the
