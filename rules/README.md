@@ -132,7 +132,24 @@ Recorded here so they are not lost between branches:
 With no *applicable* rule, the compliance engine still cannot return
 `COMPLIANT`. It returns `REVIEW_REQUIRED` — "nobody has checked this", not
 "this is fine". That behaviour is enforced by a test
-(`backend/apps/compliance/tests/test_engine.py`).
+(`backend/apps/compliance/tests/test_engine.py`), and again at the API boundary
+in `test_evaluation_api.py`, where a label whose every declaration was read at
+0.99 confidence still comes back `review_required` because no rule was loaded
+to check it against. A reading is not a verdict.
+
+## What a rule produces when it is evaluated
+
+Every applicable rule leaves a `ComplianceFinding` — a row naming the rule, the
+requirement in its own words, the declaration it concerns, what was read, the
+OCR confidence behind that reading, what the check concluded, and why. Rules
+that pass and rules that could not be decided get one too, which is what makes
+"what was actually checked?" answerable rather than a count.
+
+A finding is **not** a legal conclusion on its own. It is the output of one
+deterministic check against one reading of one photograph. The overall verdict
+is derived from all of them together by
+`backend/apps/compliance/services/engine.py`, under the three guarantees
+documented at the top of that file.
 
 ## Rule file format
 
@@ -170,6 +187,12 @@ authoritative source:
 The engine treats `unverified` rules as `REVIEW_REQUIRED` rather than as
 violations. An unverified rule can flag a product for a human to look at. It can
 never, on its own, tell a user their product breaks the law.
+
+When that downgrade happens it is recorded, not merely applied: the rule's
+`ComplianceFinding` is stored with `status: inconclusive` and
+`downgraded_from_failed: true`, and the API returns both. A reviewer can see
+that the check *did* fail and that the safeguard is the only reason it is not a
+violation — rather than having to infer it from the rule code.
 
 Do not set `source_status` to `verified` without filling in `source_note` with
 who checked it and against what. The loader rejects the file if you do.

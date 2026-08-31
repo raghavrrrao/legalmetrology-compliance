@@ -6,6 +6,16 @@
       -> apps.compliance.services.engine       applicable rules, findings, verdict
       -> ComplianceCheck
 
+Three entry points into that line, differing only in where they join it:
+
+    analyse_upload(file)   the whole line, from an uploaded photograph
+    analyse_image(image)   from a stored image: re-read it, then judge
+    evaluate_run(run)      from a stored reading: judge it, re-reading nothing
+
+`evaluate_run` is what `POST /api/v1/compliance/` calls, and it is the reason
+`POST /api/v1/extraction/` is not a dead end: a caller can look at a reading
+first and ask for a verdict on that same reading afterwards.
+
 This module is **composition only**. It contains no validation, no persistence,
 no rule evaluation and no verdict logic of its own - every one of those already
 exists and is tested, and a second implementation here would be a second thing
@@ -140,6 +150,62 @@ def analyse_upload(
         check.rules_evaluated,
     )
     return AnalysisOutcome(image=outcome.image, run=outcome.run, check=check)
+
+
+def evaluate_run(
+    run: ExtractionRun,
+    *,
+    product: Product | None = None,
+    category: ProductCategory | None = None,
+    requested_by=None,
+) -> ComplianceCheck:
+    """Evaluate a reading that already exists against the applicable rules.
+
+    The third entry point, and the one that closes the loop opened by
+    `POST /api/v1/extraction/`: that endpoint produces an `ExtractionRun` and
+    stops, deliberately, at the reading. This turns such a run into a verdict
+    **without re-reading the photograph**.
+
+    Re-running OCR to get a verdict would not merely be slow. It would evaluate
+    a *different* reading from the one the caller was shown - OCR is not
+    guaranteed identical across runs, and the engine may have been reconfigured
+    in between - so a finding could cite a value the user never saw. Evaluating
+    the stored run is what keeps the reading the user was shown and the verdict
+    they were given the same evidence.
+
+    Args:
+        run: The reading to judge. Any stored run, however it was produced.
+        product: The commodity this reading is of, when known.
+        category: Used only when `product` is None, and only when the run's
+            image is not already linked to a product. See below.
+        requested_by: The authenticated user, or None.
+
+    Returns:
+        A saved `ComplianceCheck`, always - including when nothing could be
+        read, which the engine reports as REVIEW_REQUIRED with an explanation.
+
+    Nothing about which rules run is decided here, and nothing may be passed in
+    to influence it. Applicability is answered by `engine.applicable_rules`
+    from the loaded rule set and the commodity's category alone.
+    """
+    if product is None:
+        # An image that already knows its product keeps it. Creating a second
+        # product row for the same photograph would split its compliance
+        # history in two, and silently reassigning the existing one would
+        # rewrite a record the caller did not ask to change.
+        product = run.image.product
+    if product is None and category is not None:
+        product = _product_for_category(category, created_by=requested_by)
+
+    check = engine.evaluate(run, product=product, requested_by=requested_by)
+
+    logger.info(
+        "Evaluated extraction run %s: result=%s (%d rule(s) evaluated)",
+        run.pk,
+        check.result,
+        check.rules_evaluated,
+    )
+    return check
 
 
 def analyse_image(
