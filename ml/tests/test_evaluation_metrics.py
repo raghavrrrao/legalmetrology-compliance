@@ -229,6 +229,47 @@ def test_only_supported_keys_are_scored_by_default():
     assert set(report.per_field) == set(SUPPORTED_KEYS)
 
 
+def test_a_newly_supported_key_is_scored_once_a_dataset_annotates_it():
+    """The situation `unit_sale_price` was in, and the trap it laid.
+
+    A key that enters `SUPPORTED_KEYS` after a dataset was frozen scores as
+    `unknown` -> excluded on every sample of that dataset, because the
+    annotations predate the key. That is correct - an un-annotated field is not
+    a negative - but it is silent: the report grows a row of zeroes that looks
+    like a measurement of nothing rather than an absence of measurement, and
+    `unit_sale_price` sat that way against `our-eval-v0.1-draft` while reading
+    correctly on the one panel that exercised it.
+
+    The half worth pinning is the other side of it: once a dataset *does*
+    annotate the key, it must be scored like any other, with no second
+    registration step anywhere. A future field that entered the supported set
+    and stayed excluded even against fresh annotations would be unmeasurable
+    for a reason nobody would think to look for.
+    """
+    key = LabelFieldKey.UNIT_SALE_PRICE
+    assert key in SUPPORTED_KEYS, "this test is about a key the extractor attempts"
+
+    # A dataset predating the key: no annotation for it at all.
+    unannotated = truth("present_and_readable", "500 g")
+    stale = score([(unannotated, nothing_predicted())]).per_field[key]
+    assert stale.excluded == 1
+    assert (stale.true_positive, stale.false_negative, stale.true_negative) == (0, 0, 0)
+    assert stale.precision is None and stale.recall is None
+
+    # A dataset that annotates it: scored, not excluded.
+    annotated = truth("present_and_readable", "2.91 PER GRAM", key=key.value)
+    found = predicted(
+        {"amount": "2.91", "per_unit": "gram", "uncertain": False},
+        raw="UNIT SALE PRICE : 2.91 PER GRAM",
+        key=key,
+    )
+    scored = score([(annotated, found)]).per_field[key]
+    assert scored.excluded == 0
+    assert scored.true_positive == 1
+    assert scored.value_correct == 1
+    assert scored.precision == 1.0 and scored.recall == 1.0
+
+
 # --- uncertainty -------------------------------------------------------------
 
 
