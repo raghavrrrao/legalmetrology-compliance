@@ -10,6 +10,7 @@ import zlib
 
 import pytest
 from django.contrib.auth import get_user_model
+from django.core.cache import cache
 from django.core.files.uploadedfile import SimpleUploadedFile
 
 from apps.catalog.models import Product, ProductCategory
@@ -40,6 +41,33 @@ def _no_ssl_redirect_in_tests(settings):
     precisely, in apps/core/tests/test_https_redirect.py.
     """
     settings.SECURE_SSL_REDIRECT = False
+
+
+@pytest.fixture(autouse=True)
+def _reset_api_throttles():
+    """Give each test its own rate-limit budget.
+
+    DRF's throttles count requests in Django's default cache, which is
+    LocMemCache and therefore lives for the whole pytest session. Nothing
+    empties it between tests, so every anonymous API request any test makes
+    spends from one shared 30/min bucket - and the thirty-first fails with a
+    429 no matter what it was actually asserting.
+
+    That makes a test's result depend on how many API tests ran before it and
+    on the order pytest chose, which is the suite reporting its own history
+    rather than the code. It surfaced when the extraction endpoint's tests
+    landed: they pass alone and turned five unrelated-looking assertions red in
+    a full run.
+
+    Cleared here rather than worked around per test, in the same spirit as the
+    two fixtures either side of it: removing an environment artefact, not
+    coverage. Throttling itself is still asserted - in
+    `apps/core/tests/test_error_envelope.py`, against the exception, which is
+    where the behaviour under test actually is.
+    """
+    cache.clear()
+    yield
+    cache.clear()
 
 
 @pytest.fixture(autouse=True)

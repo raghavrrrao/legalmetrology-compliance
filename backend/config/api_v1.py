@@ -9,12 +9,13 @@ Prefixes reserved for upcoming feature branches, left unrouted until the branch
 that owns them lands. An empty router registered now would 404 in a way that
 looks like a bug rather than like unfinished work:
 
-    products/    feature/product-upload
-    extraction/  feature/ocr-processing
-    rules/       feature/rule-management
+    products/  feature/product-upload
+    rules/     feature/rule-management
 
-`images/` and `compliance/` are now routed: together they are the whole
-demonstration flow, upload through verdict. See docs/api.md.
+Three are routed. `images/` and `compliance/` are the demonstration flow,
+upload through verdict. `extraction/` is the same upload stopping one stage
+earlier, at what was read off the label - which is a different question and
+deliberately a different endpoint, not a flag on that one. See docs/api.md.
 """
 
 from django.urls import include, path, re_path
@@ -27,6 +28,7 @@ app_name = "v1"
 urlpatterns = [
     path("", include("apps.core.api.urls")),
     path("images/", include("apps.images.api.urls")),
+    path("extraction/", include("apps.extraction.api.urls")),
     path("compliance/", include("apps.compliance.api.urls")),
     # Must stay LAST: it claims every path the routes above did not, so that an
     # unmatched API URL returns the JSON error envelope rather than an HTML 404.

@@ -4,19 +4,24 @@ These serializers are read-only. They shape rows the services already wrote;
 none of them creates, updates or decides anything. Bodies are `snake_case` per
 `docs/api.md`; the frontend maps to camelCase in one place at its own boundary.
 
-Two things this file is careful about, both of which are the difference between
-an honest result and a misleading one:
+**What was read is not described here.** `ExtractedFieldSerializer` and
+`ExtractionRunSerializer` belong to `apps.extraction.api.serializers`, and
+`ProductImageSerializer` to `apps.images.api.serializers` - each with the app
+that owns the rows. They are imported below and embedded unchanged, so the
+reading in a compliance result is byte-for-byte the reading
+`POST /api/v1/extraction/` returns, and there is one place to change it.
 
-1. **Nothing is fabricated to make a response look complete.** A value that was
-   not measured is `null`, never a plausible-looking default. `confidence`,
-   `bounding_box` and `processing_ms` are all genuinely absent sometimes.
+That direction matters beyond tidiness. A reading is an observation about a
+photograph; a violation is a claim about a package under the Rules. Compliance
+may depend on extraction, because a finding is made *from* a reading. Extraction
+must never depend on compliance, or a reading starts to be shaped by what a rule
+wants it to say.
 
-2. **"Not found" and "could not be read" stay distinguishable.** The pipeline
-   records declarations it saw named on the label but could not read into
-   `ExtractionRun.raw_output["metadata"]["unread_declarations"]`.
-   `UnreadDeclarationSerializer` surfaces that channel to the UI so a reviewer
-   can tell a possible contravention from a request for a better photograph.
-   Nothing here interprets it - reading it is all this does.
+The one thing this file is careful about on its own account: **nothing is
+fabricated to make a result look complete.** A value that was not measured is
+`null`, never a plausible-looking default - `processing_ms`, `bounding_box` and
+`product_category_code` are all genuinely absent sometimes, and the last of
+those is load-bearing.
 """
 
 from __future__ import annotations
@@ -28,29 +33,20 @@ from apps.compliance.models import (
     ComplianceEvidence,
     ComplianceViolation,
 )
-from apps.extraction.models import ExtractedLabelField, ExtractionRun
-from apps.images.models import ProductImage
+from apps.extraction.api.serializers import (
+    ExtractedFieldSerializer,
+    ExtractionRunSerializer,
+)
+from apps.images.api.serializers import ProductImageSerializer
 
-
-class ExtractedFieldSerializer(serializers.ModelSerializer):
-    """One declaration read off the label, with the evidence for it.
-
-    `raw_value` is what the OCR engine saw; `normalized_value` is what
-    `labelextract.fields.normalisation` made of it, and carries the extractor's
-    own `uncertain` flag when it was not sure. Both are exposed because a
-    reviewer checking a finding needs the reading, not only its interpretation.
-    """
-
-    class Meta:
-        model = ExtractedLabelField
-        fields = [
-            "field_key",
-            "raw_value",
-            "normalized_value",
-            "confidence",
-            "bounding_box",
-        ]
-        read_only_fields = fields
+__all__ = [
+    "ComplianceCheckSerializer",
+    "EvidenceSerializer",
+    "ExtractedFieldSerializer",
+    "ExtractionRunSerializer",
+    "ProductImageSerializer",
+    "ViolationSerializer",
+]
 
 
 class EvidenceSerializer(serializers.ModelSerializer):
@@ -90,80 +86,6 @@ class ViolationSerializer(serializers.ModelSerializer):
             "field_key",
             "message",
             "evidence",
-        ]
-        read_only_fields = fields
-
-
-class ExtractionRunSerializer(serializers.ModelSerializer):
-    """The reading this check was evaluated against.
-
-    `is_placeholder` is exposed for the same reason the health endpoint exposes
-    it: while it is true, no text was read at all, and a UI that does not say
-    so is presenting wiring output as a reading.
-    """
-
-    fields_read = ExtractedFieldSerializer(
-        source="fields", many=True, read_only=True
-    )
-    unread_declarations = serializers.SerializerMethodField()
-    produced_usable_output = serializers.BooleanField(read_only=True)
-
-    class Meta:
-        model = ExtractionRun
-        fields = [
-            "id",
-            "engine_name",
-            "engine_version",
-            "is_placeholder",
-            "status",
-            "produced_usable_output",
-            "processing_ms",
-            "recognised_text",
-            "error_code",
-            "error_message",
-            "fields_read",
-            "unread_declarations",
-        ]
-        read_only_fields = fields
-
-    def get_unread_declarations(self, run: ExtractionRun) -> list[dict]:
-        """Read the unread-declaration channel out of the run's raw output.
-
-        Passed through in the shape `labelextract.contracts.UnreadDeclaration`
-        already defines - `key`, `evidence_text`, `box`, `confidence` - rather
-        than restated as a serializer here. The vocabulary belongs to the ml/
-        package, and a second declaration of it in the API layer would be a
-        second thing to keep in step with the first.
-
-        Defensive throughout because `raw_output` is a JSON column holding
-        engine-shaped data: an older run, a different engine or a failed run may
-        legitimately have no metadata at all. An empty list means "the engine
-        reported none", which on the current extractor is the usual case - see
-        docs/evaluation-results.md, where this channel did not fire once on real
-        photographs. It does not mean every declaration was read.
-        """
-        raw_output = run.raw_output or {}
-        metadata = raw_output.get("metadata") or {}
-        declarations = metadata.get("unread_declarations") or []
-        if not isinstance(declarations, list):
-            return []
-        return [item for item in declarations if isinstance(item, dict)]
-
-
-class ProductImageSerializer(serializers.ModelSerializer):
-    """The photograph a result is about."""
-
-    class Meta:
-        model = ProductImage
-        fields = [
-            "id",
-            "original_filename",
-            "image_format",
-            "width",
-            "height",
-            "size_bytes",
-            "view_type",
-            "status",
         ]
         read_only_fields = fields
 

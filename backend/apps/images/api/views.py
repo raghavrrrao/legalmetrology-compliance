@@ -3,6 +3,11 @@
 Upload a photograph; get back the whole result: what was read off the label,
 which rules applied, what was found, and the verdict with its explanation.
 
+For the reading on its own - no rules, no verdict, no `Product` row - see
+`POST /api/v1/extraction/` in `apps.extraction.api.views`. Both run the same
+extraction service over the same validated upload; this one carries on into the
+rule engine afterwards.
+
 Synchronous, and that is a decision rather than an oversight. `docs/api.md`
 left "synchronous or queued" open; extraction against the configured Tesseract
 pipeline measures at a 2.2 s median (docs/evaluation-results.md), which is
@@ -28,10 +33,10 @@ from rest_framework.response import Response
 from rest_framework.views import APIView
 
 from apps.catalog.models import ProductCategory
-from apps.compliance.api.permissions import IsAuthenticatedOrDemoPublic
 from apps.compliance.api.serializers import ComplianceCheckSerializer
 from apps.compliance.services import analysis_service
-from apps.images.api.serializers import ImageUploadSerializer
+from apps.core.api.permissions import IsAuthenticatedOrDemoPublic
+from apps.images.api.serializers import ImageAnalysisRequestSerializer
 
 logger = logging.getLogger(__name__)
 
@@ -58,7 +63,7 @@ class ImageAnalysisView(APIView):
     parser_classes = [MultiPartParser, FormParser]
 
     def post(self, request, *args, **kwargs) -> Response:
-        request_data = ImageUploadSerializer(data=request.data)
+        request_data = ImageAnalysisRequestSerializer(data=request.data)
         request_data.is_valid(raise_exception=True)
         validated = request_data.validated_data
 
