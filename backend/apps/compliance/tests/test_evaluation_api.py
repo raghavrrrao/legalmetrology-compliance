@@ -396,8 +396,16 @@ def test_an_unknown_category_code_is_rejected_rather_than_ignored(
     assert not ComplianceCheck.objects.exists()
 
 
-def test_a_get_on_the_collection_is_a_405_in_the_standard_envelope(client):
-    response = client.get(reverse("v1:compliance-evaluate"))
+def test_an_unsupported_method_on_the_collection_is_a_405_in_the_envelope(client):
+    """GET used to be asserted here and is now the history list.
+
+    The collection answers POST and GET; PUT is still not a method it has, and
+    the envelope for a wrong method is what this covers. The history list is
+    asserted in `test_history_api.py`.
+    """
+    response = client.put(
+        reverse("v1:compliance-evaluate"), {}, content_type="application/json"
+    )
 
     assert response.status_code == 405
     assert response.json()["error"]["code"] == "method_not_allowed"

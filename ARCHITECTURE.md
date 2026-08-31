@@ -129,6 +129,9 @@ Conventions:
 - Versioned under `/api/v1/`. A new version is a new namespace, not edits to v1.
 - Permissions deny by default (`IsAuthenticated`); public endpoints opt in.
 - Every error uses one envelope. See [docs/api.md](docs/api.md).
+- Every collection is paginated, with one shared class and an ordering that has
+  a unique tie-breaker. A response whose size grows with the age of the
+  deployment is not a contract.
 
 ### Service layer (`backend/apps/*/services/`)
 
