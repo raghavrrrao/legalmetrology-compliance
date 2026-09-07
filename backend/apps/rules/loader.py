@@ -30,6 +30,7 @@ _REQUIRED_KEYS = {"code", "title", "requirement", "source_status", "check_type"}
 
 _ALLOWED_KEYS = _REQUIRED_KEYS | {
     "legal_reference",
+    "requires_applicability_conditions",
     "source_note",
     "severity",
     "parameters",
@@ -176,6 +177,10 @@ def _validate(filename: str, data: dict[str, Any]) -> dict[str, Any]:
     if not isinstance(is_active, bool):
         fail("'is_active' must be true or false")
 
+    requires_applicability = data.get("requires_applicability_conditions", False)
+    if not isinstance(requires_applicability, bool):
+        fail("'requires_applicability_conditions' must be true or false")
+
     return {
         "code": data["code"].strip(),
         "title": data["title"].strip(),
@@ -190,6 +195,7 @@ def _validate(filename: str, data: dict[str, Any]) -> dict[str, Any]:
         "effective_from": effective_from,
         "effective_to": effective_to,
         "is_active": is_active,
+        "requires_applicability_conditions": requires_applicability,
     }
 
 

@@ -271,6 +271,25 @@ ProductCategory ◄────────► ComplianceRule
 
 A compliance check references both a product and an extraction run.
 
+The legal framework sits alongside the executable rules, joined to them by a
+single nullable foreign key:
+
+```text
+LegalInstrument
+      │ source
+      ▼
+LegalRule ──────► RuleRequirement ──────► RequirementApplicability
+ rules 1-34         one clause,                    │
+                    one version                    ▼
+                         ▲                ApplicabilityCondition
+                         │
+              ComplianceRule.rule_requirement
+```
+
+`RuleRequirement.supersedes` is a self-reference recording the version chain.
+`ComplianceFinding` also carries a nullable `rule_requirement` foreign key, so
+a recorded outcome names the clause it came from.
+
 ---
 
 # 6. Product Domain
@@ -550,6 +569,148 @@ files.
 
 Historical findings store rule-code and legal-reference snapshots so that
 future changes to the live rule do not silently rewrite historical findings.
+
+`rule_requirement` (ForeignKey → `RuleRequirement`, nullable, `PROTECT`) links
+this executable rule to the clause of the Rules it evaluates. It is the single
+link between the executable layer and the legal framework in section 9.2. Null
+is a normal state: a rule may be drafted before the clause it implements has
+been transcribed and verified.
+
+---
+
+## 9.2 Legal Framework Domain
+
+**Purpose:** Records what the Legal Metrology (Packaged Commodities) Rules,
+2011 require — clause by clause and version by version — **whether or not this
+software can evaluate any of it**. Loaded from `rules/framework/` by
+`manage.py load_legal_framework`.
+
+This is a separate layer from `ComplianceRule` because the executable layer
+cannot honestly represent rule 22 (maximum permissible error), rules 27–30
+(registration) or rule 32 (penalties): real obligations that no photograph
+decides. Storing a requirement here does **not** mean it is evaluated. 69
+requirements are on record; 2 are evaluated.
+
+See [`rules/FRAMEWORK.md`](../rules/FRAMEWORK.md) for the full treatment.
+
+### LegalInstrument
+
+One Gazette notification or official publication.
+
+| Field | Django type | DB nullable | Purpose |
+|---|---|---:|---|
+| `citation` | CharField | No | Unique, e.g. `G.S.R. 128(E)` |
+| `title` | CharField | No | May be empty |
+| `instrument_type` | CharField | No | `principal` · `amendment` · `consolidated_publication` |
+| `notified_on` | DateField | Yes | Date of notification |
+| `effective_from` | DateField | Yes | Date it comes into force |
+| `source_url` | URLField | No | May be empty |
+| `source_sha256` | CharField | No | Digest of the document read; may be empty |
+| `verification_status` | CharField | No | `verified` · `unverified` · `requires_review` |
+| `verification_note` | TextField | No | Required when verified |
+| `is_active` | BooleanField | No | |
+
+`notified_on` and `effective_from` are separate facts and frequently years
+apart. `effective_from` is null where an instrument commences different clauses
+on different dates; the per-clause date lives on the requirement.
+
+### LegalRule
+
+Rules 1–34, plus a placeholder for 32-A. A container, not an obligation.
+
+| Field | Django type | DB nullable | Purpose |
+|---|---|---:|---|
+| `rule_number` | CharField | No | Unique; `6`, `32A` |
+| `sort_key` | CharField | No | Derived, zero-padded: `006`, `032A` |
+| `chapter` | CharField | No | May be empty |
+| `title` | CharField | No | |
+| `description` | TextField | No | May be empty |
+| `automation_class` | CharField | No | Headline classification |
+| `verification_status` | CharField | No | |
+| `notes` | TextField | No | May be empty |
+| `is_active` | BooleanField | No | |
+
+Ordering is by `sort_key`, so rule 10 does not sort before rule 2 and 32-A
+falls between 32 and 33.
+
+### ApplicabilityCondition
+
+A fact about a package that decides whether a requirement applies.
+
+| Field | Django type | DB nullable | Purpose |
+|---|---|---:|---|
+| `code` | SlugField | No | Unique, e.g. `imported-product` |
+| `name` | CharField | No | |
+| `description` | TextField | No | May be empty |
+| `determination` | CharField | No | `product_category` · `user_declared` · `database` · `not_determinable` |
+| `determination_note` | TextField | No | May be empty |
+| `is_active` | BooleanField | No | |
+
+`determination` defaults to `not_determinable`, so a condition added without
+thought cannot silently license an automatic verdict. Nothing here may be
+inferred from OCR output.
+
+### RuleRequirement
+
+The versioned unit. A row is *"rule 6(10A) as inserted by G.S.R. 128(E)"*, not
+"rule 6(10A)".
+
+| Field | Django type | DB nullable | Purpose |
+|---|---|---:|---|
+| `rule` | ForeignKey → LegalRule | No | `PROTECT` |
+| `clause` | CharField | No | `6(1)(c)`, `6(10A)` |
+| `version` | PositiveSmallIntegerField | No | Increments per amendment |
+| `supersedes` | ForeignKey → self | Yes | `PROTECT` |
+| `title` | CharField | No | |
+| `requirement` | TextField | No | Plain-language restatement |
+| `verbatim_text` | TextField | No | The quotation; **empty when untranscribed** |
+| `detection_method` | CharField | No | What evidence could settle it at all |
+| `automation_class` | CharField | No | How far automation could ever get |
+| `implementation_status` | CharField | No | What blocks evaluation today |
+| `severity` | CharField | No | Shares `ComplianceRule.Severity` |
+| `source` | ForeignKey → LegalInstrument | Yes | `PROTECT` |
+| `legal_reference` | CharField | No | May be empty |
+| `verification_status` | CharField | No | |
+| `source_note` | TextField | No | Required when verified |
+| `effective_from` | DateField | Yes | |
+| `effective_to` | DateField | Yes | |
+| `is_active` | BooleanField | No | |
+| `applicability_conditions` | ManyToMany → ApplicabilityCondition | N/A | Through `RequirementApplicability` |
+
+Constraints: unique on (`clause`, `version`); index
+`requirement_status_auto_idx` on (`implementation_status`, `automation_class`);
+ordering by (`rule__sort_key`, `clause`, `version`).
+
+**Amending a clause adds a row; it never edits one.** Findings snapshot what
+they evaluated, and a requirement rewritten in place would silently change what
+a historical finding meant.
+
+`detection_method` choices: `ocr`, `cv`, `ocr_cv`, `database`, `user_input`,
+`digital_ecommerce`, `physical_inspection`, `administrative`, `manual_review`,
+`not_applicable`. Only the first three are evaluable from a photograph.
+
+`automation_class` choices: `image_automatable`, `partially_automatable`,
+`digital_ecommerce`, `physical_measurement`, `administrative`, `manual_review`.
+
+`implementation_status` choices: `implemented`, `implementable_now`,
+`implementable_with_new_check`, `blocked_by_missing_applicability_data`,
+`blocked_by_missing_extraction_field`, `legal_review_required`,
+`not_applicable_to_project_scope`.
+
+### RequirementApplicability
+
+Through model. Records **which way round** a condition bites, which is not
+recoverable from the pair alone.
+
+| Field | Django type | DB nullable | Purpose |
+|---|---|---:|---|
+| `requirement` | ForeignKey → RuleRequirement | No | `CASCADE` |
+| `condition` | ForeignKey → ApplicabilityCondition | No | `PROTECT` |
+| `mode` | CharField | No | `requires` · `exempts` · `scope_gate` |
+| `note` | TextField | No | May be empty |
+
+Unique on (`requirement`, `condition`, `mode`) — the triple, not the pair, so
+one condition can both require and exempt across different requirements.
 
 ---
 

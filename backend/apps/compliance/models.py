@@ -104,6 +104,17 @@ class ComplianceCheck(UUIDPrimaryKeyModel, TimeStampedModel):
         help_text="Rules that could not be decided, usually because the image "
                   "was not readable.",
     )
+    rules_not_applicable = models.PositiveIntegerField(
+        default=0,
+        help_text=(
+            "Rules selected for this product's category that applicability "
+            "then ruled out - an exemption under rule 26, a scope gate under "
+            "rule 3, or a clause that binds only packages of a kind this one "
+            "is not. Counted separately from `rules_evaluated` because an "
+            "exemption is not evidence of compliance: a package every rule "
+            "excused has had nothing checked, and must reach REVIEW_REQUIRED."
+        ),
+    )
 
     summary = models.TextField(
         blank=True,
@@ -169,11 +180,19 @@ class ComplianceFinding(TimeStampedModel):
         INCONCLUSIVE is the value that carries the weight. "We could not read
         the photograph" is not "the declaration is missing", and a finding that
         collapsed the two would report bad photography as a legal violation.
+
+        NOT_APPLICABLE answers a different question: the rule does not govern
+        this package at all, so nothing about its declarations was examined. It
+        is recorded rather than skipped because "rule 6(1)(aa) did not apply,
+        because the package was declared domestic" is information a reviewer
+        needs - and because a silently skipped rule is indistinguishable from
+        one that was never loaded.
         """
 
         PASSED = "passed", "Passed"
         FAILED = "failed", "Failed"
         INCONCLUSIVE = "inconclusive", "Inconclusive"
+        NOT_APPLICABLE = "not_applicable", "Not applicable"
 
     compliance_check = models.ForeignKey(
         ComplianceCheck, on_delete=models.CASCADE, related_name="findings"

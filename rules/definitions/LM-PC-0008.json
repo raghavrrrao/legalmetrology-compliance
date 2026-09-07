@@ -1,0 +1,20 @@
+{
+  "_comment_1": "Rule 13(5) LMPC 2011 - International System of Units for the net quantity.",
+  "_comment_2": "STEP 2. rules/INVENTORY.md names rule 13 'the strongest candidate for the next real rule': objective, purely textual, no applicability input beyond the declared value, and net_quantity is already extracted.",
+  "_comment_3": "THREE-WAY BY DESIGN. An SI unit passes. A unit KNOWN not to be SI (ounce, pound, pint) fails. A unit that cannot be placed is INCONCLUSIVE, not a violation - 'oz' misread from a smudged 'g' is indistinguishable from a genuine ounce, and reporting that as unlawful would turn an OCR defect into a legal finding.",
+  "code": "LM-PC-0008",
+  "title": "Net quantity in units of the International System of Units",
+  "requirement": "The net quantity must be furnished in units of the International System of Units. Where the commodity is sold by number, the number or unit or piece or pair or set may be used instead.",
+  "legal_reference": "Rule 13(5) of the Legal Metrology (Packaged Commodities) Rules, 2011",
+  "source_status": "verified",
+  "source_note": "Checked 2026-08-30 by Claude Code (automated legal-source check) for raghavrrrao against the Department of Consumer Affairs consolidated publication 'Book on Legal Metrology Packaged Commodities Rules, 2011 with all amendments' (sha256 0ef948f9c6b89f5dfb20d384861901714fd0dc54fc67b5b86c772d2c3f983a4b; server Last-Modified 2025-04-14), via the verbatim quotation recorded in rules/INVENTORY.md. Clause 13(5)(i) reads verbatim: 'No system of units other than the International System of Units shall be used in furnishing the net quantity of the packages'. Clause 13(5)(ii), as substituted w.e.f. 1 October 2022, reads verbatim: 'for items sold by number, the number or unit or piece or pair or set or such other word which represents the quantity in the package shall be mentioned.' HUMAN COUNTER-REVIEW BY A NAMED REVIEWER IS OUTSTANDING, and the 2022-2025 amendment-chain gap in rules/SOURCES.md applies.",
+  "severity": "major",
+  "check_type": "si_unit",
+  "parameters": {},
+  "applies_to_category_codes": [
+    "packaged-commodity"
+  ],
+  "effective_from": "2022-10-01",
+  "effective_to": null,
+  "is_active": true
+}

@@ -399,6 +399,7 @@ Each row carries **only** what a history list shows or navigates by:
 | `extraction_run_id` | The reading it was drawn from. |
 | `product_category_code` | Whose rules were considered, or `null` when the commodity was not known. |
 | `findings_count` | How many rules were examined. |
+| `rules_not_applicable` | How many rules were ruled out as not governing this package. **Not passes.** |
 | `violations_count` | How many the package was found to fail. |
 
 `status` and `result` are two different questions and stay separate: `status`
@@ -471,24 +472,36 @@ Each finding carries:
 |---|---|
 | `rule_code`, `title`, `requirement` | What was required, in the rule's own words. Snapshotted, so an amended rule cannot change what a past finding meant. |
 | `legal_reference` | Where that requirement comes from. |
+| `clause` | The sub-rule this concerns, as the Rules number it — `6(1)(c)`. Empty when the rule is not mapped to the legal framework. |
+| `legal_source_citation` | The instrument that established the clause as evaluated — `G.S.R. 629(E)`. Snapshotted, so it stays legible after a later amendment supersedes it. |
 | `check_type` | Which registered deterministic check asked the question. |
+| `detection_method` | What kind of evidence could settle this requirement **at all**. See below. |
 | `field_key` | Which declaration it concerns. |
 | `status` | `passed` / `failed` / `inconclusive`. |
 | `message` | What was observed and why, in plain language. |
 | `evidence_excerpt`, `bounding_box` | What was read, and where on the image. |
+| `extracted_raw_value` | The declaration exactly as recognised, before normalisation. |
+| `extracted_normalized_value` | The normalised interpretation of it, or `null` when no normaliser ran. |
 | `extracted_confidence` | How sure the OCR/ML layer was about the reading behind this finding. |
+| `applicability_note` | Why the rule was applied, and what about its applicability could **not** be established. |
 | `severity` | Triage ranking only. It carries **no legal weight** — `rules/SCHEMA.md` says so, and the UI must not present it as one. |
 | `downgraded_from_failed` | The check failed, but the rule is not verified against the authoritative legal text, so the engine recorded it as inconclusive rather than as a violation. |
 | `details` | Validator diagnostics. Shape is validator-specific. |
 | `violation` | Id of the violation this became, or `null`. |
 
-Three of these are easy to misread:
+Five of these are easy to misread:
 
 - **`inconclusive` is not a soft fail.** It means the check could not be
-  decided, usually because the photograph was not readable. Treating it as
-  either a pass or a violation is the most damaging thing a client can do with
-  this data — it is the difference between "your package is illegal" and "we
-  could not read your photo".
+  decided — usually because the photograph was not readable, or because a fact
+  deciding whether the rule applies was never declared. Treating it as either a
+  pass or a violation is the most damaging thing a client can do with this data
+  — it is the difference between "your package is illegal" and "we could not
+  read your photo".
+- **`not_applicable` is not a pass either.** The rule does not govern this
+  package: it was exempted under rule 26, taken out of scope by rule 3, or
+  binds only packages of a kind this one is not. Nothing about its declarations
+  was examined, so counting it as a pass turns a set of exemptions into a clean
+  bill of health. `applicability_note` says which condition ruled it out.
 - **`extracted_confidence` is recorded, not enforced.** No rule in this
   repository conditions its outcome on it, so a `passed` finding built on a
   low-confidence reading is still `passed`. The number is exposed precisely so
@@ -498,6 +511,27 @@ Three of these are easy to misread:
 - **`downgraded_from_failed` is a legal safeguard firing**, not a data problem.
   An unverified rule can flag a package for human review; it can never tell a
   user their package breaks the law.
+- **`detection_method` says whether a photograph could ever have settled
+  this.** Values other than `ocr`, `cv` and `ocr_cv` name evidence this
+  pipeline does not have — a physical weighing, a regulator's register, an
+  e-commerce listing — and a finding carrying one of those is a prompt for
+  human review whatever its `status` reads. No such rule is currently active,
+  but the field is part of the contract so that adding one cannot silently
+  present an unanswerable question as an answer.
+- **`applicability_note` is not boilerplate.** It carries the caveat that
+  applies to **every** result, including passing ones: applicability is decided
+  from the commodity category alone, and the facts rule 3 and rule 26 turn on —
+  net quantity as a trusted value, buyer type, commodity class — are not
+  collected. So a rule may have been applied to a package that is outside the
+  Rules entirely, and any relaxation granted under rule 33 is invisible here. A
+  client that hides this field is presenting a narrower claim than the data
+  supports.
+
+`extracted_raw_value` and `extracted_normalized_value` are both present and
+neither replaces the other. The raw text is what was recognised; the normalised
+value is an interpretation of it, and is `null` when no normaliser exists for
+that declaration — never because the reading was empty. Show the raw value
+where a reviewer needs to check the interpretation.
 
 ### Which endpoints the frontend actually calls
 

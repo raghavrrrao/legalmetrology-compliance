@@ -161,12 +161,48 @@ def _register_builtin_checks() -> None:
         check_field_presence,
         validate_field_presence_parameters,
     )
+    from apps.rules.checks.field_presence_any_of import (
+        check_field_presence_any_of,
+        validate_field_presence_any_of_parameters,
+    )
+    from apps.rules.checks.quantity_units import (
+        check_prohibited_counting_unit,
+        check_si_unit,
+        validate_no_parameters,
+    )
 
     register_check(
         "field_presence",
         check_field_presence,
         parameter_validator=validate_field_presence_parameters,
         description="Was this declaration found in the extracted label data?",
+    )
+    register_check(
+        "field_presence_any_of",
+        check_field_presence_any_of,
+        parameter_validator=validate_field_presence_any_of_parameters,
+        description=(
+            "Was at least one of these alternative declarations found? For a "
+            "disjunctive clause such as rule 6(1)(a)."
+        ),
+    )
+    register_check(
+        "si_unit",
+        check_si_unit,
+        parameter_validator=validate_no_parameters,
+        description=(
+            "Is the net quantity expressed in SI units, or by number? "
+            "Rule 13(5)."
+        ),
+    )
+    register_check(
+        "prohibited_counting_unit",
+        check_prohibited_counting_unit,
+        parameter_validator=validate_no_parameters,
+        description=(
+            "Does the net quantity use dozen, score, gross or great gross? "
+            "Rule 13(4)."
+        ),
     )
 
 

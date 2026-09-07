@@ -71,6 +71,7 @@ _CONDITION_REQUIRED = {"code", "name", "determination"}
 _CONDITION_ALLOWED = _CONDITION_REQUIRED | {
     "description",
     "determination_note",
+    "category_code",
     "is_active",
 }
 
@@ -321,6 +322,7 @@ def parse_conditions(directory: Path) -> list[dict[str, Any]]:
                     ApplicabilityCondition.Determination,
                 ),
                 "determination_note": (entry.get("determination_note") or "").strip(),
+                "category_code": (entry.get("category_code") or "").strip(),
                 "is_active": _flag(
                     filename, label, "is_active", entry.get("is_active", True)
                 ),

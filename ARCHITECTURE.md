@@ -71,9 +71,11 @@ The end-to-end flow the whole system exists to serve:
         ▼
   apps.compliance.services.engine
         │
-        ├─▶ which rules apply?   product category + effective date + active
-        ├─▶ evaluate each        via apps.rules.checks validators
-        ├─▶ verified rules only  can produce a violation
+        ├─▶ which rules are candidates?  category + effective date + active
+        ├─▶ do they GOVERN this package? rules 3 and 26, then each clause's
+        │                                conditions - applicability.py
+        ├─▶ evaluate the ones that do    via apps.rules.checks validators
+        ├─▶ verified rules only          can produce a violation
         ▼
   ComplianceCheck + ComplianceViolation + ComplianceEvidence
         │
@@ -145,9 +147,14 @@ Owns orchestration and business rules. Four services exist today:
   what comes back against the contract, and persists the result.
   **The only backend module that reaches the ML runtime** — `registry`,
   `pipeline`, `exceptions`, and any engine behind them.
-- `compliance/services/engine.py` — determines applicable rules, evaluates
-  them, records a finding for every outcome plus violations and evidence for
-  the failures, and decides the overall result.
+- `compliance/services/applicability.py` — decides whether a clause governs a
+  package at all, from facts declared about the submission, **before** any
+  validator runs. Three-valued: an unestablished fact yields "undetermined",
+  never a verdict.
+- `compliance/services/engine.py` — selects candidate rules, asks applicability
+  which of them govern the package, evaluates those, records a finding for
+  every outcome plus violations and evidence for the failures, and decides the
+  overall result.
 - `compliance/services/analysis_service.py` — composition only, with three
   entry points into that line: `analyse_upload(file)` runs all of it,
   `analyse_image(image)` re-reads a stored photograph, and `evaluate_run(run)`
@@ -205,7 +212,10 @@ An OCR engine reads characters; it has no opinion about the law.
 
 ### Rules (`rules/` + `backend/apps/rules/`)
 
-Owns the compliance requirements, as reviewable data.
+Owns the compliance requirements, as reviewable data. **Two layers**, and the
+distinction between them is load-bearing.
+
+**The executable layer** — what the engine runs.
 
 - `rules/definitions/*.json` — the rules, in Git, reviewed via pull request.
 - `apps/rules/loader.py` — strict validation and idempotent import.
@@ -218,16 +228,59 @@ declaration is required for this commodity"). Machinery and legal content are
 independently reviewable, which is why we can ship working machinery with zero
 legal content.
 
+**The legal framework** — what the Rules require, evaluable or not.
+
+- `rules/framework/*.json` — instruments, applicability conditions, and rules
+  1–34 with their versioned clause-level requirements.
+- `apps/rules/framework_loader.py` + `manage.py load_legal_framework`.
+- `apps/rules/models.py` — `LegalInstrument`, `LegalRule`, `RuleRequirement`,
+  `ApplicabilityCondition`, `RequirementApplicability`.
+
+The executable layer cannot honestly represent rule 22 (maximum permissible
+error), rules 27–30 (registration) or rule 32 (penalties): they are real
+obligations that **no photograph decides**. Recording them only as executable
+rules would mean either hiding them — leaving the widest compliance risk
+invisible — or having the engine evaluate a JPEG against a weighing obligation.
+
+So every requirement carries a `detection_method` saying what evidence could
+settle it *at all*. Anything outside `ocr`/`cv`/`ocr_cv` reaches the user as
+`REVIEW_REQUIRED`, not because the engine is immature but because the evidence
+is not in the building. Requirements are **versioned**: an amendment adds a row
+and never edits one, so a finding recorded last year keeps citing the text that
+was in force then.
+
+**Recording a requirement does not mean it is evaluated.** 69 requirements are
+on record; 8 are evaluated. See [`rules/FRAMEWORK.md`](rules/FRAMEWORK.md).
+
 ### Compliance engine (`backend/apps/compliance/`)
 
-Owns the verdict. Three guarantees, each covered by a test in
-`apps/compliance/tests/test_engine.py`:
+Owns the verdict. The pipeline, in order:
 
-1. **No rules checked → never `COMPLIANT`.** Returns `REVIEW_REQUIRED`.
+```
+Product + ExtractionRun
+    -> applicability      rules 3 and 26, then per clause    (applicability.py)
+    -> evaluate           the rules that actually govern it  (rules/checks/)
+    -> findings           every outcome, with its legal context
+    -> violations         failures against verified rules only
+    -> overall result
+```
+
+**Applicability is settled before any validator runs.** A rule that does not
+govern a package must not read its label at all — evaluating and discarding
+would still let a misread declaration reach a finding on a package the clause
+never covered.
+
+Four guarantees, each covered by a test:
+
+1. **No rules checked → never `COMPLIANT`.** Returns `REVIEW_REQUIRED`. This
+   now covers the case where every rule was ruled out by an exemption: a set of
+   exemptions is not a clean bill of health.
 2. **An unverified rule can never produce a violation.** It can flag a product
    for human review; it cannot tell a user their package breaks the law.
 3. **An unreadable photograph is never a missing declaration.** Extraction
    quality is checked before an absence is treated as a finding.
+4. **An unestablished fact never produces a verdict.** A clause turning on a
+   condition nobody declared is inconclusive — not applied, not excused.
 
 Result states:
 
@@ -237,6 +290,12 @@ Result states:
 | `PARTIALLY_COMPLIANT` | Some rules failed, others could not be determined. |
 | `NON_COMPLIANT` | Verified rules were not met, with evidence. |
 | `REVIEW_REQUIRED` | Nothing could responsibly be concluded. **The default.** |
+
+Per-finding status is four-valued: `passed`, `failed`, `inconclusive` and
+`not_applicable`. The last means the rule does not govern this package, so
+nothing about its declarations was examined — counted separately from
+`rules_evaluated`, because folding it into `passed` would let exemptions read
+as compliance.
 
 ## Ownership and parallel work
 

@@ -134,6 +134,23 @@ class ComplianceRule(TimeStampedModel):
         ),
     )
 
+    requires_applicability_conditions = models.BooleanField(
+        default=False,
+        help_text=(
+            "True when this rule is only safe to evaluate once its clause's "
+            "applicability conditions have been resolved - i.e. it was unblocked "
+            "BY applicability rather than despite it.\n\n"
+            "The failure this prevents: rule 6(1)(aa) binds imported packages "
+            "only. With the legal framework not loaded, `rule_requirement` is "
+            "null, no trigger condition is found, and the rule would apply to "
+            "every package - failing every domestic one for want of a country "
+            "of origin it never had to declare. That is the same shape of bug "
+            "as LM-PC-0002, which reported a violation against every product.\n\n"
+            "So the engine records INCONCLUSIVE rather than evaluating such a "
+            "rule unmapped. Set it for any rule whose activation depended on a "
+            "trigger or an exemption."
+        ),
+    )
     rule_requirement = models.ForeignKey(
         "RuleRequirement",
         null=True,
@@ -631,6 +648,19 @@ class ApplicabilityCondition(TimeStampedModel):
         blank=True,
         help_text="Why it is or is not determinable, and what would change that.",
     )
+    category_code = models.SlugField(
+        max_length=64,
+        blank=True,
+        help_text=(
+            "For a PRODUCT_CATEGORY condition, the `ProductCategory.code` whose "
+            "ancestry answers it: a product in 'packaged-food', or any "
+            "descendant of it, holds the 'food-article' condition. Blank for "
+            "every other determination, and required for this one - without it "
+            "PRODUCT_CATEGORY would be a label with nothing behind it, and the "
+            "resolver would report the fact unknown for a product whose "
+            "category already settles it."
+        ),
+    )
 
     is_active = models.BooleanField(default=True, db_index=True)
 
@@ -639,6 +669,33 @@ class ApplicabilityCondition(TimeStampedModel):
 
     def __str__(self) -> str:
         return f"{self.name} ({self.code})"
+
+    def clean(self) -> None:
+        super().clean()
+        if (
+            self.determination == self.Determination.PRODUCT_CATEGORY
+            and not self.category_code.strip()
+        ):
+            raise ValidationError(
+                {
+                    "category_code": (
+                        "A condition determined from the product category must "
+                        "name the category code that answers it."
+                    )
+                }
+            )
+        if (
+            self.category_code.strip()
+            and self.determination != self.Determination.PRODUCT_CATEGORY
+        ):
+            raise ValidationError(
+                {
+                    "category_code": (
+                        "Only a PRODUCT_CATEGORY condition may name a category "
+                        "code; this one is determined some other way."
+                    )
+                }
+            )
 
     @property
     def is_determinable(self) -> bool:
@@ -899,6 +956,21 @@ class RequirementApplicability(TimeStampedModel):
         #: The condition removes the package from the Chapter, or from the
         #: Rules altogether - rule 3 and rule 26.
         SCOPE_GATE = "scope_gate", "Removes the package from scope entirely"
+        #: The condition cancels a SCOPE_GATE on the same requirement, so the
+        #: Rules continue to apply. A separate value because it is the exact
+        #: opposite of SCOPE_GATE and was previously recorded as REQUIRES,
+        #: which already means something else on this model.
+        #:
+        #: Two provisos in rule 26 work this way and are the reason it exists:
+        #: clause (a) exempts packages of ten gram or less, but not tobacco;
+        #: clause (c) exempts DPCO formulations, but not medical devices
+        #: declared as drugs. Reading either as REQUIRES would say the Rules
+        #: apply *only* to tobacco and medical devices - the inverse of the
+        #: proviso, and a reading that would exempt almost every package.
+        WITHHOLDS_EXEMPTION = (
+            "withholds_exemption",
+            "Cancels an exemption, so the Rules continue to apply",
+        )
 
     requirement = models.ForeignKey(
         RuleRequirement, on_delete=models.CASCADE, related_name="applicability_links"
@@ -908,7 +980,7 @@ class RequirementApplicability(TimeStampedModel):
         on_delete=models.PROTECT,
         related_name="requirement_links",
     )
-    mode = models.CharField(max_length=16, choices=Mode.choices, db_index=True)
+    mode = models.CharField(max_length=24, choices=Mode.choices, db_index=True)
     note = models.TextField(
         blank=True,
         help_text="The proviso or explanation this link comes from, quoted or "

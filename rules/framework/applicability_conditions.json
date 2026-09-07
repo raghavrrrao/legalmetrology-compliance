@@ -1,0 +1,282 @@
+{
+  "_comment_1": "The facts about a package that decide whether a requirement applies to it. A condition code is NOT a legal claim - it is a question the framework needs to be able to ask. What the law does with the answer lives on the requirement, in rules.json, through a REQUIRES / EXEMPTS / SCOPE_GATE link.",
+  "_comment_2": "'determination' is the field that matters and it is mostly 'not_determinable'. That is the honest state of this system, not an oversight: rules/INVENTORY.md records that Product carries no net quantity, commodity type, import status, buyer type or package-role as APPLICABILITY INPUTS, and that this is the single widest correctness caveat in the project.",
+  "_comment_3": "NOTHING HERE MAY BE INFERRED FROM OCR. A package that omits an importer's name is not thereby domestic - it may be unlawful, or badly photographed. INVENTORY.md states the point directly against rule 6(1)(aa): inferring import status from the presence of importer_name would make the rule self-fulfilling, because a package omitting both would look exempt.",
+  "_comment_4": "Some conditions below carry no requirement link at all. They are the special categories the project must be able to represent (Step 1 brief) for which the verified material in rules/SOURCES.md and rules/INVENTORY.md establishes no clause. Those say so in determination_note and must not be attached to a requirement until a named reviewer supplies the source.",
+  "conditions": [
+    {
+      "code": "ordinary-packaged-commodity",
+      "name": "Ordinary packaged commodity intended for retail sale",
+      "description": "A pre-packed commodity intended for retail sale, to which Chapter II applies in the ordinary way - i.e. none of the scope gates in rule 3 or rule 26 removes it.",
+      "determination": "not_determinable",
+      "determination_note": "Cannot be established affirmatively, because it is the absence of every scope gate below and those gates are themselves not determinable. Treating a submission as ordinary by default is exactly the over-application rules/INVENTORY.md records against rule 3 and rule 26."
+    },
+    {
+      "code": "food-article",
+      "name": "Package containing food articles",
+      "description": "A package containing food articles, for which Explanation III to rule 6(1)(a) disapplies that clause in favour of the Food Safety and Standards Act, 2006 and the rules made thereunder.",
+      "determination": "product_category",
+      "category_code": "packaged-food",
+      "determination_note": "The one condition in this file that IS determinable today: the 'packaged-food' ProductCategory expresses it, and LM-PC-0001 already encodes the carve-out by targeting 'packaged-non-food' only. Note the category is an internal grouping (see seed_categories.py), so it records how a submission was classified, not an adjudication that the contents are food articles within the meaning of the FSS Act."
+    },
+    {
+      "code": "imported-product",
+      "name": "Imported product or imported package",
+      "description": "A product imported into India. Triggers rule 6(1)(aa) (country of origin), the importer limb of rule 6(1)(a) and rule 10(1), and rule 6(10A) for e-commerce listings.",
+      "determination": "user_declared",
+      "determination_note": "Not recorded anywhere on Product and NOT inferable from extraction. rules/INVENTORY.md: 'Inferring it from the presence of importer_name would make the rule self-fulfilling: a package that omits both would look exempt.' INVENTORY calls rule 6(1)(aa) the closest requirement in the Rules to implementable - it needs this one applicability input, not a new check type. STEP 2: this fact is now COLLECTABLE - a submitter can state it through ProductApplicabilityDeclaration, and the engine reads it before evaluating any clause it gates. It is 'user_declared', not 'verified': the system records who said so and never confirms it against the package. Left unstated it is UNKNOWN, and a clause turning on it reaches REVIEW_REQUIRED rather than a verdict."
+    },
+    {
+      "code": "wholesale-package",
+      "name": "Wholesale package",
+      "description": "A wholesale package within Chapter III, to which rule 24 applies instead of the Chapter II declarations.",
+      "determination": "user_declared",
+      "determination_note": "The system cannot tell a wholesale package from a retail one, and the two rule sets are mutually exclusive. rules/INVENTORY.md records this as an active false-positive source: rule 6 is currently applied to wholesale packages, which it does not govern. STEP 2: this fact is now COLLECTABLE - a submitter can state it through ProductApplicabilityDeclaration, and the engine reads it before evaluating any clause it gates. It is 'user_declared', not 'verified': the system records who said so and never confirms it against the package. Left unstated it is UNKNOWN, and a clause turning on it reaches REVIEW_REQUIRED rather than a verdict."
+    },
+    {
+      "code": "export-package",
+      "name": "Export package",
+      "description": "A package packed for export, which rule 25 bars from sale in India unless re-packed or relabelled in accordance with Chapter II.",
+      "determination": "user_declared",
+      "determination_note": "Requires knowing both that the package is an export package and that it is offered for sale in India. Neither is recorded. STEP 2: this fact is now COLLECTABLE - a submitter can state it through ProductApplicabilityDeclaration, and the engine reads it before evaluating any clause it gates. It is 'user_declared', not 'verified': the system records who said so and never confirms it against the package. Left unstated it is UNKNOWN, and a clause turning on it reaches REVIEW_REQUIRED rather than a verdict."
+    },
+    {
+      "code": "industrial-consumer",
+      "name": "Package meant for an industrial consumer",
+      "description": "A packaged commodity meant for industrial consumers, which rule 3(c) places outside Chapter II entirely.",
+      "determination": "user_declared",
+      "determination_note": "Buyer type is never known to this system. A scope gate, so getting it wrong means evaluating a package the Chapter does not govern at all. STEP 2: this fact is now COLLECTABLE - a submitter can state it through ProductApplicabilityDeclaration, and the engine reads it before evaluating any clause it gates. It is 'user_declared', not 'verified': the system records who said so and never confirms it against the package. Left unstated it is UNKNOWN, and a clause turning on it reaches REVIEW_REQUIRED rather than a verdict."
+    },
+    {
+      "code": "institutional-consumer",
+      "name": "Package meant for an institutional consumer",
+      "description": "A packaged commodity meant for institutional consumers, which rule 3(c) places outside Chapter II entirely.",
+      "determination": "user_declared",
+      "determination_note": "Buyer type is never known to this system. See 'industrial-consumer'. STEP 2: this fact is now COLLECTABLE - a submitter can state it through ProductApplicabilityDeclaration, and the engine reads it before evaluating any clause it gates. It is 'user_declared', not 'verified': the system records who said so and never confirms it against the package. Left unstated it is UNKNOWN, and a clause turning on it reaches REVIEW_REQUIRED rather than a verdict."
+    },
+    {
+      "code": "quantity-above-25kg-25l",
+      "name": "Net quantity of more than 25 kg or 25 litre",
+      "description": "A package containing more than 25 kilogram or 25 litre, which rule 3(a) places outside Chapter II.",
+      "determination": "user_declared",
+      "determination_note": "Net quantity is extracted as a LABEL READING, never as trusted applicability data - the reading is the thing being checked, and using it to decide whether the check applies would be circular. A declared quantity may also be absent, misread, or false, which is the case the rules exist for. STEP 2: this fact is now COLLECTABLE - a submitter can state it through ProductApplicabilityDeclaration, and the engine reads it before evaluating any clause it gates. It is 'user_declared', not 'verified': the system records who said so and never confirms it against the package. Left unstated it is UNKNOWN, and a clause turning on it reaches REVIEW_REQUIRED rather than a verdict."
+    },
+    {
+      "code": "bags-above-50kg",
+      "name": "Cement, fertilizer or agricultural farm produce in bags above 50 kg",
+      "description": "Cement, fertilizer and agricultural farm produce sold in bags above 50 kilogram, which rule 3(b) places outside Chapter II.",
+      "determination": "user_declared",
+      "determination_note": "Needs both a commodity type the taxonomy does not carry and a trusted net quantity. STEP 2: this fact is now COLLECTABLE - a submitter can state it through ProductApplicabilityDeclaration, and the engine reads it before evaluating any clause it gates. It is 'user_declared', not 'verified': the system records who said so and never confirms it against the package. Left unstated it is UNKNOWN, and a clause turning on it reaches REVIEW_REQUIRED rather than a verdict."
+    },
+    {
+      "code": "quantity-10g-10ml-or-less",
+      "name": "Net weight or measure of ten gram or ten millilitre or less",
+      "description": "A package whose net weight or measure is ten gram or ten millilitre or less, if sold by weight or measure, which rule 26(a) places outside the Rules altogether.",
+      "determination": "user_declared",
+      "determination_note": "See 'quantity-above-25kg-25l'. Rule 26 gates EVERY rule in the framework, so a 5 g sachet is currently evaluated against rules that do not apply to it. STEP 2: this fact is now COLLECTABLE - a submitter can state it through ProductApplicabilityDeclaration, and the engine reads it before evaluating any clause it gates. It is 'user_declared', not 'verified': the system records who said so and never confirms it against the package. Left unstated it is UNKNOWN, and a clause turning on it reaches REVIEW_REQUIRED rather than a verdict."
+    },
+    {
+      "code": "tobacco-product",
+      "name": "Tobacco or tobacco product",
+      "description": "Tobacco and tobacco products, to which the proviso inserted by G.S.R. 385(E) w.e.f. 1 July 2016 disapplies the rule 26(a) small-package exemption.",
+      "determination": "user_declared",
+      "determination_note": "No commodity taxonomy entry. Note the direction: this condition REMOVES an exemption rather than granting one. STEP 2: this fact is now COLLECTABLE - a submitter can state it through ProductApplicabilityDeclaration, and the engine reads it before evaluating any clause it gates. It is 'user_declared', not 'verified': the system records who said so and never confirms it against the package. Left unstated it is UNKNOWN, and a clause turning on it reaches REVIEW_REQUIRED rather than a verdict."
+    },
+    {
+      "code": "fast-food-restaurant-packed",
+      "name": "Fast food items packed by a restaurant or hotel",
+      "description": "Fast food items packed by a restaurant or hotel and the like, which rule 26(b) places outside the Rules altogether.",
+      "determination": "user_declared",
+      "determination_note": "Nothing records who packed a submission or in what setting. STEP 2: this fact is now COLLECTABLE - a submitter can state it through ProductApplicabilityDeclaration, and the engine reads it before evaluating any clause it gates. It is 'user_declared', not 'verified': the system records who said so and never confirms it against the package. Left unstated it is UNKNOWN, and a clause turning on it reaches REVIEW_REQUIRED rather than a verdict."
+    },
+    {
+      "code": "dpco-formulation",
+      "name": "Scheduled or non-scheduled formulation under the DPCO, 2013",
+      "description": "Scheduled and non-scheduled formulations covered under the Drugs (Price Control) Order, 2013, which rule 26(c) places outside the Rules - save that no exemption applies to medical devices declared as drugs.",
+      "determination": "user_declared",
+      "determination_note": "Would need a pharmaceutical reference dataset the system does not hold. Interacts with 'medical-device': the rule 26(c) proviso withholds the exemption from medical devices declared as drugs, so the two conditions must be answered together. STEP 2: this fact is now COLLECTABLE - a submitter can state it through ProductApplicabilityDeclaration, and the engine reads it before evaluating any clause it gates. It is 'user_declared', not 'verified': the system records who said so and never confirms it against the package. Left unstated it is UNKNOWN, and a clause turning on it reaches REVIEW_REQUIRED rather than a verdict."
+    },
+    {
+      "code": "medical-device",
+      "name": "Medical device",
+      "description": "A medical device. Two distinct provisions in the verified material turn on this: the proviso to rule 26(c), under which no exemption applies to medical devices declared as drugs; and the Legal Metrology (Packaged Commodities) Amendment Rules, 2025, which harmonise the Rules with the Medical Devices Rules, 2017 for the size of numerals and letters, for rule 33 relaxations and for principal-display-panel placement.",
+      "determination": "user_declared",
+      "determination_note": "No taxonomy entry and no reference dataset. NOTE ALSO that the 2025 amendment is known to this project only through a Press Information Bureau release, not the Gazette text - see the instrument 'Legal Metrology (Packaged Commodities) Amendment Rules, 2025', which is flagged requires_review. The condition is recorded; the requirements that would turn on it are not, because their wording has not been read from the notification. STEP 2: this fact is now COLLECTABLE - a submitter can state it through ProductApplicabilityDeclaration, and the engine reads it before evaluating any clause it gates. It is 'user_declared', not 'verified': the system records who said so and never confirms it against the package. Left unstated it is UNKNOWN, and a clause turning on it reaches REVIEW_REQUIRED rather than a verdict."
+    },
+    {
+      "code": "thread-coil-handloom",
+      "name": "Thread sold in coil to handloom weavers",
+      "description": "Thread sold in coil to handloom weavers, listed in rule 26 among the packages the Rules do not apply to.",
+      "determination": "user_declared",
+      "determination_note": "No commodity taxonomy entry. STEP 2: this fact is now COLLECTABLE - a submitter can state it through ProductApplicabilityDeclaration, and the engine reads it before evaluating any clause it gates. It is 'user_declared', not 'verified': the system records who said so and never confirms it against the package. Left unstated it is UNKNOWN, and a clause turning on it reaches REVIEW_REQUIRED rather than a verdict."
+    },
+    {
+      "code": "alcoholic-beverage",
+      "name": "Alcoholic beverage or spirituous liquor",
+      "description": "Packages containing alcoholic beverages or spirituous liquor, for which the proviso to rule 6(1)(e) applies State Excise Laws in place of the retail-sale-price declaration where those laws provide for it.",
+      "determination": "user_declared",
+      "determination_note": "No commodity taxonomy entry. One of the reasons LM-PC-0005 (retail sale price) ships inactive. STEP 2: this fact is now COLLECTABLE - a submitter can state it through ProductApplicabilityDeclaration, and the engine reads it before evaluating any clause it gates. It is 'user_declared', not 'verified': the system records who said so and never confirms it against the package. Left unstated it is UNKNOWN, and a clause turning on it reaches REVIEW_REQUIRED rather than a verdict."
+    },
+    {
+      "code": "bidi",
+      "name": "Package containing bidi",
+      "description": "Packages containing bidi. Proviso (A) to rule 6(1) excuses the month-and-year declaration for bidi and incense sticks; proviso (C) excuses the retail-sale-price declaration for bidi.",
+      "determination": "user_declared",
+      "determination_note": "No commodity taxonomy entry. Named in rules/README.md as one of the exemptions LM-PC-0004 and LM-PC-0005 are waiting on. STEP 2: this fact is now COLLECTABLE - a submitter can state it through ProductApplicabilityDeclaration, and the engine reads it before evaluating any clause it gates. It is 'user_declared', not 'verified': the system records who said so and never confirms it against the package. Left unstated it is UNKNOWN, and a clause turning on it reaches REVIEW_REQUIRED rather than a verdict."
+    },
+    {
+      "code": "incense-sticks",
+      "name": "Package containing incense sticks",
+      "description": "Packages containing incense sticks, excused the month-and-year declaration by proviso (A) to rule 6(1).",
+      "determination": "user_declared",
+      "determination_note": "No commodity taxonomy entry. STEP 2: this fact is now COLLECTABLE - a submitter can state it through ProductApplicabilityDeclaration, and the engine reads it before evaluating any clause it gates. It is 'user_declared', not 'verified': the system records who said so and never confirms it against the package. Left unstated it is UNKNOWN, and a clause turning on it reaches REVIEW_REQUIRED rather than a verdict."
+    },
+    {
+      "code": "domestic-lpg-cylinder",
+      "name": "Domestic liquefied petroleum gas cylinder",
+      "description": "Domestic LPG cylinders. Proviso (A) to rule 6(1) excuses the month-and-year declaration for 14.2 kg or 5 kg cylinders bottled and marketed by a public sector undertaking; proviso (C) excuses the retail-sale-price declaration where the price is covered by the Administrative Price Mechanism.",
+      "determination": "user_declared",
+      "determination_note": "No commodity taxonomy entry, and the two provisos are drawn differently - one by cylinder size and bottler, the other by pricing mechanism - so a single flag cannot answer both. STEP 2: this fact is now COLLECTABLE - a submitter can state it through ProductApplicabilityDeclaration, and the engine reads it before evaluating any clause it gates. It is 'user_declared', not 'verified': the system records who said so and never confirms it against the package. Left unstated it is UNKNOWN, and a clause turning on it reaches REVIEW_REQUIRED rather than a verdict."
+    },
+    {
+      "code": "cosmetics-and-toiletries",
+      "name": "Soaps, shampoos, toothpastes and other cosmetics and toiletries",
+      "description": "The commodity class rule 6(8) requires to bear a red or brown dot for non-vegetarian origin and a green dot for vegetarian origin. Cosmetics are also carved out of the rule 6(1)(d) month-and-year declaration in favour of the Drugs and Cosmetics Rules, 1945.",
+      "determination": "user_declared",
+      "determination_note": "Sits inside 'packaged-non-food' with no narrower category. rules/INVENTORY.md notes rule 6(8) as a requirement a visual_check could genuinely reach once this category exists. STEP 2: this fact is now COLLECTABLE - a submitter can state it through ProductApplicabilityDeclaration, and the engine reads it before evaluating any clause it gates. It is 'user_declared', not 'verified': the system records who said so and never confirms it against the package. Left unstated it is UNKNOWN, and a clause turning on it reaches REVIEW_REQUIRED rather than a verdict."
+    },
+    {
+      "code": "seeds-certified",
+      "name": "Seeds labelled and certified under the Seeds Act, 1966",
+      "description": "Seeds labelled and certified under the Seeds Act, 1966, excluded from the rule 6(1)(d) month-and-year declaration.",
+      "determination": "user_declared",
+      "determination_note": "No commodity taxonomy entry. STEP 2: this fact is now COLLECTABLE - a submitter can state it through ProductApplicabilityDeclaration, and the engine reads it before evaluating any clause it gates. It is 'user_declared', not 'verified': the system records who said so and never confirms it against the package. Left unstated it is UNKNOWN, and a clause turning on it reaches REVIEW_REQUIRED rather than a verdict."
+    },
+    {
+      "code": "genetically-modified-food",
+      "name": "Genetically modified food",
+      "description": "Food that is genetically modified, which rule 6(7) requires to bear the words 'GM' at the top of its principal display panel.",
+      "determination": "not_determinable",
+      "determination_note": "Whether a food is genetically modified is not knowable from a photograph and is not recorded. rules/INVENTORY.md states this directly."
+    },
+    {
+      "code": "perishable-commodity",
+      "name": "Commodity that may become unfit for human consumption after a period",
+      "description": "The trigger for the rule 6(1)(da) 'best before or use by' declaration.",
+      "determination": "user_declared",
+      "determination_note": "A property of the commodity, not of the category. rules/INVENTORY.md warns that 'packaged-food' is NOT a safe proxy: salt and sugar are food, and many non-foods perish. STEP 2: this fact is now COLLECTABLE - a submitter can state it through ProductApplicabilityDeclaration, and the engine reads it before evaluating any clause it gates. It is 'user_declared', not 'verified': the system records who said so and never confirms it against the package. Left unstated it is UNKNOWN, and a clause turning on it reaches REVIEW_REQUIRED rather than a verdict."
+    },
+    {
+      "code": "sizes-relevant",
+      "name": "Commodity whose sizes are relevant",
+      "description": "The trigger for the rule 6(1)(f) dimensions declaration.",
+      "determination": "not_determinable",
+      "determination_note": "'Relevant' is undefined in the Rules; rules 14-17 specify where it bites. Additionally a legal-review question, not only a data gap."
+    },
+    {
+      "code": "multi-component-package",
+      "name": "Commodity whose components are packed in two or more units",
+      "description": "The trigger for rule 6(5), which requires the sub-rule (1) declarations on the main package plus information about the accompanying packages.",
+      "determination": "not_determinable",
+      "determination_note": "Requires knowing that a submission is a multi-unit commodity and which photograph is the main package. One ProductImage is one photograph and nothing links constituent packages."
+    },
+    {
+      "code": "promotional-group-package",
+      "name": "Packages grouped together for sale on a promotional offer",
+      "description": "The trigger for rule 4(2), under which every package of such a group must comply with rule 6.",
+      "determination": "not_determinable",
+      "determination_note": "Nothing records that a submission is a promotional multipack, nor links the constituent packages."
+    },
+    {
+      "code": "multi-piece-package",
+      "name": "Multi-piece package",
+      "description": "A package containing more than one individually packaged or labelled piece of the same commodity, intended for retail either individually or as a whole.",
+      "determination": "not_determinable",
+      "determination_note": "RECORDED AS VOCABULARY ONLY. The Step 1 brief requires this special category to be representable. The project's verified material (rules/SOURCES.md, rules/INVENTORY.md) does not transcribe the rule 2 definition or attach a clause to it, so no requirement links to it and the description above must be treated as a working gloss, not as legal text, until a named reviewer supplies the definition from the source."
+    },
+    {
+      "code": "group-package",
+      "name": "Group package",
+      "description": "A package containing more than one individual package or unit of the same commodity intended for retail sale as a whole.",
+      "determination": "not_determinable",
+      "determination_note": "RECORDED AS VOCABULARY ONLY - see 'multi-piece-package'. No clause in the verified material is attached to it."
+    },
+    {
+      "code": "combination-package",
+      "name": "Combination package",
+      "description": "A package containing two or more individually packaged commodities of different kinds, sold as a single unit.",
+      "determination": "not_determinable",
+      "determination_note": "RECORDED AS VOCABULARY ONLY - see 'multi-piece-package'. Note that rule 6(1)(b), which IS transcribed, addresses 'packages with more than one product' and rule 6(5) addresses multi-component commodities; whether either is the operative provision for a combination package is a question for a named reviewer, not an inference to be made here."
+    },
+    {
+      "code": "outer-container-or-wrapper",
+      "name": "Package provided with an outside container or wrapper",
+      "description": "The trigger for rule 9(3), which requires the outer container or wrapper to carry the declarations unless it is transparent and the declarations are easily readable through it.",
+      "determination": "not_determinable",
+      "determination_note": "Needs to know whether the photographed item is an inner or an outer package."
+    },
+    {
+      "code": "third-schedule-commodity",
+      "name": "Commodity listed in the Third Schedule",
+      "description": "The commodities rule 11(4) permits to qualify a net-quantity declaration with words such as 'when packed'.",
+      "determination": "not_determinable",
+      "determination_note": "Needs the Third Schedule as a reference dataset plus a commodity identification. Without it, the rule 11(2)-(3) prohibition on qualifying words cannot be applied safely."
+    },
+    {
+      "code": "solid-liquid-or-by-number",
+      "name": "Physical state of the commodity, or sale by number",
+      "description": "Rule 12(2) prescribes the unit of declaration by physical state - mass for solid, semi-solid and viscous commodities, volume for liquids, length, area, or number.",
+      "determination": "not_determinable",
+      "determination_note": "The physical state of the contents is not recorded and is not reliably visible on a label photograph."
+    },
+    {
+      "code": "ecommerce-listing",
+      "name": "Offered for sale through an e-commerce platform",
+      "description": "The trigger for rule 6(10), which requires the mandatory declarations except month and year of manufacture to be displayed on the digital network used for the transaction, and for rule 6(10A).",
+      "determination": "user_declared",
+      "determination_note": "This system analyses photographs of physical packages. An e-commerce obligation attaches to a LISTING, and the listing is not among the inputs. Evaluating rule 6(10) would need the listing page, not the package - a different pipeline, not a different check type. STEP 2: this fact is now COLLECTABLE - a submitter can state it through ProductApplicabilityDeclaration, and the engine reads it before evaluating any clause it gates. It is 'user_declared', not 'verified': the system records who said so and never confirms it against the package. Left unstated it is UNKNOWN, and a clause turning on it reaches REVIEW_REQUIRED rather than a verdict."
+    },
+    {
+      "code": "loose-commodity-via-ecommerce",
+      "name": "Loose commodity ordered through an e-commerce platform",
+      "description": "A commodity sold loose rather than pre-packed, ordered through an e-commerce platform.",
+      "determination": "not_determinable",
+      "determination_note": "RECORDED AS VOCABULARY ONLY. The Step 1 brief requires the category to be representable. The project's verified material establishes no clause governing it; a loose commodity is by definition not a pre-packed commodity, so whether these Rules reach it at all is a legal question for a named reviewer. No requirement links to this condition."
+    },
+    {
+      "code": "electronic-product",
+      "name": "Electronic product",
+      "description": "An electronic product.",
+      "determination": "not_determinable",
+      "determination_note": "RECORDED AS VOCABULARY ONLY, because the Step 1 brief names it as a special category to represent. NO clause in rules/SOURCES.md or rules/INVENTORY.md turns on a commodity being electronic, so nothing links to it. Do not attach a requirement to this condition without a source."
+    },
+    {
+      "code": "pan-masala",
+      "name": "Pan masala",
+      "description": "Pan masala.",
+      "determination": "not_determinable",
+      "determination_note": "RECORDED AS VOCABULARY ONLY, because the Step 1 brief names it as a 2026 amendment area. THE PROJECT'S VERIFIED MATERIAL CONTAINS NO PROVISION ABOUT PAN MASALA. Neither G.S.R. 128(E) nor G.S.R. 312(E) - both read in full - mentions it, and the consolidated publication as recorded in rules/SOURCES.md does not either. If such an amendment exists it is very likely in the unretrieved 2022-2025 chain, most plausibly G.S.R. 881(E). A named reviewer must obtain the Gazette text before any requirement is written against this condition. It may also relate to 'tobacco-product' above; that connection is NOT asserted here."
+    },
+    {
+      "code": "aeo-bonded-warehouse",
+      "name": "Goods in an AEO bonded warehouse",
+      "description": "Goods held in a bonded warehouse operated by an Authorised Economic Operator.",
+      "determination": "not_determinable",
+      "determination_note": "RECORDED AS VOCABULARY ONLY, because the Step 1 brief names it as a 2026 amendment area. THE PROJECT'S VERIFIED MATERIAL CONTAINS NO SUCH PROVISION - see 'pan-masala' for the same reasoning and the same unretrieved amendment chain. Nothing links to it."
+    },
+    {
+      "code": "rule-33-relaxation-granted",
+      "name": "A relaxation has been granted under rule 33",
+      "description": "The Central Government may under rule 33 permit a manufacturer or packer to pack for sale by relaxing one or more provisions of the Rules for a reasonable period, with such corrective measures as may be specified.",
+      "determination": "not_determinable",
+      "determination_note": "THE MOST IMPORTANT CONDITION IN THIS FILE for interpreting any output. rules/INVENTORY.md: 'A relaxation granted under rule 33 makes an otherwise-correct finding wrong. The system has no way to know one exists. Every finding it produces is therefore conditional on no relaxation applying.' There is no register of relaxations available to this system. The 2025 amendment further provides that rule 33 relaxations do not apply where the Medical Devices Rules, 2017 apply."
+    },
+    {
+      "code": "registered-manufacturer-packer-importer",
+      "name": "Registration held under Chapter VI",
+      "description": "Whether the manufacturer, packer or importer holds the registration rules 27-30 require with the Director or the Controller.",
+      "determination": "database",
+      "determination_note": "Determinable in principle, but only against a regulator's register that this system does not hold and does not have an interface to. Nothing on a package evidences registration, so this can never be answered from an image - it is 'database' rather than 'not_determinable' to record that the fact does exist somewhere, unlike a buyer's identity."
+    }
+  ]
+}

@@ -149,3 +149,104 @@ class Product(UUIDPrimaryKeyModel, TimeStampedModel):
         "matched no rules" - see apps.compliance.services.engine.
         """
         return self.category.ancestry_codes() if self.category_id else []
+
+
+class ProductApplicabilityDeclaration(TimeStampedModel):
+    """One stated fact about a submission that decides whether a rule applies.
+
+    The gap this closes
+    -------------------
+    `rules/INVENTORY.md` records that the widest correctness caveat in the
+    project is that rules 3 and 26 take packages out of scope on facts the
+    system does not collect - net quantity as a *trusted* value, buyer type,
+    retail or wholesale. Every active rule was therefore applied to some
+    packages the Rules do not govern: a 30 kg sack, a 5 g sachet, a restaurant
+    takeaway box. This model is where those facts are now collected.
+
+    Why a table and not columns on `Product`
+    ----------------------------------------
+    The vocabulary is `ApplicabilityCondition`, which is loaded from
+    `rules/framework/` and grows as clauses are transcribed. Columns would mean
+    a migration per condition and a wide table of nullable booleans whose names
+    have to be kept in step with the framework by hand. A row per stated fact
+    keys directly on the condition the framework already defines.
+
+    Why `answer` is three-valued and not a boolean
+    ----------------------------------------------
+    **This is the point of the model.** A boolean defaulting to False would
+    make "nobody said" indistinguishable from "no", so an unanswered question
+    about import status would silently assert a domestic package. That is the
+    self-fulfilling inference `ApplicabilityCondition` exists to prevent. A row
+    may be absent, or present and UNKNOWN, and both mean *not established* -
+    which the engine turns into review, never into a verdict.
+
+    Nothing here is read from the label. These are declarations by the person
+    submitting the package, recorded with `source` so a reviewer can see who
+    said so. An extracted `net_quantity` is the thing being checked; using it to
+    decide whether the check applies would be circular.
+    """
+
+    class Answer(models.TextChoices):
+        """Whether the condition holds for this submission."""
+
+        YES = "yes", "Yes"
+        NO = "no", "No"
+        #: Explicitly recorded as not known. Distinct from no row at all only
+        #: in that somebody was asked; both are treated as not established.
+        UNKNOWN = "unknown", "Not known"
+
+    class Source(models.TextChoices):
+        """Where the answer came from. Never 'read off the label'."""
+
+        SUBMITTER = "submitter", "Declared by the submitter"
+        REVIEWER = "reviewer", "Recorded by a reviewer"
+        CATEGORY = "category", "Derived from the product category"
+
+    product = models.ForeignKey(
+        Product, on_delete=models.CASCADE, related_name="applicability_declarations"
+    )
+    condition = models.ForeignKey(
+        "rules.ApplicabilityCondition",
+        on_delete=models.PROTECT,
+        related_name="declarations",
+        help_text="PROTECT: a condition that submissions have answered must "
+                  "not be deletable, or their answers lose their meaning.",
+    )
+
+    answer = models.CharField(
+        max_length=8,
+        choices=Answer.choices,
+        default=Answer.UNKNOWN,
+        db_index=True,
+        help_text="Defaults to UNKNOWN so a row created without an answer "
+                  "cannot assert one.",
+    )
+    source = models.CharField(
+        max_length=16, choices=Source.choices, default=Source.SUBMITTER
+    )
+    note = models.TextField(
+        blank=True,
+        help_text="Why this was answered as it was. Shown to a reviewer beside "
+                  "any finding the answer influenced.",
+    )
+
+    class Meta:
+        ordering = ["condition__code"]
+        constraints = [
+            models.UniqueConstraint(
+                fields=["product", "condition"],
+                name="product_condition_declaration_uniq",
+            ),
+        ]
+
+    def __str__(self) -> str:
+        return f"{self.product_id}: {self.condition_id}={self.answer}"
+
+    @property
+    def is_established(self) -> bool:
+        """Whether this answer settles the question either way.
+
+        UNKNOWN is not established. Neither is a missing row, which is why
+        callers ask the resolver rather than reading this directly.
+        """
+        return self.answer in {self.Answer.YES, self.Answer.NO}

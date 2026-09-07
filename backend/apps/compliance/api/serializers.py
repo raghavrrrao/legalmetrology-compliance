@@ -148,10 +148,14 @@ class ComplianceFindingSerializer(serializers.ModelSerializer):
 
     Five of these are easy to misread and are worth stating plainly:
 
-    - **`status` is three-valued.** `inconclusive` is not a soft fail. It means
+    - **`status` is four-valued.** `inconclusive` is not a soft fail: it means
       the check could not be decided - usually because the photograph was not
-      readable - and treating it as either a pass or a violation is the single
-      most damaging thing a client can do with this data.
+      readable, or because a fact deciding whether the rule applies was never
+      declared - and treating it as either a pass or a violation is the single
+      most damaging thing a client can do with this data. `not_applicable` is
+      different again: the rule does not govern this package, so nothing about
+      its declarations was examined. It is not a pass, and a client that counts
+      it as one turns a set of exemptions into a clean bill of health.
     - **`extracted_confidence` is recorded, not enforced.** No rule in this
       repository conditions its outcome on it, so a `passed` finding built on a
       low-confidence reading is still `passed`. The number is exposed precisely
@@ -310,6 +314,7 @@ class ComplianceCheckSerializer(serializers.ModelSerializer):
             "rules_passed",
             "rules_failed",
             "rules_inconclusive",
+            "rules_not_applicable",
             "processing_ms",
             "completed_at",
             "product_category_code",

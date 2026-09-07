@@ -206,13 +206,21 @@ def test_an_undeterminable_condition_is_named_on_the_finding(
 def test_a_determinable_condition_is_not_reported_as_unknown(
     completed_run, mapped_rule, net_quantity_requirement, make_extracted_field
 ):
-    """The contrast case, so the previous test is not passing on boilerplate."""
+    """The contrast case, so the previous test is not passing on boilerplate.
+
+    The condition is derived from the product category rather than declared:
+    the fixture product is in `packaged-food`, and the condition names a
+    DIFFERENT category, so it resolves to NO. A category that is known is
+    positive evidence either way - which is why this rule is evaluated rather
+    than sent to review.
+    """
     RequirementApplicability.objects.create(
         requirement=net_quantity_requirement,
         condition=ApplicabilityCondition.objects.create(
-            code="food-article",
-            name="Food article",
+            code="non-food-article",
+            name="Non-food article",
             determination=ApplicabilityCondition.Determination.PRODUCT_CATEGORY,
+            category_code="packaged-non-food",
         ),
         mode=RequirementApplicability.Mode.EXEMPTS,
     )
@@ -220,9 +228,10 @@ def test_a_determinable_condition_is_not_reported_as_unknown(
 
     check = engine.evaluate(completed_run)
 
-    note = check.findings.get().applicability_note
-    assert "CANNOT be established" not in note
-    assert "Food article" not in note
+    finding = check.findings.get()
+    assert finding.status == ComplianceFinding.Status.PASSED
+    assert "CANNOT be established" not in finding.applicability_note
+    assert "Non-food article" not in finding.applicability_note
 
 
 def test_an_unmapped_rule_says_so_rather_than_implying_no_legal_basis(

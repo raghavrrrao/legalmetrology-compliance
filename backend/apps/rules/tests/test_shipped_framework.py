@@ -288,7 +288,18 @@ def test_only_requirements_with_an_active_rule_are_marked_implemented(
         implementation_status=ImplementationStatus.IMPLEMENTED
     )
 
-    assert set(implemented.values_list("clause", flat=True)) == {"6(1)(c)", "6(2)"}
+    # Six clauses were added in Step 2. Listed rather than counted, so adding a
+    # seventh has to be a deliberate edit here and not a number nudged upward.
+    assert set(implemented.values_list("clause", flat=True)) == {
+        "6(1)(a)",   # LM-PC-0001, via the field_presence_any_of disjunction
+        "6(1)(aa)",  # LM-PC-0007, imported packages only
+        "6(1)(c)",   # LM-PC-0003
+        "6(1)(d)",   # LM-PC-0004
+        "6(1)(e)",   # LM-PC-0005, presence only
+        "6(2)",      # LM-PC-0006
+        "13(4)",     # LM-PC-0009
+        "13(5)",     # LM-PC-0008
+    }
     for requirement in implemented:
         assert requirement.compliance_rules.filter(is_active=True).exists(), (
             f"{requirement.clause} is marked implemented but no active "
@@ -355,20 +366,45 @@ def test_penalties_are_not_modelled_as_something_to_evaluate(shipped_framework):
     assert rule_32.requires_human_review is True
 
 
-def test_the_scope_gates_are_recorded_as_undeterminable(shipped_framework):
+def test_the_scope_gates_are_answerable_only_by_declaration(shipped_framework):
     """Rules 3 and 26 are the widest correctness caveat in the project.
 
-    Both must report that the system cannot establish whether they bite,
-    because an active rule is otherwise applied to packages outside the Rules.
+    Step 2 changed what this test can assert, and the change is worth stating
+    precisely. Before, every condition behind these gates was NOT_DETERMINABLE:
+    the system had no way to know a package was a 30 kg sack or an
+    institutional consignment, so the gates could never bite and every rule was
+    applied to every submission.
+
+    They are now USER_DECLARED - answerable, but only by the submitter, and
+    never from the package. That is the narrow claim this test pins:
+
+    - no gate condition is derived from the label, from OCR, or from an
+      extracted net quantity, which would be circular; and
+    - no gate condition is silently assumed, which is enforced by
+      `DeclarationSet.answer` returning UNKNOWN for anything unstated.
+
+    What has NOT changed is that an undeclared package is still evaluated
+    against rules that may not govern it. `engine._SCOPE_CAVEAT` states that on
+    every finding, and `applicability.decide_scope` explains why refusing to
+    evaluate would be the worse answer.
     """
+    from apps.rules.models import ApplicabilityCondition
+
+    answerable = ApplicabilityCondition.Determination.USER_DECLARED
     for clause in ("3", "26"):
         gate = RuleRequirement.objects.get(clause=clause)
-        assert gate.applicability_is_determinable is False, (
-            f"rule {clause} now reports that its scope can be determined. "
-            f"Nothing collects net quantity as trusted data, buyer type or "
-            f"commodity class."
+        determinations = {
+            condition.determination
+            for condition in gate.applicability_conditions.all()
+        }
+        assert determinations, f"rule {clause} has no scope conditions at all"
+        assert determinations <= {answerable}, (
+            f"a condition behind rule {clause} is determined some way other "
+            f"than by the submitter declaring it: {sorted(determinations)}. "
+            f"None of these facts may be read off the label - inferring the "
+            f"net quantity gate from the extracted net quantity would use the "
+            f"declaration under test to decide whether to test it."
         )
-        assert gate.requires_human_review is True
 
 
 def test_rule_33_relaxations_are_recorded_as_unknowable(shipped_framework):
