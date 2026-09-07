@@ -67,7 +67,13 @@ constraints:
   package* a declaration was read. An engine returning a bare string would
   leave both permanently `None`.
 - **Devanagari is `apt install tesseract-ocr-hin`**, not a research project.
-  Indian labels are routinely bilingual.
+  Indian labels are routinely bilingual. **Measured caveat:** installing it has
+  not been shown to help *this* evaluation set. Five of the 28 photographs carry
+  Devanagari, and **0 of all 364 annotated cells has a ground-truth value in a
+  non-Latin script** — Indian packs print the required declarations in English
+  even when the rest of the panel is not. See `docs/evaluation-results.md` §12,
+  which also records that the experiment itself is currently blocked for want of
+  the language pack.
 - **Installs in minutes on Windows, macOS and Linux.** Six people, mixed
   operating systems, a hackathon timeline.
 
@@ -531,10 +537,32 @@ three, and no photograph that comes back saying nothing at all.
 Where the remaining recall is lost was measured before anything was changed:
 **55 of the 97 scored disagreements are values OCR never read**, against 9 it
 read exactly and the extractor did not use. `₹` is unreadable by construction —
-Tesseract's `eng` model cannot emit the glyph, reproduced on clean synthetic
-type as well as on the photographs. `docs/evaluation-results.md` §11 has the
-diagnosis, the full experiment record including the rejected experiments, and
-the next task.
+the `eng` LSTM alphabet has **112 glyphs and U+20B9 is not one of them** (it
+carries `$`, `¢`, `£`, `¥` and `€`), so no image, preprocessing setting or
+segmentation mode can recover it. `docs/evaluation-results.md` §11 has the
+diagnosis and the full experiment record including the rejected experiments;
+§12 has the alphabet check and the Hindi experiment that is blocked on it.
+
+### Running a language experiment
+
+`experiments/language_comparison.py` compares `eng`, `eng+hin` and `hin` on a
+frozen dataset, holding preprocessing, PSM and the extractor at their production
+values so language is the only variable:
+
+```bash
+cd ml
+python experiments/language_comparison.py data/hv-evaluation-set --report-dir /tmp/lang
+```
+
+Exit `0` means every configuration ran; **exit `4` means one was skipped for
+missing language data**, and it names which. The skip is the point:
+**Tesseract 5.4.0 accepts `-l eng+hin` with no `hin.traineddata` installed,
+exits 0, and returns the `eng` result** — so a naive run reports the baseline
+twice under two names. The script asks `pytesseract.get_languages()` first and
+refuses rather than downgrading silently.
+
+Language data is an OS package installed outside the repository, like `eng`.
+**No traineddata, model weight or generated dataset belongs in Git.**
 
 ### First baseline — `tesseract` 0.2.0 on `our-eval-v0.1-draft`, 2026-08-29
 

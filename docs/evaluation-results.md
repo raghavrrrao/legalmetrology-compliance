@@ -20,7 +20,9 @@ recorded here loads a rule or produces a verdict.
 > stays as written — it is an accurate record of a run against an artefact that
 > still exists and still validates. Everything after it supersedes rather than
 > invalidates: §9 adds `unit_sale_price`, §10 adds the first human corrections,
-> §11 measures an OCR-robustness change against §10's numbers.
+> §11 measures an OCR-robustness change against §10's numbers, and §12 records a
+> Hindi language-data experiment that was **blocked by the local environment** and
+> therefore changed no measured figure. §11.6 remains the current numbers.
 
 | | |
 |---|---|
@@ -1218,3 +1220,271 @@ set, and publish the comparison here:
 - **INTEGRATION** — none required beyond registration:
   `extraction_service.py` resolves pipelines by name and version and imports
   nothing else from this package.
+
+---
+
+## 12. Hindi language data — evaluated, and **blocked by the environment**
+
+Branch `feature/ocr-hindi-engine-evaluation`, run 2026-08-31 against the same
+28 photographs and 364 cells §11 uses. §11.12 named this as the recommended
+next task.
+
+> **Headline: two of the three configurations did not run.** `hin.traineddata`
+> is not installed on this machine, so `eng+hin` and `hin` were **skipped, not
+> measured**. Nothing below reports a Hindi result. What it does report is a
+> reproducible harness, a decisive capability finding about `eng`, and a
+> measured bound on how much Hindi could help this dataset even once it is
+> installed.
+
+> The evaluation limitation from §11 applies unchanged:
+> `our-eval-v0.3-usp-partial` is **partially** human-verified — 34 of 364 cells
+> reviewed, 330 model-drafted. No figure here describes performance against
+> fully human-verified ground truth.
+
+### PROBLEM
+
+§11.2 measured that **55 of 97 scored disagreements are values the engine never
+read**, and §11.3 found that `₹` is unreadable by the `eng` model. Recognition,
+not interpretation, is the binding constraint. Hindi language data is the
+cheapest candidate for improving recognition: it is an OS package, ships no
+weights into Git, and Indian packaging is routinely bilingual.
+
+**The question is whether it helps — not an assumption that it will.**
+
+### INPUT / OUTPUT
+
+Unchanged. `ImageRef` in, `ExtractionResult` out. `interfaces.OcrEngine` already
+isolates the engine and `TesseractOptions.languages` is already a configured
+tuple, so **no production code needed to change to run this experiment.**
+
+### DATA
+
+`our-eval-v0.3-usp-partial`, unedited. `evaluation.cli validate` re-digested all
+28 images and `verify_dataset.py` passed 9 checks / 16 assertions before and
+after. No annotation was opened for writing.
+
+### MODEL
+
+Tesseract 5.4.0.20240606, LSTM (`--oem 3`). Installed language data on this
+machine: **`eng` and `osd` only.** `hin.traineddata` is present nowhere —
+`tesseract --list-langs` lists two languages, the `tessdata/script/` directory
+is empty, and a filesystem search for `*hin*.traineddata` and
+`*devanagari*.traineddata` returns nothing.
+
+Nothing was downloaded. Language data is an operating-system package and
+belongs outside the repository, exactly as `eng` already does.
+
+### PREPROCESSING
+
+**Identical to production and deliberately not a variable.** Every
+configuration is built by taking the options `build_pipeline()` ships and
+replacing `languages` alone, via `dataclasses.replace` on the production
+default. PSM 3, the mode-11 empty-result retry, `--oem 3`, the 30 s cap, the
+`PillowPreprocessor` and the `RuleBasedFieldExtractor` are all untouched.
+
+The harness was validated against that claim: `build_pipeline_for(("eng",))`
+reproduces the production 0.3.0 report **exactly** on every scored metric and
+on the character count, differing only in latency between runs.
+
+### The trap this experiment had to avoid
+
+**Tesseract 5.4.0 does not fail when a language in a `+` list is missing.**
+Measured here, with no `hin.traineddata` installed:
+
+| Argument | Result |
+|---|---|
+| `-l hin` | `TesseractError`: `Error opening data file …/hin.traineddata` |
+| `-l eng+hin` | **exit 0**, output byte-identical to `-l eng` (735 chars on `p010_01_back`) |
+| `-l hin+eng` | **exit 0**, output byte-identical to `-l eng` |
+
+A run configured as `eng+hin` on this machine therefore produces the baseline's
+numbers exactly and presents them as a Hindi measurement. The honest reading is
+*"Hindi was never loaded"*; the tempting wrong reading — *"Hindi makes no
+difference to our labels"* — is precisely what a table of identical numbers
+invites.
+
+`experiments/language_comparison.py` therefore checks every configuration
+against `pytesseract.get_languages()` **before** running it and **skips and
+reports** any configuration naming absent data, exiting 4. It never downgrades
+silently. That guard is the main reason this section exists at all.
+
+### ₹ CAPABILITY RESULT — decisive, and it is not about image quality
+
+§11.3 established empirically that `eng` never returns `₹`. This run established
+it **structurally**, which is a stronger claim.
+
+`combine_tessdata -u eng.traineddata` extracts the LSTM unicharset — the
+model's entire output alphabet. It has **112 entries**:
+
+| Check | Result |
+|---|---|
+| `₹` U+20B9 in the `eng` alphabet | **No** |
+| Currency glyphs that *are* present | `$`, `¢`, `£`, `¥`, `€` |
+| Every non-ASCII glyph it can emit | `¢ £ ¥ § © « ® ° » é — ' ' " " € ™` (17) |
+| `₹ 0.08 per g` rendered at 64 px, Arial | read as `= 0.08 per g` |
+| same, Calibri | read as `= 0.08 per g` |
+
+**The `eng` recogniser cannot emit `₹` under any input whatsoever.** Not a
+preprocessing problem, not a photograph problem, not a segmentation problem —
+the character is not in the alphabet. Every `₹` on every pack is forced onto the
+nearest of 112 available glyphs, which is why §11 saw it read as `%`, `<`, `&`,
+`Z`, `=` and `O`.
+
+**No post-processing converts a near-miss into `₹`, and none may be added.**
+Turning a recognised `Z` into a currency symbol manufactures a reading the
+engine never made — the fabricated-value failure the extraction layer exists to
+prevent.
+
+The single most valuable thing the blocked experiment would settle is one
+command, and it needs no photographs:
+
+```bash
+combine_tessdata -u "$(tesseract --list-langs 2>&1 | sed -n 's/.*in "\(.*\)".*/\1/p')/hin.traineddata" /tmp/hin.
+grep -c $'₹' /tmp/hin.lstm-unicharset
+```
+
+If `hin`'s alphabet carries U+20B9, `eng+hin` can read a rupee sign and the
+`unit_sale_price` and `retail_sale_price` no-keyword branches become reachable
+on symbol-printing labels. If it does not, Hindi cannot help with `₹` either and
+that avenue closes for both models.
+
+### MEASURED — the one configuration that ran
+
+| Metric | `eng` (production 0.3.0) | `eng+hin` | `hin` |
+|---|---:|---:|---:|
+| Precision | 1.000 (19/19) | **not run** | **not run** |
+| Recall | 0.211 (19/90) | not run | not run |
+| F1 | 0.349 | not run | not run |
+| Value accuracy | 0.684 | not run | not run |
+| Silent error rate | 0.300 | not run | not run |
+| Fabricated values | 0 | not run | not run |
+| Correct unread | 1 | not run | not run |
+| Missed unread | 24 | not run | not run |
+| EMPTY photographs | 0 of 28 | not run | not run |
+| Recognised characters | 14,805 | not run | not run |
+| Median latency | 1,062 ms | not run | not run |
+| p90 latency | 1,632 ms | not run | not run |
+| Max latency | 2,350 ms | not run | not run |
+| CER / WER | unavailable | — | — |
+
+The `eng` column reproduces §11.6 exactly, which is what makes it usable as the
+comparison point when the other two columns can be filled in.
+
+Per declaration, as TP/FP/FN/TN/fabricated/correct-unread/missed-unread:
+
+| Field | `eng` | `eng+hin` | `hin` |
+|---|---|---|---|
+| `batch_number` | 1/0/7/16/0/1/3 | not run | not run |
+| `net_quantity` | 3/0/13/9/0/0/3 | not run | not run |
+| `date_of_manufacture` | 1/0/4/20/0/0/3 | not run | not run |
+| `date_of_packing` | 1/0/4/23/0/0/0 | not run | not run |
+| `best_before` | 2/0/8/14/0/0/4 | not run | not run |
+| `retail_sale_price` | 3/0/7/13/0/0/5 | not run | not run |
+| `unit_sale_price` | 1/0/5/19/0/0/3 | not run | not run |
+| `consumer_care_contact` | 2/0/10/14/0/0/2 | not run | not run |
+
+### How much could Hindi help this dataset? A measured upper bound
+
+This is answerable now, from the ground truth alone, and it is the most useful
+number in this section.
+
+| | Count |
+|---|---:|
+| Photographs carrying a Devanagari / bilingual / trilingual condition | **5 of 28** |
+| Annotated cells on those photographs | 65 |
+| — of which `present_and_readable` | 16 |
+| — of which `not_present` | 47 |
+| — of which `present_but_unreadable` | 2 |
+| **Cells in the whole 364-cell set whose ground-truth value contains a non-Latin letter** | **0** |
+
+Every readable declaration on all five of those photographs is transcribed in
+**Latin script or digits** — `25 g`, `PKM126F154`, `MAR-2027`,
+`brand.sawai@pkmfoods.com`, `SWAMI SMARTH FOODS`, `500g`, `10 JUN 2026`.
+
+That is not an accident of annotation. Indian packaging prints the legally
+required declarations in English even on bilingual packs; the Devanagari
+carries brand names, marketing copy and ingredient lists — none of which this
+extractor attempts, and product/brand name and generic name are documented as
+**not supported** for reasons unrelated to script.
+
+**So on this artefact there is no cell that Hindi recognition could convert into
+a true positive by reading Devanagari.** Its only available mechanisms are
+indirect: cleaner segmentation on mixed panels, or `₹` if `hin`'s alphabet
+carries it. It also has a plausible downside — a second language enlarges the
+search space and can degrade Latin recognition, and it costs OCR time.
+
+One further nuance: `p005_02_front` is labelled `gujarati` as well as
+`devanagari`. Gujarati is a different script needing `guj`, not `hin`. A Hindi
+pack would not address it.
+
+### LATENCY
+
+`eng` median 1,062 ms, p90 1,632 ms, max 2,350 ms per image on the measured set
+(28 images, 29.7 s total). A second language is expected to cost time — Tesseract
+runs the recogniser per language in a `+` list — but **that cost was not
+measured here and must not be estimated.** It is a required column when the
+experiment is unblocked.
+
+### HARDWARE
+
+Windows 11, CPU only, Python 3.11.1, Tesseract 5.4.0.20240606 (`eng` model
+version `4.00.00alpha:eng:synth20170629`). No GPU, no network, no service.
+
+### LIMITATIONS
+
+- **Two of three configurations were not measured.** Nothing in this section is
+  a Hindi result, and none of it may later be cited as one.
+- The upper-bound analysis rests on ground truth that is **9.3% human-reviewed**.
+  If an unreviewed cell in fact carries a Devanagari declaration, the bound
+  moves. The bound is a statement about the annotations, not about the packages.
+- N = 5 photographs with a non-Latin condition, from 3 products. Small.
+- CER and WER remain **unavailable** — no sample carries a `reference_text`,
+  and those are the metrics that would show a recognition change most directly.
+- The `₹` unicharset finding is specific to the installed `eng` model version.
+  A differently trained `eng` could carry the glyph.
+
+### INTEGRATION
+
+None performed, and none needed to run the experiment: `TesseractOptions`
+already accepts a language tuple and `labelextract.cli` already exposes
+`--languages`. **Production behaviour is unchanged** — no default moved, no
+pipeline version was bumped, and `eng` remains the only configured language.
+
+Adopting a second language later *would* need a new pipeline version, because it
+changes what every stored run would reproduce.
+
+### Measured result / interpretation / limitation / recommendation
+
+- **Measured:** `eng`'s alphabet has 112 glyphs and does not include `₹`.
+  `eng+hin` and `hin+eng` run without error and return the `eng` result when
+  `hin` is absent. 0 of 364 ground-truth values are non-Latin. The `eng`
+  baseline reproduces §11.6 exactly.
+- **Interpretation:** Hindi cannot raise recall on *this* dataset by reading
+  Devanagari, because no scored cell is Devanagari. Its plausible value is the
+  `₹` glyph and cleaner mixed-script segmentation — both unproven.
+- **Limitation:** the experiment is blocked by the local environment, not by the
+  design. The harness is written, validated against production, and skips
+  loudly rather than reporting a false negative.
+- **Recommendation: KEEP CURRENT ENGLISH.** Do not adopt a configuration that
+  has not been measured. Install `tesseract-ocr-hin` on one machine, run the
+  unicharset check above first — it is one command and it may close the question
+  outright — and only then re-run the full comparison.
+
+### Reproducing this on another machine
+
+```bash
+cd ml
+python experiments/language_comparison.py data/hv-evaluation-set --report-dir /tmp/lang
+```
+
+Exit 0 means every configuration ran; **exit 4 means one was skipped for missing
+language data** and names it. Installing the data, outside the repository:
+
+| Platform | Command |
+|---|---|
+| Debian / Ubuntu | `sudo apt install tesseract-ocr-hin` |
+| macOS | `brew install tesseract-lang` |
+| Windows | re-run the UB-Mannheim installer and tick Hindi under *Additional language data*, or place the official `hin.traineddata` in the directory `tesseract --list-langs` prints |
+
+Confirm with `tesseract --list-langs` before re-running. **No language data,
+model weight or generated dataset belongs in Git.**
