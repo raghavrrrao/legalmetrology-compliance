@@ -8,12 +8,11 @@ else:
 1. A rule file drifts out of the shape the loader accepts, and `load_rules`
    fails in a deployment rather than in CI.
 2. Someone widens a rule's applicability, or flips `is_active`, without the
-   verified sourcing that entitles it to produce a finding. Four of the six
-   shipped rules are deliberately inactive - three because `field_presence`
-   cannot express their carve-outs safely (see `rules/SOURCES.md`), and
-   LM-PC-0002 because the extractor does not read the declaration it names
-   (see `rules/INVENTORY.md`). Activating one is a legal decision, so it has
-   to break a test rather than pass quietly.
+   verified sourcing that entitles it to produce a finding. One shipped rule -
+   LM-PC-0002 - is deliberately inactive, because the extractor does not read
+   the declaration it names (see `rules/INVENTORY.md`). Activating it, or
+   adding a rule to the shipped set, is a legal decision, so it has to break a
+   test rather than pass quietly.
 """
 
 import pytest
@@ -44,8 +43,19 @@ pytestmark = pytest.mark.django_db
 #: - `field_presence_any_of` expresses the disjunction in rule 6(1)(a), which is
 #:   what LM-PC-0001 was waiting for.
 #:
-#: LM-PC-0007 (country of origin) is new and applies only to a package DECLARED
-#: imported. LM-PC-0008 and LM-PC-0009 are the rule 13 unit checks.
+#: LM-PC-0007 (country of origin) applies only to a package DECLARED imported.
+#: LM-PC-0008 and LM-PC-0009 are the rule 13 unit checks.
+#:
+#: Step 3 added three more, none of which asks for a declaration: each judges
+#: what a declaration this system already reads actually says, and each names a
+#: clause a presence rule above already covers.
+#:
+#: - LM-PC-0010, rule 6(2): the TELEPHONE and E-MAIL elements of the
+#:   consumer-care declaration. The name and address elements stay unchecked.
+#: - LM-PC-0011, rule 6(1)(d): whether the manufacture date resolves to a month
+#:   and a year. No printed format is enforced - the clause prescribes none.
+#: - LM-PC-0012, rule 6(1)(e): whether the price is declared EXCLUSIVE of all
+#:   taxes. The absence of an inclusive-of-taxes indication is NOT a violation.
 ACTIVE_CODES = {
     "LM-PC-0001",
     "LM-PC-0003",
@@ -55,6 +65,9 @@ ACTIVE_CODES = {
     "LM-PC-0007",
     "LM-PC-0008",
     "LM-PC-0009",
+    "LM-PC-0010",
+    "LM-PC-0011",
+    "LM-PC-0012",
 }
 
 #: Verified text kept on record, but not evaluated. LM-PC-0002 is blocked on
@@ -67,8 +80,8 @@ INACTIVE_CODES = {"LM-PC-0002"}
 
 #: The declarations the active rules require, and the LabelFieldKey each uses.
 #: LM-PC-0001 is absent because it is a disjunction over three keys, and
-#: LM-PC-0008/0009 because they judge the form of a declaration rather than
-#: asking for one - both are asserted separately below.
+#: LM-PC-0008 through LM-PC-0012 because they judge what a declaration says
+#: rather than asking for one - both are asserted separately below.
 ACTIVE_FIELD_KEYS = {
     "LM-PC-0003": "net_quantity",
     "LM-PC-0004": "date_of_manufacture",
@@ -168,7 +181,7 @@ def test_the_food_carve_out_rules_never_target_food(shipped):
     neither may be attached to `packaged-food` or to the root category that
     food inherits from.
     """
-    for code in ("LM-PC-0001", "LM-PC-0004"):
+    for code in FOOD_CARVE_OUT_CODES:
         assert shipped[code]["applies_to_category_codes"] == ["packaged-non-food"], code
 
 
@@ -196,16 +209,16 @@ def test_only_active_rules_are_applicable_to_a_food_product(loaded_rules, produc
     """
     codes = {rule.code for rule in engine.applicable_rules(product)}
 
-    assert codes == ACTIVE_CODES - {"LM-PC-0001", "LM-PC-0004"}
+    assert codes == ACTIVE_CODES - FOOD_CARVE_OUT_CODES
 
 
 def test_the_non_food_rules_do_not_apply_to_a_food_product(loaded_rules, product):
     """The carve-out has to hold at the query, not just in the file.
 
     Checked directly on the rule rather than through `applicable_rules`, so
-    that it still holds if LM-PC-0001 or LM-PC-0004 is activated later.
+    that it still holds if one of them is deactivated and reactivated later.
     """
-    for code in ("LM-PC-0001", "LM-PC-0004"):
+    for code in FOOD_CARVE_OUT_CODES:
         rule = ComplianceRule.objects.get(code=code)
         assert not rule.applies_to_category_codes(product.applicable_category_codes)
 
@@ -214,7 +227,7 @@ def test_the_non_food_rules_do_apply_to_a_non_food_product(loaded_rules, taxonom
     """The contrast case: the carve-out is a food carve-out, not a mute rule."""
     _, _, non_food = taxonomy
 
-    for code in ("LM-PC-0001", "LM-PC-0004"):
+    for code in FOOD_CARVE_OUT_CODES:
         rule = ComplianceRule.objects.get(code=code)
         assert rule.applies_to_category_codes(non_food.ancestry_codes())
 
@@ -233,8 +246,8 @@ def test_no_rule_applies_to_a_product_of_unknown_category(loaded_rules, product)
 #: declared about it. The set is small on purpose, and the three exclusions are
 #: the whole Step 2 story:
 #:
-#: - LM-PC-0001 and LM-PC-0004 are excluded by CATEGORY. Both defer to the Food
-#:   Safety and Standards Act, 2006 for food articles.
+#: - LM-PC-0001, LM-PC-0004 and LM-PC-0011 are excluded by CATEGORY. All defer
+#:   to the Food Safety and Standards Act, 2006 for food articles.
 #: - LM-PC-0005 (retail sale price) is excluded by APPLICABILITY. Proviso (C)
 #:   excuses bidi and administered-price LPG, and nothing declares whether this
 #:   package is either, so the clause reaches REVIEW_REQUIRED rather than a
@@ -246,10 +259,22 @@ def test_no_rule_applies_to_a_product_of_unknown_category(loaded_rules, product)
 #: the incentive the applicability design intends.
 UNCONDITIONAL_PRESENCE_CODES = {"LM-PC-0003", "LM-PC-0006"}
 
-#: Rules that judge the FORM of the net quantity rather than asking for a
-#: declaration. With no quantity read they are inconclusive, not failures -
-#: whether a quantity is required at all is LM-PC-0003's finding.
-FORM_CODES = {"LM-PC-0008", "LM-PC-0009"}
+#: Rules that judge what a declaration SAYS rather than asking for one. With
+#: the declaration absent they are inconclusive, not failures - whether it is
+#: required at all is the corresponding presence rule's finding. Keeping that
+#: split is what stops one clause producing two violations for one defect.
+FORM_CODES = {
+    "LM-PC-0008",
+    "LM-PC-0009",
+    "LM-PC-0010",
+    "LM-PC-0011",
+    "LM-PC-0012",
+}
+
+#: Rules disapplied to packages containing food articles, which defer to the
+#: Food Safety and Standards Act, 2006. Rule 6(1)(a) through Explanation III,
+#: rule 6(1)(d) through its first proviso.
+FOOD_CARVE_OUT_CODES = {"LM-PC-0001", "LM-PC-0004", "LM-PC-0011"}
 
 
 def test_an_absent_declaration_produces_a_violation(loaded_rules, completed_run):
@@ -306,9 +331,8 @@ def test_a_present_declaration_produces_no_missing_field_violation(
 
     assert check.violations.count() == 0
     assert check.rules_failed == 0
-    # Not COMPLIANT, and the three undetermined rules are named rather than
-    # counted, because each is undetermined for a different and instructive
-    # reason:
+    # Not COMPLIANT, and the undetermined rules are named rather than counted,
+    # because each is undetermined for a different and instructive reason:
     #
     #   LM-PC-0005  rule 6(1)(e)  - nothing declares whether proviso (C)
     #                               (bidi, administered-price LPG) excuses it
@@ -318,6 +342,20 @@ def test_a_present_declaration_produces_no_missing_field_violation(
     #                               is not a unit, and guessing one from it
     #                               would put the rules layer in the
     #                               normaliser's job.
+    #   LM-PC-0010  rule 6(2)     - the consumer-care field these fixtures write
+    #                               carries no normalised value, so neither a
+    #                               telephone number nor an e-mail address was
+    #                               read from it. A located declaration nobody
+    #                               could read anything out of is a photograph
+    #                               problem, not a package one.
+    #   LM-PC-0012  rule 6(1)(e)  - no price was read at all, so how the price
+    #                               is declared could not be examined. Whether
+    #                               one is required is LM-PC-0005's finding,
+    #                               and it is undetermined for its own reason
+    #                               above.
+    #
+    # LM-PC-0011 is absent because it does not apply to a food product at all -
+    # rule 6(1)(d) defers to the Food Safety and Standards Act, 2006.
     assert check.result == ComplianceCheck.Result.REVIEW_REQUIRED
     inconclusive = {
         finding.rule_code
@@ -325,7 +363,13 @@ def test_a_present_declaration_produces_no_missing_field_violation(
             status=ComplianceFinding.Status.INCONCLUSIVE
         )
     }
-    assert inconclusive == {"LM-PC-0005", "LM-PC-0007", "LM-PC-0008"}
+    assert inconclusive == {
+        "LM-PC-0005",
+        "LM-PC-0007",
+        "LM-PC-0008",
+        "LM-PC-0010",
+        "LM-PC-0012",
+    }
 
 
 def test_one_present_declaration_removes_only_its_own_violation(

@@ -166,7 +166,7 @@
       "description": "The core labelling rule. Lists the declarations every retail package must bear, the consumer-care details, the treatment of stickers and multi-component packages, the e-commerce obligations, and the unit sale price.",
       "automation_class": "partially_automatable",
       "verification_status": "verified",
-      "notes": "The only rule with requirements this system actually evaluates - 6(1)(c) and 6(2), both presence checks. Every other clause is blocked by applicability data, extraction capability, or the absence of a format or visual check type.",
+      "notes": "The rule this system evaluates most of, and still only in part. As of Step 3 the clauses with executable coverage are 6(1)(a) and 6(1)(aa) (presence), 6(1)(c) (presence), 6(1)(d) (presence, and whether a month and year can be established), 6(1)(e) (presence, and whether the price is declared exclusive of all taxes) and 6(2) (presence, and the telephone and e-mail elements). Every other clause remains blocked by applicability data, extraction capability, or the absence of a visual check type - and every clause listed here is covered only to the extent its rule file records.",
       "requirements": [
         {
           "clause": "6(1)",
@@ -278,7 +278,7 @@
           "legal_reference": "Rule 6(1)(d) of the Legal Metrology (Packaged Commodities) Rules, 2011",
           "effective_from": "2022-10-01",
           "verification_status": "verified",
-          "source_note": "verbatim_text is the clause AS PRINTED in the Department's consolidated publication (sha256 0ef948f9...f983a4b), which carries the annotation: 'the words, - \"or pre-packed or imported\" shall be omitted vide GSR 779(E) dated 2nd November, 2021 w.e.f. 1.4.2022 (now w.e.f 01.10.2022 vide GSR 226(E) dated 28.3.2022).' The struck words are LEFT IN verbatim_text because that is what the source prints; the operative reading - manufacture only - is stated in 'requirement' instead of silently editing a quotation. Checked 2026-08-30 by Claude Code for raghavrrrao. LM-PC-0004 ships is_active:false: the food carve-out is expressible, but cosmetics, seeds, bidi, incense sticks and LPG cylinders all sit inside packaged-non-food with no narrower category. HUMAN COUNTER-REVIEW OUTSTANDING; 2022-2025 amendment-chain gap applies. STEP 2: this clause is now EVALUATED - see the rule file(s) named in compliance_rule_codes for exactly what is and is not tested. Applicability is resolved before the validator runs, so a package the clause excuses is recorded NOT_APPLICABLE and one whose exempting facts were never declared reaches REVIEW_REQUIRED.",
+          "source_note": "verbatim_text is the clause AS PRINTED in the Department's consolidated publication (sha256 0ef948f9...f983a4b), which carries the annotation: 'the words, - \"or pre-packed or imported\" shall be omitted vide GSR 779(E) dated 2nd November, 2021 w.e.f. 1.4.2022 (now w.e.f 01.10.2022 vide GSR 226(E) dated 28.3.2022).' The struck words are LEFT IN verbatim_text because that is what the source prints; the operative reading - manufacture only - is stated in 'requirement' instead of silently editing a quotation. STEP 3: LM-PC-0011 additionally checks that the declaration RESOLVES to a month and a year. NO PRINTED FORMAT IS ENFORCED - the clause prescribes none, and none is invented; a reading that cannot be resolved, such as an ambiguous 03/04/2025 where the year is settled but the month is not, is REVIEW_REQUIRED and never a violation. Checked 2026-08-30 by Claude Code for raghavrrrao. LM-PC-0004 shipped is_active:false because the food carve-out was expressible but cosmetics, seeds, bidi, incense sticks and LPG cylinders all sat inside packaged-non-food with no narrower category; that is superseded by the STEP 2 note below. HUMAN COUNTER-REVIEW OUTSTANDING; 2022-2025 amendment-chain gap applies. STEP 2: this clause is now EVALUATED - see the rule file(s) named in compliance_rule_codes for exactly what is and is not tested. Applicability is resolved before the validator runs, so a package the clause excuses is recorded NOT_APPLICABLE and one whose exempting facts were never declared reaches REVIEW_REQUIRED.",
           "applicability": [
             {
               "condition": "food-article",
@@ -312,7 +312,8 @@
             }
           ],
           "compliance_rule_codes": [
-            "LM-PC-0004"
+            "LM-PC-0004",
+            "LM-PC-0011"
           ]
         },
         {
@@ -348,7 +349,7 @@
           "legal_reference": "Rule 6(1)(e) of the Legal Metrology (Packaged Commodities) Rules, 2011",
           "effective_from": "2022-10-01",
           "verification_status": "verified",
-          "source_note": "Both fragments quoted verbatim in rules/SOURCES.md from the Department's consolidated publication (sha256 0ef948f9...f983a4b); the second was substituted vide G.S.R. 629(E) w.e.f. 1 January 2018 and further amended vide G.S.R. 779(E) / G.S.R. 226(E), giving the current wording w.e.f. 1 October 2022. The ellipsis marks the join between the clause and the substituted words as the source presents them, not an omission of qualifying text. Read with rule 2(m). Checked 2026-08-30 by Claude Code for raghavrrrao. LM-PC-0005 ships is_active:false for TWO independent reasons: bidi, LPG and alcohol are not separable in the current taxonomy, and 'clearly indicate ... inclusive of all taxes in Indian currency' is a FORMAT requirement that field_presence cannot express and no format_check is registered. HUMAN COUNTER-REVIEW OUTSTANDING; 2022-2025 amendment-chain gap applies. STEP 2: this clause is now EVALUATED - see the rule file(s) named in compliance_rule_codes for exactly what is and is not tested. Applicability is resolved before the validator runs, so a package the clause excuses is recorded NOT_APPLICABLE and one whose exempting facts were never declared reaches REVIEW_REQUIRED.",
+          "source_note": "Both fragments quoted verbatim in rules/SOURCES.md from the Department's consolidated publication (sha256 0ef948f9...f983a4b); the second was substituted vide G.S.R. 629(E) w.e.f. 1 January 2018 and further amended vide G.S.R. 779(E) / G.S.R. 226(E), giving the current wording w.e.f. 1 October 2022. The ellipsis marks the join between the clause and the substituted words as the source presents them, not an omission of qualifying text. Read with rule 2(m). Checked 2026-08-30 by Claude Code for raghavrrrao. LM-PC-0005 shipped is_active:false for two reasons - bidi, LPG and alcohol were not separable in the taxonomy, and 'clearly indicate ... inclusive of all taxes in Indian currency' is a FORMAT requirement field_presence cannot express; the first is superseded by the STEP 2 note below and the second is partly addressed by the STEP 3 note. STEP 3: LM-PC-0012 reports a price the label declares EXCLUSIVE of all taxes, which contradicts this clause read with rule 2(m). NOTHING WIDER IS DECIDED. The ABSENCE of an 'inclusive of all taxes' indication is recorded in the finding but is NOT treated as a violation, because whether printing 'MRP' alone already clearly indicates tax inclusion - rule 2(m) defines the term as inclusive - is a question of legal construction this system does not settle. 'In Indian currency' is not checked at all: the normaliser writes the currency as a fixed default rather than reading it off the label, so testing the clause against it would be testing our own default. HUMAN COUNTER-REVIEW OUTSTANDING; 2022-2025 amendment-chain gap applies. STEP 2: this clause is now EVALUATED - see the rule file(s) named in compliance_rule_codes for exactly what is and is not tested. Applicability is resolved before the validator runs, so a package the clause excuses is recorded NOT_APPLICABLE and one whose exempting facts were never declared reaches REVIEW_REQUIRED.",
           "applicability": [
             {
               "condition": "bidi",
@@ -367,7 +368,8 @@
             }
           ],
           "compliance_rule_codes": [
-            "LM-PC-0005"
+            "LM-PC-0005",
+            "LM-PC-0012"
           ]
         },
         {
@@ -429,9 +431,10 @@
           "legal_reference": "Rule 6(2) of the Legal Metrology (Packaged Commodities) Rules, 2011",
           "effective_from": "2016-01-01",
           "verification_status": "verified",
-          "source_note": "Quoted verbatim in rules/SOURCES.md from the Department's consolidated publication (sha256 0ef948f9...f983a4b), recorded as substituted vide G.S.R. 385(E) dated 14 May 2015, effective 1 January 2016 (the source records 'dispensed upto 30.6.2016'). Checked 2026-08-30 by Claude Code for raghavrrrao. EVALUATED by LM-PC-0006, but PARTIALLY: only the PRESENCE of a consumer-care contact is checked. Whether all four elements - name, address, telephone and e-mail - are present is NOT checked, which under-claims, the safe direction. THIS IS RULE 6(2), NOT RULE 6(1)(f): the branch brief cited 6(1)(f), which is the dimensions clause. HUMAN COUNTER-REVIEW OUTSTANDING; 2022-2025 amendment-chain gap applies.",
+          "source_note": "Quoted verbatim in rules/SOURCES.md from the Department's consolidated publication (sha256 0ef948f9...f983a4b), recorded as substituted vide G.S.R. 385(E) dated 14 May 2015, effective 1 January 2016 (the source records 'dispensed upto 30.6.2016'). Checked 2026-08-30 by Claude Code for raghavrrrao. EVALUATED by LM-PC-0006 (presence) and, since STEP 3, by LM-PC-0010 (elements). LM-PC-0010 checks TWO of the four elements the clause names - the TELEPHONE NUMBER and the E-MAIL ADDRESS - and reports precisely which is missing. THE NAME AND THE ADDRESS OF THE PERSON OR OFFICE TO BE CONTACTED REMAIN UNCHECKED: the extractor reads no consumer-care name, and it does not read addresses at all, rule 10(1) being the operative address provision. So the clause is now partly, not wholly, evaluated, and every finding says so. THIS IS RULE 6(2), NOT RULE 6(1)(f): the branch brief cited 6(1)(f), which is the dimensions clause. HUMAN COUNTER-REVIEW OUTSTANDING; 2022-2025 amendment-chain gap applies.",
           "compliance_rule_codes": [
-            "LM-PC-0006"
+            "LM-PC-0006",
+            "LM-PC-0010"
           ]
         },
         {

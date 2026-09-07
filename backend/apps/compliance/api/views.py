@@ -71,10 +71,14 @@ class ComplianceEvaluationView(APIView):
     whose verdict is `review_required` and whose summary explains which of
     those it was. That is the honest answer, not a failed request.
 
-    **400** for an unknown `extraction_run_id` or an unknown `category_code`.
+    **400** for an unknown `extraction_run_id`, an unknown `category_code`, or
+    an `applicability_declarations` entry naming a condition the framework does
+    not define or cannot use.
 
-    A caller cannot choose which rules run. See
-    `ComplianceEvaluationRequestSerializer` for why that matters.
+    A caller cannot choose which rules run. `applicability_declarations` states
+    facts about the goods, not which rules to apply - see
+    `ComplianceEvaluationRequestSerializer` for why that distinction is what
+    makes it safe to accept.
     """
 
     permission_classes = [IsAuthenticatedOrDemoPublic]
@@ -91,6 +95,7 @@ class ComplianceEvaluationView(APIView):
         check = analysis_service.evaluate_run(
             run,
             category=self._category(validated.get("category_code")),
+            declarations=validated.get("applicability_declarations") or {},
             requested_by=(
                 request.user if request.user.is_authenticated else None
             ),

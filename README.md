@@ -123,7 +123,7 @@ those limits are enforced by tests rather than only documented:
 │   ├── SCHEMA.md
 │   ├── SOURCES.md       what each rule was verified against
 │   ├── INVENTORY.md     every LMPC requirement and whether we can check it
-│   └── definitions/     six rules from rule 6; two active
+│   └── definitions/     twelve rules from rules 6 and 13; eleven active
 │
 ├── docs/              API, security, ML-integration and strategy docs
 ├── .github/workflows/ CI: backend, ML and frontend on every pull request
@@ -322,11 +322,16 @@ defined by the Rules.
 python backend/manage.py load_rules
 ```
 
-This loads six rules and reports each one. Two are active; four load with
-`is_active: false` and are never evaluated — see
+This loads twelve rules and reports each one. Eleven are active;
+`LM-PC-0002` loads with `is_active: false` and is never evaluated, because the
+extractor does not read the declaration it names — see
 [`rules/README.md`](rules/README.md) for why, and
-[`rules/SOURCES.md`](rules/SOURCES.md) for what they were verified against.
+[`rules/SOURCES.md`](rules/SOURCES.md) for what each was verified against.
 Add `--dry-run` to validate the files without writing.
+
+Every one of the eleven tests **less than its clause requires**, deliberately.
+`rules/FRAMEWORK.md` has the clause-by-clause table of what is and is not
+checked.
 
 ### 10. Create an admin user (optional)
 

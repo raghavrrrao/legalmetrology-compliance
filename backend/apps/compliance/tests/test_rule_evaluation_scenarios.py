@@ -107,7 +107,14 @@ def finding_for(check: ComplianceCheck, rule_code: str) -> ComplianceFinding:
 
 
 #: A realistic Indian retail food label carrying the declarations the active
-#: rules ask for. `500 g` is normalised the way `labelextract` normalises it.
+#: rules ask for, each normalised the way `labelextract` normalises it.
+#:
+#: The normalised halves are not decoration. Since Step 3 three rules read the
+#: structured value rather than merely noting that a field exists - the
+#: consumer-care elements (rule 6(2)), whether the date resolves to a month and
+#: a year (rule 6(1)(d)), and whether the price is declared exclusive of all
+#: taxes (rule 6(1)(e)) - so a fixture carrying a raw string alone would be
+#: testing a reading the extraction service never produces.
 COMPLIANT_FOOD_LABEL = {
     "net_quantity": (
         "Net Wt. 500 g",
@@ -122,9 +129,25 @@ COMPLIANT_FOOD_LABEL = {
     ),
     "retail_sale_price": (
         "MRP Rs. 120.00 (incl. of all taxes)",
-        {"amount": "120.00", "currency": "INR", "uncertain": False},
+        {
+            "amount": "120.00",
+            "currency": "INR",
+            # Written only because the label printed words the extractor
+            # recognised as a tax indication. `currency` is a normaliser
+            # DEFAULT and is never evidence about the package - rule 6(1)(e)'s
+            # "in Indian currency" limb is not checked against it anywhere.
+            "inclusive_of_all_taxes": True,
+            "uncertain": False,
+        },
     ),
-    "consumer_care_contact": "Consumer care: care@bharatfoods.example, 1800-000-000",
+    "consumer_care_contact": (
+        "Consumer care: care@bharatfoods.example, 1800-000-000",
+        {
+            "emails": ["care@bharatfoods.example"],
+            "phones": ["1800-000-000"],
+            "uncertain": False,
+        },
+    ),
 }
 
 
@@ -350,6 +373,340 @@ def test_import_status_is_never_inferred_from_the_importer_name(product, label):
     finding = finding_for(check, "LM-PC-0007")
     assert finding.status == Status.INCONCLUSIVE
     assert "Imported product" in finding.message
+
+
+#: The provisos that must be answered NO before rule 6(1)(e) can reach a
+#: verdict on a package: proviso (C) for bidi and for administered-price LPG,
+#: and alcoholic beverages, where State Excise Laws provide for the
+#: declaration instead.
+PRICE_PROVISOS = ("bidi", "domestic-lpg-cylinder", "alcoholic-beverage")
+
+#: The provisos and carve-outs that must be answered before rule 6(1)(d) can
+#: reach a verdict on a NON-FOOD package. Food is excluded by category instead.
+DATE_PROVISOS = (
+    "seeds-certified",
+    "cosmetics-and-toiletries",
+    "bidi",
+    "incense-sticks",
+    "domestic-lpg-cylinder",
+)
+
+
+@pytest.fixture
+def non_food_product(shipped, db):
+    """A product in `packaged-non-food`, which rules 6(1)(a) and 6(1)(d) reach.
+
+    The shared `product` fixture is in `packaged-food`, where both clauses
+    defer to the Food Safety and Standards Act, 2006 - so a food product can
+    never exercise the manufacture-date rules at all.
+    """
+    from apps.catalog.models import Product, ProductCategory
+
+    return Product.objects.create(
+        name="Test detergent",
+        category=ProductCategory.objects.get(code="packaged-non-food"),
+    )
+
+
+@pytest.fixture
+def non_food_label(non_food_product, png_bytes, media_root, make_extracted_field):
+    """A completed reading attached to a non-food product's own image."""
+    from django.core.files.uploadedfile import SimpleUploadedFile
+
+    from apps.images.models import ProductImage
+
+    def _label(**declarations) -> ExtractionRun:
+        image = ProductImage.objects.create(
+            product=non_food_product,
+            image=SimpleUploadedFile(
+                "label.png", png_bytes, content_type="image/png"
+            ),
+            original_filename="label.png",
+            content_type="image/png",
+            image_format="png",
+            size_bytes=len(png_bytes),
+            width=64,
+            height=64,
+            checksum_sha256="1" * 64,
+        )
+        run = ExtractionRun.objects.create(
+            image=image,
+            engine_name="stub",
+            engine_version="0.0.0",
+            status=ExtractionRun.Status.COMPLETED,
+            recognised_text="\n".join(
+                str(v[0] if isinstance(v, tuple) else v)
+                for v in declarations.values()
+            ),
+        )
+        for field_key, value in declarations.items():
+            raw, normalised = value if isinstance(value, tuple) else (value, None)
+            make_extracted_field(
+                run, field_key, raw, normalized_value=normalised, confidence=0.94
+            )
+        return run
+
+    return _label
+
+
+# --- rule 6(2), element by element ------------------------------------------
+
+
+def test_a_consumer_care_declaration_without_an_email_names_the_missing_element(
+    product, label, declare
+):
+    """The precision Step 3 added over the presence check.
+
+    LM-PC-0006 passes - a consumer-care declaration was read. LM-PC-0010 fails,
+    and its finding says which of the elements rule 6(2) names was not found,
+    rather than reporting that the package is "not compliant".
+    """
+    declare(product, "imported-product", Answer.NO)
+    for code in PRICE_PROVISOS:
+        declare(product, code, Answer.NO)
+    declarations = {
+        **COMPLIANT_FOOD_LABEL,
+        "consumer_care_contact": (
+            "Consumer care: 1800-000-000",
+            {"phones": ["1800-000-000"], "uncertain": False},
+        ),
+    }
+
+    check = engine.evaluate(label(**declarations))
+
+    assert finding_for(check, "LM-PC-0006").status == Status.PASSED
+    missing = finding_for(check, "LM-PC-0010")
+    assert missing.status == Status.FAILED
+    assert missing.clause == "6(2)"
+    assert missing.legal_reference.startswith("Rule 6(2)")
+    assert "e-mail address" in missing.message
+    assert missing.details["elements_not_found"] == ["e-mail address"]
+    assert check.result == Result.NON_COMPLIANT
+
+
+def test_the_consumer_care_finding_never_claims_the_name_and_address(
+    product, label
+):
+    """Two of the clause's four elements are not checked, and it says so."""
+    check = engine.evaluate(label(**COMPLIANT_FOOD_LABEL))
+
+    finding = finding_for(check, "LM-PC-0010")
+    assert finding.status == Status.PASSED
+    assert finding.details["elements_not_checked"] == [
+        "name of the person or office to be contacted",
+        "address of the person or office to be contacted",
+    ]
+
+
+def test_a_low_confidence_consumer_care_reading_is_reviewed_not_failed(
+    product, product_image, make_extracted_field, shipped
+):
+    """A missing element on a reading nobody trusts is not a violation."""
+    run = ExtractionRun.objects.create(
+        image=product_image,
+        engine_name="stub",
+        engine_version="0.0.0",
+        status=ExtractionRun.Status.COMPLETED,
+        recognised_text="Consumer care 1800-000-000",
+    )
+    make_extracted_field(
+        run,
+        "consumer_care_contact",
+        "Consumer care: 1800-000-000",
+        normalized_value={"phones": ["1800-000-000"], "uncertain": False},
+        confidence=0.2,
+    )
+
+    check = engine.evaluate(run)
+
+    finding = finding_for(check, "LM-PC-0010")
+    assert finding.status == Status.INCONCLUSIVE
+    assert finding.violation is None
+
+
+# --- rule 6(1)(d), month and year -------------------------------------------
+
+
+def test_a_resolved_manufacture_date_passes_rule_6_1_d(
+    non_food_product, non_food_label, declare
+):
+    for code in DATE_PROVISOS:
+        declare(non_food_product, code, Answer.NO)
+
+    check = engine.evaluate(
+        non_food_label(
+            date_of_manufacture=(
+                "MFG: 12/2024",
+                {"year_month": "2024-12", "uncertain": False},
+            )
+        )
+    )
+
+    assert finding_for(check, "LM-PC-0004").status == Status.PASSED
+    resolved = finding_for(check, "LM-PC-0011")
+    assert resolved.status == Status.PASSED
+    assert resolved.clause == "6(1)(d)"
+
+
+def test_an_ambiguous_manufacture_date_is_reviewed_not_failed(
+    non_food_product, non_food_label, declare
+):
+    """The case the presence check cannot see.
+
+    LM-PC-0004 passes: a date declaration was read. LM-PC-0011 cannot say the
+    clause is met, because the month is 3 or 4 and the label does not say
+    which - and it does not say the package is unlawful either, because an
+    unusual printing and a misrecognised one look identical from here.
+    """
+    for code in DATE_PROVISOS:
+        declare(non_food_product, code, Answer.NO)
+
+    check = engine.evaluate(
+        non_food_label(
+            date_of_manufacture=(
+                "MFG: 03/04/2025",
+                {
+                    "uncertain": True,
+                    "uncertainty_reasons": [
+                        "both DD/MM and MM/DD are valid readings of this date"
+                    ],
+                    "candidates": ["2025-04-03", "2025-03-04"],
+                },
+            )
+        )
+    )
+
+    assert finding_for(check, "LM-PC-0004").status == Status.PASSED
+    ambiguous = finding_for(check, "LM-PC-0011")
+    assert ambiguous.status == Status.INCONCLUSIVE
+    assert ambiguous.violation is None
+    assert check.result in {Result.REVIEW_REQUIRED, Result.PARTIALLY_COMPLIANT}
+
+
+def test_an_undeclared_proviso_keeps_the_date_rules_off_a_verdict(
+    non_food_product, non_food_label
+):
+    """Nothing declares whether this is bidi, incense or a certified seed.
+
+    Both rule 6(1)(d) rules must reach review, not a verdict - the safeguard
+    Step 2 built and Step 3 must not erode.
+    """
+    check = engine.evaluate(non_food_label(net_quantity="500 g"))
+
+    for code in ("LM-PC-0004", "LM-PC-0011"):
+        finding = finding_for(check, code)
+        assert finding.status == Status.INCONCLUSIVE
+        assert finding.violation is None
+
+
+def test_rule_6_1_d_is_not_evaluated_at_all_on_a_food_package(product, label):
+    """The first proviso defers to the Food Safety and Standards Act, 2006."""
+    check = engine.evaluate(label(**COMPLIANT_FOOD_LABEL))
+
+    assert not check.findings.filter(rule_code="LM-PC-0011").exists()
+
+
+# --- rule 6(1)(e), the tax indication ---------------------------------------
+
+
+def test_a_price_declared_exclusive_of_taxes_is_a_violation(
+    product, label, declare
+):
+    """The one determination rule 6(1)(e) supports beyond presence."""
+    declare(product, "imported-product", Answer.NO)
+    for code in PRICE_PROVISOS:
+        declare(product, code, Answer.NO)
+    declarations = {
+        **COMPLIANT_FOOD_LABEL,
+        "retail_sale_price": (
+            "Price Rs. 100 (excl. of all taxes)",
+            {
+                "amount": "100",
+                "currency": "INR",
+                "inclusive_of_all_taxes": False,
+                "uncertain": False,
+            },
+        ),
+    }
+
+    check = engine.evaluate(label(**declarations))
+
+    assert finding_for(check, "LM-PC-0005").status == Status.PASSED
+    finding = finding_for(check, "LM-PC-0012")
+    assert finding.status == Status.FAILED
+    assert finding.clause == "6(1)(e)"
+    assert finding.violation is not None
+
+
+def test_a_price_with_no_tax_wording_is_not_reported_as_a_violation(
+    product, label, declare
+):
+    """The restraint that keeps this rule defensible.
+
+    Whether "MRP Rs. 120" alone clearly indicates a price inclusive of all
+    taxes - rule 2(m) defines the retail sale price as inclusive - is a
+    question of legal construction. The system records what it observed and
+    does not decide it.
+    """
+    declare(product, "imported-product", Answer.NO)
+    for code in PRICE_PROVISOS:
+        declare(product, code, Answer.NO)
+    declarations = {
+        **COMPLIANT_FOOD_LABEL,
+        "retail_sale_price": (
+            "MRP Rs. 120",
+            {"amount": "120", "currency": "INR", "uncertain": False},
+        ),
+    }
+
+    check = engine.evaluate(label(**declarations))
+
+    finding = finding_for(check, "LM-PC-0012")
+    assert finding.status == Status.PASSED
+    assert finding.details["tax_indication_observed"] == "not_observed"
+    assert check.result == Result.COMPLIANT
+
+
+def test_an_unanswered_price_proviso_reaches_review_for_the_tax_rule_too(
+    product, label
+):
+    """Applicability gates the new rule exactly as it gates the presence one."""
+    declarations = {
+        **COMPLIANT_FOOD_LABEL,
+        "retail_sale_price": (
+            "Price Rs. 100 (excl. of all taxes)",
+            {
+                "amount": "100",
+                "inclusive_of_all_taxes": False,
+                "uncertain": False,
+            },
+        ),
+    }
+
+    check = engine.evaluate(label(**declarations))
+
+    finding = finding_for(check, "LM-PC-0012")
+    assert finding.status == Status.INCONCLUSIVE
+    assert finding.violation is None
+    assert "could not be determined" in finding.applicability_note
+    assert "were not established for this package" in finding.applicability_note
+
+
+def test_a_bidi_package_is_not_judged_on_its_price_by_either_rule(
+    product, label, declare
+):
+    """Proviso (C) excuses bidi from the retail sale price declaration.
+
+    NOT_APPLICABLE, not passed: nothing about the price was examined.
+    """
+    declare(product, "bidi", Answer.YES, "Declared as a package of bidi.")
+
+    check = engine.evaluate(label(**COMPLIANT_FOOD_LABEL))
+
+    for code in ("LM-PC-0005", "LM-PC-0012"):
+        finding = finding_for(check, code)
+        assert finding.status == Status.NOT_APPLICABLE
+        assert finding.violation is None
 
 
 def test_the_food_carve_out_keeps_rule_6_1_a_off_a_food_product(product, label):

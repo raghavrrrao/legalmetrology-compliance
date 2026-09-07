@@ -28,7 +28,7 @@ from __future__ import annotations
 
 from rest_framework import serializers
 
-from apps.catalog.models import ProductCategory
+from apps.catalog.models import ProductApplicabilityDeclaration, ProductCategory
 from apps.compliance.models import (
     ComplianceCheck,
     ComplianceEvidence,
@@ -41,6 +41,7 @@ from apps.extraction.api.serializers import (
 )
 from apps.extraction.models import ExtractionRun
 from apps.images.api.serializers import ProductImageSerializer
+from apps.rules.models import ApplicabilityCondition
 
 __all__ = [
     "ComplianceCheckListSerializer",
@@ -215,7 +216,7 @@ class ComplianceFindingSerializer(serializers.ModelSerializer):
 class ComplianceEvaluationRequestSerializer(serializers.Serializer):
     """The JSON body of `POST /api/v1/compliance/`.
 
-    Two fields, and what is *absent* from them is the important part. There is
+    Three fields, and what is *absent* from them is the important part. There is
     no rule code, no check type, no severity, no engine name and no threshold.
     A caller cannot choose which rules run or how strictly - applicability is
     answered by `engine.applicable_rules` from the loaded rule set and the
@@ -223,6 +224,16 @@ class ComplianceEvaluationRequestSerializer(serializers.Serializer):
 
     That is not defensive coding for its own sake. A compliance verdict a
     client could steer by picking its own rules would be worth nothing.
+
+    `applicability_declarations` is not an exception to that, and the
+    distinction is the whole reason it is safe to accept. It does not say which
+    rules to run. It states **facts about the goods** - this package contains
+    bidi, this package is imported - which the Rules themselves make decisive
+    and which no photograph can establish. The engine still decides what those
+    facts mean, from conditions loaded out of the verified framework. A caller
+    who lies is making a false declaration about their own product, recorded
+    against it with its source, which is a different thing from steering the
+    rule set.
     """
 
     extraction_run_id = serializers.UUIDField(
@@ -243,6 +254,29 @@ class ComplianceEvaluationRequestSerializer(serializers.Serializer):
             "not ask to change. Omitting it is honest and supported: the "
             "result then says the category was unknown rather than assuming "
             "one."
+        ),
+    )
+
+    applicability_declarations = serializers.DictField(
+        required=False,
+        child=serializers.ChoiceField(
+            choices=ProductApplicabilityDeclaration.Answer.choices
+        ),
+        help_text=(
+            "Facts about the package that decide whether a clause applies to "
+            "it, as {condition_code: yes|no|unknown}. Condition codes are "
+            "`ApplicabilityCondition.code` values loaded from "
+            "rules/framework/applicability_conditions.json - for example "
+            "'imported-product', 'bidi', 'domestic-lpg-cylinder'. "
+            "Optional, and omitting it is the honest default: an unstated fact "
+            "stays unestablished, and a clause whose applicability turns on one "
+            "reaches REVIEW_REQUIRED rather than a verdict. Sending 'unknown' "
+            "is the same as not sending the code at all, and is accepted so a "
+            "form can record that somebody was asked. "
+            "Recorded against the product this reading belongs to, with source "
+            "'submitter', and visible on every finding the answer influenced. "
+            "Nothing here is read from the label: using an extracted value to "
+            "decide whether to check for it would be circular."
         ),
     )
 
@@ -277,6 +311,87 @@ class ComplianceEvaluationRequestSerializer(serializers.Serializer):
                 f"categories with `manage.py seed_categories`."
             )
         return value
+
+    def validate_applicability_declarations(self, value: dict) -> dict:
+        """Reject a code the framework does not define, or cannot use.
+
+        Two rejections, and the second is the one worth explaining.
+
+        An **unknown code** is rejected rather than dropped, for the reason a
+        typo'd category code is: silently ignoring it produces a result reading
+        "this could not be determined", which looks identical to not having sent
+        the fact at all and sends the user looking in the wrong place.
+
+        A code the framework marks **not determinable** is rejected too, even
+        though it is a real condition. `applicability.DeclarationSet.answer`
+        returns UNKNOWN for those whatever anyone states - the framework's
+        judgement that this system cannot establish a fact outranks a claim
+        about it, which is what stops a submitter switching off a check by
+        asserting a rule 33 relaxation nobody can confirm. Accepting the answer
+        and then ignoring it would let a caller believe they had declared
+        something. Saying so is the honest response.
+        """
+        if not value:
+            return {}
+
+        conditions = {
+            condition.code: condition
+            for condition in ApplicabilityCondition.objects.filter(
+                code__in=list(value), is_active=True
+            )
+        }
+        unknown = sorted(set(value) - set(conditions))
+        if unknown:
+            raise serializers.ValidationError(
+                f"No active applicability condition with code(s) "
+                f"{', '.join(repr(code) for code in unknown)}. Codes come from "
+                f"rules/framework/applicability_conditions.json; load them with "
+                f"`manage.py load_legal_framework`."
+            )
+
+        undeterminable = sorted(
+            code
+            for code, condition in conditions.items()
+            if not condition.is_determinable
+        )
+        if undeterminable:
+            raise serializers.ValidationError(
+                f"Condition(s) {', '.join(repr(c) for c in undeterminable)} are "
+                f"recorded in the legal framework as facts this system cannot "
+                f"establish, so an answer to them cannot affect any check and is "
+                f"not accepted. See ApplicabilityCondition.determination_note."
+            )
+
+        return value
+
+    def validate(self, attrs: dict) -> dict:
+        """Refuse declarations that would have nowhere to be recorded.
+
+        Declarations hang off `Product`, and a product is what carries the
+        commodity category. With neither an existing product on the run's image
+        nor a `category_code` to make one from, no rule applies to this
+        submission at all - the result is REVIEW_REQUIRED because the commodity
+        is unknown - and the declarations would be silently discarded. Saying so
+        is more useful than accepting them and returning a result they had no
+        part in.
+        """
+        declarations = attrs.get("applicability_declarations")
+        if not declarations:
+            return attrs
+        run = attrs["extraction_run_id"]
+        if run.image.product is None and not attrs.get("category_code"):
+            raise serializers.ValidationError(
+                {
+                    "applicability_declarations": (
+                        "Applicability declarations are recorded against the "
+                        "product this reading belongs to, and this reading's "
+                        "image has no product. Send 'category_code' as well, so "
+                        "the commodity is known - without it no rule applies and "
+                        "the declarations could not affect the result."
+                    )
+                }
+            )
+        return attrs
 
 
 class ComplianceCheckSerializer(serializers.ModelSerializer):

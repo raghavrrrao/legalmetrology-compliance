@@ -5,9 +5,10 @@ Commodities) Rules, 2011 require** — clause by clause, version by version —
 whether or not this software can evaluate any of it.
 
 `rules/definitions/` holds something different: the **executable** rules, each
-binding a registered validator to a set of commodity categories. Nine of those
-ship; eight are evaluated, and each tests less than its clause requires — the
-table below says exactly how much less.
+binding a registered validator to a set of commodity categories. Twelve of those
+ship; eleven are evaluated, they reach eight clauses between them, and each
+tests less than its clause requires — the table below says exactly how much
+less.
 
 Both are data, both are loaded by a management command, and the difference
 between them is the point of this document.
@@ -53,18 +54,30 @@ implemented".
 | Clause-level requirements | 69 |
 | Requirements marked `implemented` | **8** |
 
-The eight implemented requirements, and exactly what each one tests:
+The eight implemented requirements, and exactly what each one tests. Three
+clauses carry **two** rules: presence and manner-of-declaration are separate
+questions, and answering them separately is what makes a finding say which one
+failed.
 
 | Clause | Rule | What is checked | What is NOT |
 |---|---|---|---|
 | 6(1)(a) | `LM-PC-0001` | The manufacturer's, packer's **or** importer's name | The address — that is rule 10(1), and `manufacturer_address` is unextractable |
 | 6(1)(aa) | `LM-PC-0007` | Country of origin, on a package **declared imported** | Whether the country named is correct |
 | 6(1)(c) | `LM-PC-0003` | A net quantity is declared | Whether it is true — that is a weighing |
-| 6(1)(d) | `LM-PC-0004` | A month and year of manufacture is declared | Its format |
-| 6(1)(e) | `LM-PC-0005` | A retail sale price is declared | "inclusive of all taxes in Indian currency" — a format requirement, unchecked |
-| 6(2) | `LM-PC-0006` | A consumer-care contact is declared | Whether all four elements — name, address, telephone, e-mail — are present |
+| 6(1)(d) | `LM-PC-0004` | A month and year of manufacture is declared | — (presence only) |
+| 6(1)(d) | `LM-PC-0011` | That the declaration **resolves to a month and a year** | Its printed format — the clause prescribes none, so none is enforced. An ambiguous date is review, never a violation |
+| 6(1)(e) | `LM-PC-0005` | A retail sale price is declared | — (presence only) |
+| 6(1)(e) | `LM-PC-0012` | That the price is **not declared exclusive of all taxes** | The *absence* of an inclusive-of-taxes indication, which is legal construction; "in Indian currency", which the normaliser defaults rather than reads; whether the price is the true maximum |
+| 6(2) | `LM-PC-0006` | A consumer-care contact is declared | — (presence only) |
+| 6(2) | `LM-PC-0010` | That it states a **telephone number and an e-mail address** | The **name and the address** of the person or office — neither is extracted, and rule 10(1) is the operative address provision |
 | 13(4) | `LM-PC-0009` | No dozen, score, gross, great gross in the quantity | Units "or the like"; anything outside the quantity declaration |
 | 13(5) | `LM-PC-0008` | The quantity's unit is SI, or a unit of number | — |
+
+A manner-of-declaration rule whose declaration is **absent** reports
+inconclusive and defers to its presence rule, so one missing declaration
+produces one violation rather than two. All three read the *normalised* value
+and share one evidence gate: an uncertain interpretation or a low reported OCR
+confidence yields review, never a violation. See `rules/SCHEMA.md`.
 
 `LM-PC-0002` (rule 6(1)(b), common or generic name) remains **inactive**, and
 no applicability input fixes it: the extractor does not read the declaration, so

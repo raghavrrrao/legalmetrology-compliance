@@ -4,9 +4,11 @@ What this file is: a record of **which requirements of the Legal Metrology
 (Packaged Commodities) Rules, 2011 exist and are relevant to this project**, and
 for each one, whether this software can evaluate it today.
 
-What this file is **not**: a claim that any of them is implemented. Six rule
-files exist in `definitions/`; two are evaluated. Everything else below is
-inventoried, not built.
+What this file is **not**: a claim that any of them is implemented. Twelve rule
+files exist in `definitions/`; eleven are evaluated, and between them they reach
+eight of the sixty-nine recorded requirements. Everything else below is
+inventoried, not built — and every one of the eight is checked more narrowly
+than its clause requires.
 
 This separation is the point. It lets the project truthfully say *"we have
 inventoried the applicable LMPC compliance requirements"* without implying
@@ -64,9 +66,18 @@ no net quantity, package capacity, commodity type, import status, buyer type or
 principal-display-panel geometry as *applicability inputs*. That single fact
 drives most of the `BLOCKED_BY_MISSING_APPLICABILITY_DATA` entries below.
 
-Registered check types: `field_presence` only. Planned but **not registered**:
-`value_check`, `format_check`, `numeric_check`, `conditional_check`,
-`visual_check`.
+Registered check types as of Step 3: `field_presence`,
+`field_presence_any_of`, `si_unit`, `prohibited_counting_unit`,
+`consumer_care_elements`, `month_year_declaration` and
+`retail_price_tax_declaration`. Planned but **not registered**: `value_check`,
+`format_check`, `numeric_check`, `conditional_check`, `visual_check` — nothing
+since has needed the generic names, because each clause that could be automated
+got a validator shaped to that clause.
+
+The `Status` values below were written before Steps 2 and 3 and are **not**
+rewritten wholesale, so the original blockers stay visible. Where a clause has
+since been automated, its entry carries a `Step 2` or `Step 3` line saying what
+changed and, more importantly, what is still not checked.
 
 ---
 
@@ -232,7 +243,7 @@ reactivating `LM-PC-0002` needs extraction support, not legal review.
 | **Status** | `IMPLEMENTABLE_NOW` — **implemented** |
 | **Why** | Presence only. Whether the quantity is *correctly expressed* is rules 11–13, below. |
 
-### Rule 6(1)(d) — month and year of manufacture → `LM-PC-0004` (inactive)
+### Rule 6(1)(d) — month and year of manufacture → `LM-PC-0004`, `LM-PC-0011` (both active)
 
 | | |
 |---|---|
@@ -240,9 +251,11 @@ reactivating `LM-PC-0002` needs extraction support, not legal review.
 | **Exemptions** | Food articles → FSS Act 2006; seeds certified under the Seeds Act 1966; cosmetics → Drugs and Cosmetics Rules 1945. Proviso (A): "no declaration as to the month and year … shall be required to be made on-- (i) any package containing bidi or incense sticks; (ii) any domestic liquefied petroleum gas cylinder of 14.2kg or 5kg, bottled and marketed by a public sector undertaking" |
 | **Effective** | Current wording w.e.f. 1 Oct 2022 |
 | **Evidence** | `date_of_manufacture` — **supported** |
-| **check_type** | `conditional_check` |
-| **Status** | `BLOCKED_BY_MISSING_APPLICABILITY_DATA` |
-| **Why** | Food carve-out is expressible; cosmetics, seeds, bidi, incense sticks and LPG cylinders all sit inside `packaged-non-food` with no narrower category. |
+| **check_type** | `field_presence` (presence) + `month_year_declaration` (month and year determinable) |
+| **Status** | Was `BLOCKED_BY_MISSING_APPLICABILITY_DATA`; **implemented, partially** |
+| **Why (original)** | Food carve-out is expressible; cosmetics, seeds, bidi, incense sticks and LPG cylinders all sit inside `packaged-non-food` with no narrower category. |
+| **Step 2** | The carve-outs became *declarable facts* resolved before the validator runs, so the taxonomy no longer has to express them. `LM-PC-0004` checks presence. |
+| **Step 3** | `LM-PC-0011` checks that the declaration **resolves to a month and a year**. **No printed format is enforced** — the clause prescribes none, and inventing one would enforce a requirement the source does not contain. An ambiguous `03/04/2025`, where the year is settled and the month is not, is `REVIEW_REQUIRED` and never a violation. There is no failing branch in that check at all. |
 
 ### Rule 6(1)(da) — best before / use by
 
@@ -255,7 +268,7 @@ reactivating `LM-PC-0002` needs extraction support, not legal review.
 | **Status** | `BLOCKED_BY_MISSING_APPLICABILITY_DATA` |
 | **Why** | Triggered by a property of the commodity — "may become unfit for human consumption after a period of time" — that the system does not record. `packaged-food` is **not** a safe proxy: salt and sugar are food; many non-foods perish. The second proviso (displaced by any other law) is a further `LEGAL_REVIEW_REQUIRED` question. |
 
-### Rule 6(1)(e) — retail sale price → `LM-PC-0005` (inactive)
+### Rule 6(1)(e) — retail sale price → `LM-PC-0005`, `LM-PC-0012` (both active)
 
 | | |
 |---|---|
@@ -263,9 +276,11 @@ reactivating `LM-PC-0002` needs extraction support, not legal review.
 | **Exemptions** | Proviso (C): "no declaration as to the retail sale price shall be required to be made on (i) any package containing bidi; (ii) any domestic liquefied petroleum gas cylinder of which the price is covered under the Administrative Price Mechanism of the Government." Alcoholic beverages / spirituous liquor → State Excise Laws. Essential commodities with a notified price → G.S.R. 858(E). |
 | **Effective** | Current wording w.e.f. 1 Oct 2022 |
 | **Evidence** | `retail_sale_price` — **supported** |
-| **check_type** | `conditional_check` for applicability; `format_check` for the manner of declaration |
-| **Status** | `BLOCKED_BY_MISSING_APPLICABILITY_DATA` |
-| **Why** | Bidi, LPG and alcohol are not separable in the current taxonomy. Separately, "clearly indicate … inclusive of all taxes in Indian currency" is a *format* requirement `field_presence` cannot express. |
+| **check_type** | `field_presence` (presence) + `retail_price_tax_declaration` (not declared exclusive of taxes) |
+| **Status** | Was `BLOCKED_BY_MISSING_APPLICABILITY_DATA`; **implemented, narrowly** |
+| **Why (original)** | Bidi, LPG and alcohol are not separable in the current taxonomy. Separately, "clearly indicate … inclusive of all taxes in Indian currency" is a *format* requirement `field_presence` cannot express. |
+| **Step 2** | Proviso (C) and the alcohol carve-out became declarable facts. `LM-PC-0005` checks presence. |
+| **Step 3** | `LM-PC-0012` closes **one slice** of the format gap: a price the label declares *exclusive* of all taxes contradicts the clause read with rule 2(m), and that reading needs no interpretation. **Still not checked:** the *absence* of an inclusive-of-taxes indication is recorded but is not a violation, because whether printing "MRP" alone already clearly indicates it is a question of legal construction; "in Indian currency" is not checked at all, because `normalise_price` writes the currency as a fixed default rather than reading it off the label; and whether the price is the true maximum is rule 18(2) and is not knowable from a package. |
 
 ### Rule 6(1)(f) — dimensions where sizes are relevant
 
@@ -292,16 +307,17 @@ reactivating `LM-PC-0002` needs extraction support, not legal review.
 | **Status** | `NOT_APPLICABLE_TO_PROJECT_SCOPE` |
 | **Why** | A permission about manufacturing practice over time, not a declaration on a package. Unverifiable from one photograph. |
 
-### Rule 6(2) — consumer care details → `LM-PC-0006` (active)
+### Rule 6(2) — consumer care details → `LM-PC-0006`, `LM-PC-0010` (both active)
 
 | | |
 |---|---|
 | **Quotation** | "Every package shall bear the name, address, telephone number, e-mail address of the person who can be or the office which can be contacted, in case of consumer complaints." |
 | **Effective** | Substituted by G.S.R. 385(E), effective 1 Jan 2016 (source records "dispensed upto 30.6.2016") |
 | **Evidence** | `consumer_care_contact` — **supported** |
-| **check_type** | `field_presence` for presence; a composite check for all four elements |
+| **check_type** | `field_presence` (presence) + `consumer_care_elements` (telephone and e-mail) |
 | **Status** | `IMPLEMENTABLE_NOW` (presence) — **implemented, partially** |
-| **Why** | Presence is checked. Whether all four elements — name, address, telephone, e-mail — are present is not. Under-claims, which is the safe direction. |
+| **Why (original)** | Presence is checked. Whether all four elements — name, address, telephone, e-mail — are present is not. Under-claims, which is the safe direction. |
+| **Step 3** | `LM-PC-0010` checks **two of the four**: the telephone number and the e-mail address, individually, naming whichever is missing. **The name and the address of the person or office are still not checked** — no consumer-care name is extracted, addresses are not extracted at all, and rule 10(1) is the operative address provision. An absence can be a violation here only because `labelextract` now merges its per-line consumer-care readings, so `emails` and `phones` hold every such token recognised anywhere on the label; an uncertain reading or a low reported confidence still yields `REVIEW_REQUIRED`. |
 
 ### Rule 6(3) — stickers may not alter required declarations
 

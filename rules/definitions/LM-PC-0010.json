@@ -1,0 +1,27 @@
+{
+  "_comment_1": "Rule 6(2) LMPC 2011 - the ELEMENTS of the consumer-care declaration. LM-PC-0006 asks whether the declaration was read at all; this asks what it contained. Two rules against one clause is what ComplianceRule.rule_requirement is shaped for - 'presence and format are separate checks of one clause'.",
+  "_comment_2": "STEP 3. LM-PC-0006's own _comment_3 recorded the gap this closes: 'field_presence asks only whether a consumer care declaration was read. It does NOT verify that all four required elements (name, address, telephone number, e-mail address) are present. That needs a check type this repository does not have.' The check type now exists, and it verifies TWO of the four.",
+  "_comment_3": "SCOPE OF WHAT IS CHECKED - TELEPHONE NUMBER AND E-MAIL ADDRESS ONLY. The name and the address of the person or office to be contacted are NOT checked: the extractor reads no consumer-care name, and manufacturer_address is in its UNSUPPORTED_KEYS (rule 10(1) is the operative address provision). Every outcome this rule produces says so in words, so a pass cannot be read as covering the whole clause. The requirement text below is narrowed to match; the full clause wording stays on the RuleRequirement in the framework.",
+  "_comment_4": "WHY A MISSING ELEMENT CAN BE A VIOLATION. labelextract's consumer-care detector merges its per-line readings, so normalized_value['emails'] and ['phones'] hold every e-mail and telephone token recognised ANYWHERE in the label text. An empty list is therefore a real negative - 'no e-mail address was recognised on this label' - not an artefact of which line won. It is still a reading, so an uncertain interpretation or a low reported OCR confidence yields REVIEW_REQUIRED rather than a violation.",
+  "_comment_5": "Applicability: sub-rule (2) is written as 'Every package shall bear...' with no carve-out, so it applies to every commodity within Chapter II, exactly as LM-PC-0006 does. Chapter-wide scope limits in rule 3 and rule 26 are NOT expressible as categories and are NOT encoded here; they are resolved from declared facts before this validator runs.",
+
+  "code": "LM-PC-0010",
+  "title": "Consumer care telephone number and e-mail address",
+
+  "requirement": "The package must state a telephone number and an e-mail address for consumer complaints. Rule 6(2) also requires the name and the address of the person or office to be contacted; those two elements are NOT checked by this rule.",
+
+  "legal_reference": "Rule 6(2) of the Legal Metrology (Packaged Commodities) Rules, 2011",
+  "source_status": "verified",
+  "source_note": "Checked 2026-08-30 by Claude Code (automated legal-source check) for raghavrrrao against the Department of Consumer Affairs (Ministry of Consumer Affairs, Food and Public Distribution) consolidated publication 'Book on Legal Metrology Packaged Commodities Rules, 2011 with all amendments', https://consumeraffairs.gov.in/public/upload/admin/cmsfiles/whatsnews/Book_on_Legal_Metrology_Packaged_Commodities_Rules,2011_with_all_amendments_whatsnews.pdf (sha256 0ef948f9c6b89f5dfb20d384861901714fd0dc54fc67b5b86c772d2c3f983a4b; server Last-Modified 2025-04-14). Sub-rule (2), as substituted vide G.S.R. 385(E) dated 14th May 2015 with effect from 1.1.2016 (the source records 'dispensed upto 30.6.2016'), reads there verbatim: 'Every package shall bear the name, address, telephone number, e-mail address of the person who can be or the office which can be contacted, in case of consumer complaints.' The four elements this rule tests two of are enumerated in that sentence and require no construction: the clause names them. NO NEW LEGAL SOURCE WAS CONSULTED FOR THIS RULE IN STEP 3 - it rests entirely on the text already verified for LM-PC-0006, and adds only a narrower reading of the same sentence. Provenance, verification method and residual gaps, including the 2022-2025 amendment-chain gap: rules/SOURCES.md. HUMAN COUNTER-REVIEW BY A NAMED REVIEWER IS STILL OUTSTANDING.",
+
+  "severity": "major",
+
+  "check_type": "consumer_care_elements",
+  "parameters": {},
+
+  "applies_to_category_codes": ["packaged-commodity"],
+
+  "effective_from": "2016-01-01",
+  "effective_to": null,
+  "is_active": true
+}

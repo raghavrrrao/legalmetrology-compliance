@@ -26,20 +26,23 @@ Keeping rules as data buys three things that matter for this project:
 
 ## What this directory currently ships
 
-Nine rules, from rules 6 and 13 of the Legal Metrology (Packaged Commodities)
-Rules, 2011. **Eight are evaluated; one is recorded but inactive.**
+Twelve rules, from rules 6 and 13 of the Legal Metrology (Packaged Commodities)
+Rules, 2011. **Eleven are evaluated; one is recorded but inactive.**
 
-| Code | Declaration | Provision | Active |
+| Code | What it tests | Provision | Active |
 |---|---|---|---|
-| `LM-PC-0001` | Manufacturer, packer **or** importer name | Rule 6(1)(a) | yes |
-| `LM-PC-0002` | Common or generic name | Rule 6(1)(b) | **no** |
-| `LM-PC-0003` | Net quantity | Rule 6(1)(c) | yes |
-| `LM-PC-0004` | Month and year of manufacture | Rule 6(1)(d) | yes |
-| `LM-PC-0005` | Retail sale price (MRP) | Rule 6(1)(e) | yes |
-| `LM-PC-0006` | Consumer care details | Rule 6(2) | yes |
-| `LM-PC-0007` | Country of origin (imported only) | Rule 6(1)(aa) | yes |
-| `LM-PC-0008` | Net quantity in SI units | Rule 13(5) | yes |
-| `LM-PC-0009` | No dozen, score, gross | Rule 13(4) | yes |
+| `LM-PC-0001` | Manufacturer, packer **or** importer name is present | Rule 6(1)(a) | yes |
+| `LM-PC-0002` | Common or generic name is present | Rule 6(1)(b) | **no** |
+| `LM-PC-0003` | Net quantity is present | Rule 6(1)(c) | yes |
+| `LM-PC-0004` | Month and year of manufacture is present | Rule 6(1)(d) | yes |
+| `LM-PC-0005` | Retail sale price (MRP) is present | Rule 6(1)(e) | yes |
+| `LM-PC-0006` | A consumer-care declaration is present | Rule 6(2) | yes |
+| `LM-PC-0007` | Country of origin is present (imported only) | Rule 6(1)(aa) | yes |
+| `LM-PC-0008` | Net quantity is in SI units, or by number | Rule 13(5) | yes |
+| `LM-PC-0009` | Net quantity uses no dozen, score, gross | Rule 13(4) | yes |
+| `LM-PC-0010` | Consumer care states a **telephone number and an e-mail address** | Rule 6(2) | yes |
+| `LM-PC-0011` | Manufacture date **resolves to a month and a year** | Rule 6(1)(d) | yes |
+| `LM-PC-0012` | Price is **not declared exclusive of all taxes** | Rule 6(1)(e) | yes |
 
 **Each of these tests less than its clause requires**, deliberately, and each
 rule file's `requirement` text is narrowed to what is actually tested so a
@@ -52,12 +55,46 @@ exemption is now a declared fact rather than something the category taxonomy
 had to express; and `field_presence_any_of` expresses the disjunction in rule
 6(1)(a) that a single-key check could not.
 
+### The three Step 3 rules, and why they are separate files
+
+`LM-PC-0010`, `-0011` and `-0012` each name a clause an earlier rule already
+covers. That is deliberate and is what `ComplianceRule.rule_requirement` is
+shaped for: presence and manner-of-declaration are separate questions about one
+clause, and answering them in one rule would produce one blurred finding
+instead of two precise ones. A package that declares a consumer-care phone
+number but no e-mail gets a pass on `LM-PC-0006` and a failure on `LM-PC-0010`
+naming the e-mail, rather than a single verdict a reader has to interpret.
+
+The three follow the same rule as `LM-PC-0008`/`-0009` when the declaration
+they judge is **absent**: they report inconclusive and point at the presence
+rule, so one missing declaration is one violation and not two.
+
+What each of them deliberately does **not** decide is the more important half:
+
+- `LM-PC-0010` does not check the **name or the address** of the person or
+  office to be contacted. Neither is extracted, and rule 10(1) is the operative
+  address provision.
+- `LM-PC-0011` enforces **no printed format**, because the clause prescribes
+  none. `12/2024` and `DEC 2024` both pass; an ambiguous `03/04/2025`, where
+  the year is settled and the month is not, is sent for review and is never
+  reported as a violation.
+- `LM-PC-0012` does not treat the **absence** of an "inclusive of all taxes"
+  indication as a violation - whether printing "MRP" alone already indicates it
+  is a question of legal construction - and does not check "in Indian currency"
+  at all, because the normaliser writes the currency as a fixed default rather
+  than reading it off the label.
+
+Nothing in Step 3 rests on a legal source that was not already verified for the
+rule it sits beside. No new instrument was consulted and no requirement was
+widened; each new file narrows an existing verified clause to a further
+question the evidence can answer.
+
 Every one of them is `source_status: "verified"` against the Department of
 Consumer Affairs' own consolidated publication. What was read, from where, with
 what checksum, and quoted verbatim clause by clause, is recorded in
 [`SOURCES.md`](SOURCES.md). Read that before changing anything here.
 
-**Nine rules is not the legal inventory.** [`INVENTORY.md`](INVENTORY.md) records
+**Twelve rules is not the legal inventory.** [`INVENTORY.md`](INVENTORY.md) records
 every requirement of the Rules relevant to this project - rules 3 to 34 - and
 for each one whether this software can evaluate it, what blocks it, and which
 check type it would need. Read it before proposing a new rule file: most of
@@ -70,7 +107,7 @@ conditions and legal sources, loaded by `manage.py load_legal_framework`. It is
 a separate directory from `definitions/` because the two answer different
 questions: `definitions/` is what the engine *runs*, `framework/` is what the
 law *requires* - including the thirty-odd obligations no photograph can decide.
-69 requirements are recorded there; 8 are evaluated. See
+69 requirements are recorded there; 11 executable rules cover 8 of them. See
 [`FRAMEWORK.md`](FRAMEWORK.md) for the model, the versioning rules, and the
 open gaps in the legal record.
 
@@ -144,16 +181,40 @@ fails if it changes.
   cannot tell you anything". The caveat is carried on every finding's
   `applicability_note` rather than the evaluation refused. See
   [`FRAMEWORK.md`](FRAMEWORK.md).
-- **Several active rules are approximations, all under-claiming.** Rule 6(2)
-  requires name, address, telephone number *and* e-mail address; `LM-PC-0006`
-  asks only whether a consumer-care declaration was read. Rule 6(1)(e) requires
-  the price to be "clearly indicated as the maximum retail price inclusive of
-  all taxes in Indian currency"; `LM-PC-0005` checks only that a price is
-  present. Rule 6(1)(a) covers the name *and address*; `LM-PC-0001` checks the
-  name only, because `manufacturer_address` is unextractable and rule 10(1) is
-  the operative address provision. Each rule file's `requirement` text is
-  narrowed to what is actually tested, so a finding cannot read as the fuller
-  claim.
+- **Every active rule is an approximation, all under-claiming.** Step 3
+  narrowed three of the gaps and left the rest open, on purpose:
+
+  - **Rule 6(2)** requires name, address, telephone number *and* e-mail
+    address. `LM-PC-0006` asks whether a consumer-care declaration was read;
+    `LM-PC-0010` now checks the **telephone number and the e-mail address**
+    individually. The **name and the address are still not checked** — neither
+    is extracted, and rule 10(1) is the operative address provision.
+  - **Rule 6(1)(e)** requires the price to be "clearly indicated as the maximum
+    retail price inclusive of all taxes in Indian currency". `LM-PC-0005`
+    checks that a price is present; `LM-PC-0012` now reports a price declared
+    **exclusive** of all taxes. The **absence** of an inclusive-of-taxes
+    indication is recorded but is **not** a violation, and "in Indian currency"
+    is not checked at all — see the rule file for why each is left alone.
+  - **Rule 6(1)(d)** requires a month and a year. `LM-PC-0004` checks that a
+    date declaration is present; `LM-PC-0011` now checks that it **resolves to
+    a month and a year**, enforcing no printed format because the clause
+    prescribes none.
+  - **Rule 6(1)(a)** covers the name *and address*; `LM-PC-0001` checks the
+    name only, because `manufacturer_address` is unextractable and rule 10(1)
+    is the operative address provision. **Unchanged in Step 3.**
+
+  Each rule file's `requirement` text is narrowed to what is actually tested,
+  so a finding cannot read as the fuller claim.
+- **Rules 7 to 13 gained nothing in Step 3, and that is the finding.** Every
+  remaining candidate is blocked by something no amount of JSON fixes: rules 7
+  and 8(1) need a millimetre scale a photograph does not carry; rule 9(4) needs
+  an extractor that reads Devanagari, without which a wholly Hindi label reads
+  as unreadable rather than as compliant; rule 10(1) needs addresses, which are
+  not extracted; and rules 11(2)–(4), 12(6) and 13(2)–(3) have **empty or
+  summarised `verbatim_text`** in `framework/rules.json` — 12(6)'s candidate
+  word list is recorded there as coming from the *pre-2011* text. Coding any of
+  those would mean writing a requirement from a summary, or enforcing a
+  repealed instrument. Each is left for a named reviewer to transcribe.
 - **Best-before/use-by, dimensions, unit sale price** — each is conditional on
   a fact the system does not hold, or needs a declaration the extractor does not
   read. `SOURCES.md` quotes each provision and says why no file exists. Country

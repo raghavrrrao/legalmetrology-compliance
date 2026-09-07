@@ -339,12 +339,76 @@ evidence.
 |---|---|---|
 | `extraction_run_id` | yes | The reading to evaluate, as returned by `POST /api/v1/extraction/`. An unknown id is a 400. |
 | `category_code` | no | A `ProductCategory.code`. Determines which rules apply. Ignored when the run's image is already linked to a product — that product's category wins. An unknown code is a 400, never silently ignored. |
+| `applicability_declarations` | no | Facts about the package, as `{condition_code: "yes"｜"no"｜"unknown"}`. See below. |
 
 **There is no rule, check-type, severity, engine or threshold parameter, and
 there must never be one.** Applicability is answered by
 `engine.applicable_rules` from the loaded rule set and the commodity's category
 alone. A verdict a client could steer by choosing its own rules would be worth
 nothing.
+
+#### `applicability_declarations`
+
+Several clauses of the Rules apply, or do not apply, on facts **no photograph
+can establish** — whether the package contains bidi, whether it is imported,
+whether it is a domestic LPG cylinder under the Administrative Price Mechanism.
+Without them the engine cannot reach a verdict on those clauses, and correctly
+returns `review_required` for each rather than guessing. This field is how a
+caller states them.
+
+```json
+{
+  "extraction_run_id": "…",
+  "category_code": "packaged-food",
+  "applicability_declarations": {
+    "imported-product": "no",
+    "bidi": "no",
+    "domestic-lpg-cylinder": "no"
+  }
+}
+```
+
+**This is not a way to choose which rules run**, and the distinction is what
+makes it safe to accept. A declaration states a fact about the goods; what the
+Rules make of that fact is still decided by
+`apps.compliance.services.applicability` from conditions loaded out of the
+verified legal framework. Every answer is recorded against the product with
+`source: "submitter"` and surfaces in the `applicability_note` of every finding
+it influenced, so a reviewer can see who said what.
+
+Condition codes are `ApplicabilityCondition.code` values, defined in
+`rules/framework/applicability_conditions.json` and loaded by
+`manage.py load_legal_framework`. The ones that currently change an outcome are
+`imported-product` (rule 6(1)(aa)), `bidi`, `domestic-lpg-cylinder`,
+`alcoholic-beverage` (rule 6(1)(e) proviso C), `seeds-certified`,
+`cosmetics-and-toiletries`, `incense-sticks` (rule 6(1)(d) provisos), and the
+rule 3 / rule 26 scope gates — `industrial-consumer`, `institutional-consumer`,
+`quantity-above-25kg-25l`, `bags-above-50kg`, `quantity-10g-10ml-or-less`,
+`fast-food-restaurant-packed`, `dpco-formulation`, `thread-coil-handloom`,
+`tobacco-product`.
+
+Rules that hold, and the 400s they produce:
+
+- **Omitting the field changes nothing.** An unstated fact stays unestablished,
+  which is the behaviour every existing caller already relies on. Sending
+  `"unknown"` is the same as not sending the code, and is accepted so a form
+  can record that somebody was asked.
+- **An unknown condition code is a 400**, not a silent drop — dropping it would
+  produce a result reading "this could not be determined", indistinguishable
+  from not having sent the fact.
+- **A condition the framework records as _not determinable_ is a 400** even
+  though it is a real condition. The resolver answers `UNKNOWN` for those
+  whatever anyone states — that is what stops a submitter switching off a check
+  by asserting a rule 33 relaxation nobody can confirm — so accepting the
+  answer would let a caller believe they had declared something.
+- **Declarations with no product and no `category_code` are a 400.** They hang
+  off the product, and without a commodity no rule applies for them to affect.
+- Re-declaring a condition **corrects** the earlier answer rather than adding a
+  second row.
+
+**Not available on `POST /api/v1/images/`.** The one-shot upload path takes no
+declarations, so a submission made that way reaches `review_required` on the
+conditional clauses. Use the two-step path when the facts matter.
 
 **201** with the same `ComplianceCheck` body `POST /api/v1/images/` returns.
 201 rather than 200 because an evaluation is a new record: evaluating the same
@@ -356,8 +420,9 @@ unknown commodity category, or no loaded rules each produce a stored result
 whose verdict is `review_required` and whose summary says which of those it
 was.
 
-**400** for a missing, malformed or unknown `extraction_run_id`, or an unknown
-`category_code`.
+**400** for a missing, malformed or unknown `extraction_run_id`, an unknown
+`category_code`, or an `applicability_declarations` entry naming a condition
+the framework does not define or cannot use.
 
 ### `GET /api/v1/compliance/`
 

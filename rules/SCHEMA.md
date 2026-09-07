@@ -47,6 +47,9 @@ naming anything else is rejected at load time, not silently skipped.
 | `field_presence_any_of` | **Available** — a disjunction of declarations, for rule 6(1)(a) |
 | `si_unit` | **Available** — net quantity in SI units or by number, rule 13(5) |
 | `prohibited_counting_unit` | **Available** — dozen, score, gross, great gross, rule 13(4) |
+| `consumer_care_elements` | **Available** — telephone and e-mail elements of the consumer-care declaration, rule 6(2) |
+| `month_year_declaration` | **Available** — does a date declaration resolve to a month and a year? Rule 6(1)(d) |
+| `retail_price_tax_declaration` | **Available** — is the price declared *exclusive* of all taxes? Rule 6(1)(e) |
 | `value_check` | Planned — compare a declaration against an expected value |
 | `format_check` | Planned — validate shape (date format, units) |
 | `numeric_check` | Planned — range and arithmetic checks |
@@ -133,8 +136,8 @@ same shape of bug as `LM-PC-0002`, which reported a violation against every
 product.
 
 So the engine records **inconclusive** rather than evaluating such a rule while
-it is unmapped, and says to run `load_legal_framework`. Three shipped rules set
-it: `LM-PC-0004`, `LM-PC-0005` and `LM-PC-0007`.
+it is unmapped, and says to run `load_legal_framework`. Five shipped rules set
+it: `LM-PC-0004`, `LM-PC-0005`, `LM-PC-0007`, `LM-PC-0011` and `LM-PC-0012`.
 
 ## `check_type: field_presence_any_of`
 
@@ -186,3 +189,83 @@ clause also bars units "or the like", which is open-ended and no list can
 close; and it reaches anything "specified or indicated on any package", while
 only the net-quantity declaration is scanned — matching the whole recognised
 text would flag "Gross Weight", which is lawful.
+
+## The three checks that read the *normalised* value
+
+`consumer_care_elements`, `month_year_declaration` and
+`retail_price_tax_declaration` go a step beyond presence: they read
+`ExtractedLabelField.normalized_value` and ask what the declaration actually
+says. That is where a bad photograph could turn into a legal finding, so all
+three share one gate, in `apps/rules/checks/evidence.py`.
+
+**A violation requires both evidence signals to be clear.**
+
+| Signal | Source | Meaning |
+|---|---|---|
+| `normalized_value["uncertain"]` | `labelextract.fields.normalisation` | the extractor would not commit to an *interpretation* |
+| `ExtractedLabelField.confidence` | the OCR engine | its opinion of the *characters*, or NULL |
+
+A reading the extractor marked uncertain, or one whose reported confidence is
+below `LOW_CONFIDENCE_THRESHOLD` (0.5), yields **inconclusive**, never a
+failure. A NULL confidence is *unknown*, not low — treating it as low would
+disable these checks for any engine that reports none, and the finding's
+`details` record which it was.
+
+That threshold is **not** derived from the Rules; nothing in the Rules speaks to
+OCR confidence. It is safe to pick without measuring because it is
+directional: lowering the bar can only move an outcome from failed to
+inconclusive, never the other way. A badly chosen value costs recall and can
+never manufacture a violation.
+
+### `check_type: consumer_care_elements`
+
+No parameters; fixed to `consumer_care_contact`. Rule 6(2) names four elements
+and this tests **two**:
+
+| Element | Tested? |
+|---|---|
+| telephone number | yes — `normalized_value["phones"]` |
+| e-mail address | yes — `normalized_value["emails"]` |
+| name of the person or office | **no** — not extracted |
+| address of the person or office | **no** — `manufacturer_address` is unsupported; rule 10(1) is the operative provision |
+
+Every outcome names the two it did not test, so a pass cannot be read as a pass
+on the clause. An absence can be a violation because `labelextract` merges its
+per-line consumer-care readings: `emails` and `phones` hold every such token
+recognised **anywhere** on the label, so an empty list is a real negative rather
+than an artefact of which line won.
+
+### `check_type: month_year_declaration`
+
+```json
+"check_type": "month_year_declaration",
+"parameters": { "field_key": "date_of_manufacture" }
+```
+
+`field_key` must be a *date* declaration — `date_of_manufacture`,
+`date_of_packing`, `date_of_import` or `best_before`. Anything else is rejected
+at load time, because asking a net quantity whether it states a month and a
+year is a question that can only ever answer "no".
+
+**Pass or review only — there is no failing branch, by construction.** The
+clause prescribes no printed format, so `12/2024`, `DEC 2024` and anything else
+the normaliser resolves all pass, and anything it cannot resolve is
+inconclusive. An ambiguous `03/04/2025` does *not* pass: the year is settled and
+the month is not, and the clause needs the month.
+
+### `check_type: retail_price_tax_declaration`
+
+No parameters; fixed to `retail_sale_price`. Exactly one determination is made:
+a price the label declares **exclusive** of all taxes contradicts rule 6(1)(e)
+read with rule 2(m).
+
+Nothing wider is decided, and the exclusions are the point:
+
+- the **absence** of an "inclusive of all taxes" indication is recorded in
+  `details` and is **not** a violation — whether printing "MRP" alone already
+  clearly indicates it is a question of legal construction;
+- **"in Indian currency" is not checked at all** — `normalise_price` writes
+  `currency: "INR"` as a fixed default, not as a reading, so testing the clause
+  against it would be testing our own default;
+- whether the price is the **true** maximum is rule 18(2) and is not knowable
+  from a package.

@@ -250,7 +250,10 @@ and never edits one, so a finding recorded last year keeps citing the text that
 was in force then.
 
 **Recording a requirement does not mean it is evaluated.** 69 requirements are
-on record; 8 are evaluated. See [`rules/FRAMEWORK.md`](rules/FRAMEWORK.md).
+on record; 8 of them are reached by 11 executable rules, and every one of those
+tests less than its clause requires. See
+[`rules/FRAMEWORK.md`](rules/FRAMEWORK.md) and
+[`rules/README.md`](rules/README.md) for what each does and does not cover.
 
 ### Compliance engine (`backend/apps/compliance/`)
 
@@ -281,6 +284,24 @@ Four guarantees, each covered by a test:
    quality is checked before an absence is treated as a finding.
 4. **An unestablished fact never produces a verdict.** A clause turning on a
    condition nobody declared is inconclusive — not applied, not excused.
+5. **A reading nobody trusts never produces a violation.** The three checks
+   that read a declaration's *normalised* value rather than merely noting it
+   exists — the consumer-care elements, whether a date resolves to a month and
+   a year, whether a price is declared exclusive of taxes — require both the
+   extractor to have committed to an interpretation and the engine not to have
+   reported a low confidence. Either signal against, and the outcome is
+   inconclusive. The gate lives in `rules/checks/evidence.py`, and its
+   threshold can only ever move a result from failed to inconclusive, never the
+   other way.
+
+**Presence and manner-of-declaration are separate rules against one clause.**
+`ComplianceRule.rule_requirement` is many-to-one for that reason: rule 6(2) has
+one rule asking whether a consumer-care declaration was read and another asking
+whether it states a telephone number and an e-mail address, so a package that
+declares half of what it owes produces one precise finding rather than one
+blurred verdict. A manner-of-declaration rule whose declaration is **absent**
+reports inconclusive and defers to the presence rule, so one missing
+declaration is one violation and not two.
 
 Result states:
 
@@ -308,7 +329,7 @@ touching shared files.
 | Image preprocessing | `ml/labelextract/preprocessing/` | `feature/image-processing` | First pass landed (orientation, grayscale, contrast). Deskew and perspective correction still open |
 | OCR engine | `ml/labelextract/ocr/` | `feature/ocr-processing` | Tesseract 5 landed. A second engine for hard packaging is open |
 | Field extraction | `ml/labelextract/fields/` | `feature/label-field-extraction` | English patterns landed. Layout-dependent declarations - name, brand, address - still open |
-| Rule dataset | `rules/definitions/` | `feature/legal-rules-dataset` | Six rules from rule 6 of the LMPC Rules landed; three active, three inactive pending a disjunction check and narrower categories. Legal counter-review still open - see `rules/SOURCES.md` |
+| Rule dataset | `rules/definitions/` | `feature/legal-rules-dataset` | Twelve rules from rules 6 and 13 landed; eleven active, `LM-PC-0002` inactive pending extraction support. Rules 7-13 are otherwise blocked on evidence the pipeline cannot supply or on clause text nobody has transcribed - see `rules/INVENTORY.md`. Legal counter-review still open - see `rules/SOURCES.md` |
 | Rule engine & validators | `backend/apps/rules/checks/`, `backend/apps/compliance/` | `feature/compliance-rule-engine` | |
 | Frontend UI | `frontend/src/` | `feature/frontend-dashboard` | Scan, result and permalink screens landed against the real two-step API. Authentication UI, a result history list and rule browsing are still open — none has a backing endpoint yet |
 | Authentication | `backend/apps/accounts/` | `feature/authentication` | |
@@ -337,4 +358,7 @@ Things we did **not** build, and why. Revisit each when its trigger fires.
 | `ProductClassifier` interface | No caller and no implementation. Its signature would be a guess. | `feature/product-classification`. |
 | Extra models beyond the current nine | Adding schema later is a migration; adding half-designed schema now is a liability. | A feature actually needs it. |
 | A `RuleOutcome` row per evaluated rule | Violations are recorded in full with a rule snapshot and evidence, so every *finding* is traceable. Which rules merely *passed* is stored only as counts on `ComplianceCheck`. Adding a row per rule per check multiplies write volume for data nothing currently reads. | An inspection report or enforcement dashboard needs to list the rules that passed, not just how many. `feature/compliance-analysis` owns it. |
-| The five planned check types (`value_check`, `format_check`, `numeric_check`, `conditional_check`, `visual_check`) | Named in `apps.rules.checks.PLANNED_CHECK_TYPES` so the loader can say "planned, not built" instead of "unknown", but none is registered or callable. Writing five validators with no verified rule to exercise them would be guessing at signatures. | A verified rule needs one. The registry takes a validator plus its parameter validator, so each is a self-contained module. |
+| The five planned check types (`value_check`, `format_check`, `numeric_check`, `conditional_check`, `visual_check`) | Named in `apps.rules.checks.PLANNED_CHECK_TYPES` so the loader can say "planned, not built" instead of "unknown", but none is registered or callable. Writing five validators with no verified rule to exercise them would be guessing at signatures. Nothing since has needed the generic names: each clause that could be automated got a validator shaped to that clause, which is why the registry holds `month_year_declaration` rather than a general `format_check`. | A verified rule needs one. The registry takes a validator plus its parameter validator, so each is a self-contained module. |
+| A `visual_check`, and with it rules 7, 8(1) and 9(1)(b) | Rule 7's Table-I heights are absolute millimetres and a photograph carries no scale; rule 8(1)'s clear-space proviso and rule 7(3)'s one-third ratio *are* scale-free and computable from bounding boxes, but both need to know which face is the principal display panel, which no current input settles. Claiming a typography measurement from OCR alone would be inventing evidence. | A calibrated scale reference, or a declared principal display panel. |
+| Rules 11(2)-(4), 12(6) and 13(2)-(3) | Their `verbatim_text` in `rules/framework/rules.json` is **empty or summarised** — the source records them by effect rather than quotation, and rule 12(6)'s candidate prohibited-word list is recorded there as coming from the *pre-2011* text. Coding a check against a summary would write the requirement, and coding that word list would enforce a repealed instrument. | A named reviewer transcribes the clauses from the source. |
+| Rule 9(4), the language requirement | Script detection is tractable, but the OCR is English-only, so a wholly Hindi label reads as *unreadable* rather than as compliant. Reporting that as a violation would be exactly backwards. | The extractor handles Devanagari. |

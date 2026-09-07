@@ -263,6 +263,84 @@ def test_consumer_care_contact_is_extracted(extractor, ocr_lines, image_ref):
     assert found.normalized_value["phones"] == ["1800 123 4567"]
 
 
+def test_contact_elements_printed_on_separate_lines_are_all_kept(
+    extractor, ocr_lines, image_ref
+):
+    """The case the per-line detector used to lose.
+
+    A keyword line, a phone line and an e-mail line are one declaration printed
+    over three lines. Before these were merged, `_resolve` kept the
+    keyword-anchored candidate - which carries no value at all - and discarded
+    the phone and the e-mail, so a rules-layer check asking which elements of
+    rule 6(2) are present would have reported both missing from a package that
+    declares both.
+    """
+    fields = _extract(
+        extractor,
+        ocr_lines,
+        image_ref,
+        [
+            "Consumer Care:",
+            "Toll Free 1800 123 4567",
+            "care@example.com",
+        ],
+    )
+    found = _field(fields, LabelFieldKey.CONSUMER_CARE_CONTACT)
+
+    assert found is not None
+    assert found.normalized_value["emails"] == ["care@example.com"]
+    assert found.normalized_value["phones"] == ["1800 123 4567"]
+    assert is_uncertain(found.normalized_value) is False
+
+
+def test_one_consumer_care_field_is_emitted_however_many_lines_carry_one(
+    extractor, ocr_lines, image_ref
+):
+    """Several rows for one declaration would leave the engine choosing one."""
+    fields = _extract(
+        extractor,
+        ocr_lines,
+        image_ref,
+        ["Customer Care 1800 123 4567", "Email: care@example.com"],
+    )
+
+    care = [f for f in fields if f.key is LabelFieldKey.CONSUMER_CARE_CONTACT]
+    assert len(care) == 1
+    assert care[0].raw_value == (
+        "Customer Care 1800 123 4567 | Email: care@example.com"
+    )
+
+
+def test_the_same_address_printed_twice_is_listed_once(
+    extractor, ocr_lines, image_ref
+):
+    """Front panel and back panel carry the same contact; it is one contact."""
+    fields = _extract(
+        extractor,
+        ocr_lines,
+        image_ref,
+        ["Consumer care: CARE@EXAMPLE.COM", "Queries: care@example.com"],
+    )
+    found = _field(fields, LabelFieldKey.CONSUMER_CARE_CONTACT)
+
+    assert found.normalized_value["emails"] == ["CARE@EXAMPLE.COM"]
+
+
+def test_a_keyword_with_no_contact_element_anywhere_stays_uncertain(
+    extractor, ocr_lines, image_ref
+):
+    """Merging must not manufacture a value where the label carried none."""
+    fields = _extract(
+        extractor, ocr_lines, image_ref, ["Consumer Care", "Contact us"]
+    )
+    found = _field(fields, LabelFieldKey.CONSUMER_CARE_CONTACT)
+
+    assert found is not None
+    assert is_uncertain(found.normalized_value) is True
+    assert "emails" not in found.normalized_value
+    assert "phones" not in found.normalized_value
+
+
 def test_a_bare_phone_number_with_no_keyword_is_uncertain(
     extractor, ocr_lines, image_ref
 ):
