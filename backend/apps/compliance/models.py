@@ -216,8 +216,35 @@ class ComplianceFinding(TimeStampedModel):
         ),
     )
 
+    rule_requirement = models.ForeignKey(
+        "rules.RuleRequirement",
+        null=True,
+        blank=True,
+        on_delete=models.PROTECT,
+        related_name="findings",
+        help_text=(
+            "The clause-level legal requirement behind this outcome, when the "
+            "evaluated rule is linked to one. Null for a rule that has not been "
+            "mapped to the framework yet - which is a gap in the mapping, never "
+            "a statement that no legal basis exists. PROTECT for the same "
+            "reason as `rule`."
+        ),
+    )
+
     # --- snapshot of the rule as it was when evaluated ---
     rule_code = models.CharField(max_length=64, db_index=True)
+    clause = models.CharField(
+        max_length=32,
+        blank=True,
+        db_index=True,
+        help_text=(
+            "The sub-rule or clause this outcome concerns, as the Rules number "
+            "it: '6(1)(c)'. Snapshotted separately from `legal_reference` "
+            "because a reviewer filters and groups by clause, and parsing it "
+            "back out of a citation string is exactly the kind of guess this "
+            "schema exists to avoid."
+        ),
+    )
     title = models.CharField(max_length=255, blank=True)
     requirement = models.TextField(
         blank=True,
@@ -237,6 +264,40 @@ class ComplianceFinding(TimeStampedModel):
         blank=True,
         help_text="Which registered validator produced this outcome.",
     )
+    detection_method = models.CharField(
+        max_length=32,
+        blank=True,
+        help_text=(
+            "How this requirement is capable of being evaluated at all, copied "
+            "from the linked requirement. Blank when the rule is not mapped to "
+            "the framework. It is the field that says whether a photograph "
+            "could ever have settled this - a finding whose method is "
+            "'physical_inspection' or 'administrative' is a review prompt, not "
+            "a verdict, however it reads. See rules.DetectionMethod."
+        ),
+    )
+    legal_source_citation = models.CharField(
+        max_length=128,
+        blank=True,
+        help_text=(
+            "The instrument that established the requirement as evaluated, e.g. "
+            "'G.S.R. 629(E)'. Snapshotted, not followed through the foreign "
+            "key: which amendment a finding rested on must stay legible after "
+            "a later amendment supersedes it."
+        ),
+    )
+    applicability_note = models.TextField(
+        blank=True,
+        help_text=(
+            "Why this requirement was treated as applicable, and - more "
+            "importantly - what about its applicability could NOT be "
+            "established. Rule 3 and rule 26 take packages out of scope on "
+            "facts this system does not collect, so an active rule is applied "
+            "to some packages that are outside the Rules entirely. This is "
+            "where that caveat is recorded against the individual finding "
+            "rather than left in a document."
+        ),
+    )
 
     # --- what was actually read, and how sure the reader was ---
     field_key = models.CharField(
@@ -255,6 +316,29 @@ class ComplianceFinding(TimeStampedModel):
                   "declaration was found. Null when the finding is about an "
                   "absence. This is the link that makes a finding traceable "
                   "back to the pixels it came from.",
+    )
+    extracted_raw_value = models.TextField(
+        blank=True,
+        help_text=(
+            "The declaration exactly as it was recognised, before any "
+            "normalisation. Snapshotted here as well as on the reading itself "
+            "because `extracted_field` is SET_NULL: deleting a run must not "
+            "leave a finding whose evidence has silently become empty. Kept "
+            "alongside `extracted_normalized_value` and never replaced by it - "
+            "normalisation is an interpretation, and the original text is what "
+            "a reviewer needs to check that interpretation against."
+        ),
+    )
+    extracted_normalized_value = models.JSONField(
+        null=True,
+        blank=True,
+        help_text=(
+            "The normalised form of the reading, when a normaliser exists for "
+            "the field. Null means no normaliser ran - never that the value "
+            "was empty, and never that the raw text was unparseable. JSON "
+            "because the normalised shape differs per declaration: a quantity "
+            "has a magnitude and a unit, a date has a month and a year."
+        ),
     )
     extracted_confidence = models.FloatField(
         null=True,

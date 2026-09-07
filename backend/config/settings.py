@@ -309,12 +309,35 @@ DEMO_PUBLIC_ANALYSIS_API = env.bool("DEMO_PUBLIC_ANALYSIS_API", default=False)
 
 
 # ---------------------------------------------------------------------------
+# Testing
+# ---------------------------------------------------------------------------
+
+# The suite is pytest (see backend/pytest.ini and .github/workflows/ci.yml).
+# `manage.py test` cannot see a pytest function, so it used to discover nothing
+# and report "Ran 0 tests ... OK" - a green result from a run that executed
+# nothing. This runner refuses that instead, and names the command that works.
+# It affects `manage.py test` only; it changes nothing at runtime and nothing
+# about how pytest collects or runs.
+TEST_RUNNER = "config.test_runner.PytestAwareDiscoverRunner"
+
+
+# ---------------------------------------------------------------------------
 # Compliance rules
 # ---------------------------------------------------------------------------
 
-# Where `manage.py load_rules` reads rule definitions from.
+# Where `manage.py load_rules` reads executable rule definitions from.
 RULES_DEFINITIONS_DIR = Path(
     env("RULES_DEFINITIONS_DIR", default="") or str(REPO_ROOT / "rules" / "definitions")
+)
+
+# Where `manage.py load_legal_framework` reads the legal framework from: the
+# instruments, applicability conditions, and the versioned clause-level
+# requirements of the Rules themselves. Separate from the directory above
+# because the two hold different things - what the law requires, and what this
+# software can evaluate - and conflating them is how a system starts claiming
+# the second covers the first.
+RULES_FRAMEWORK_DIR = Path(
+    env("RULES_FRAMEWORK_DIR", default="") or str(REPO_ROOT / "rules" / "framework")
 )
 
 

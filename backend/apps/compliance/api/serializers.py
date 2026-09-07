@@ -137,7 +137,16 @@ class ComplianceFindingSerializer(serializers.ModelSerializer):
         message                         why, in plain language
         severity                        triage ranking only, no legal weight
 
-    Three of these are easy to misread and are worth stating plainly:
+    Four further fields come from the legal framework rather than from the
+    executable rule, and are blank when the rule is not mapped to a clause:
+
+        clause                  the sub-rule this concerns, e.g. '6(1)(c)'
+        legal_source_citation   the instrument that established it
+        detection_method        what evidence could settle it at all
+        applicability_note      why it was applied, and what could not be
+                                established about whether it applies
+
+    Five of these are easy to misread and are worth stating plainly:
 
     - **`status` is three-valued.** `inconclusive` is not a soft fail. It means
       the check could not be decided - usually because the photograph was not
@@ -153,6 +162,21 @@ class ComplianceFindingSerializer(serializers.ModelSerializer):
       verified** against the authoritative legal text, so the engine recorded
       it as inconclusive rather than as a violation. It is surfaced because a
       reviewer needs to see the safeguard fire, not infer it from a rule code.
+    - **`detection_method` says whether a photograph could ever have settled
+      this.** Anything other than `ocr`, `cv` or `ocr_cv` names evidence this
+      pipeline does not have - a physical weighing, a regulator's register, an
+      e-commerce listing - and a finding carrying one of those is a prompt for
+      human review whatever its `status` reads.
+    - **`applicability_note` is not boilerplate.** It carries the caveat that
+      applies to every result: applicability is decided from the commodity
+      category alone, and the facts rules 3 and 26 turn on are not collected,
+      so a rule may have been applied to a package outside the Rules. A client
+      that hides this is presenting a narrower claim than the data supports.
+
+    `extracted_raw_value` and `extracted_normalized_value` are both present and
+    neither replaces the other. The raw text is what was recognised; the
+    normalised value is an interpretation of it, and is `null` when no
+    normaliser ran - never because the reading was empty.
     """
 
     class Meta:
@@ -160,14 +184,20 @@ class ComplianceFindingSerializer(serializers.ModelSerializer):
         fields = [
             "id",
             "rule_code",
+            "clause",
             "title",
             "requirement",
             "legal_reference",
+            "legal_source_citation",
             "check_type",
+            "detection_method",
             "severity",
             "status",
             "downgraded_from_failed",
+            "applicability_note",
             "field_key",
+            "extracted_raw_value",
+            "extracted_normalized_value",
             "extracted_confidence",
             "message",
             "evidence_excerpt",

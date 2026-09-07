@@ -75,7 +75,20 @@ def applicable_rules(product: Product | None) -> list[ComplianceRule]:
     codes = product.applicable_category_codes
     candidates = (
         ComplianceRule.objects.filter(is_active=True)
-        .prefetch_related("applies_to_categories")
+        # The clause-level requirement and the instrument behind it are
+        # snapshotted onto every finding. select_related, not a second query
+        # per rule: `_record_findings` reads both for each outcome, and the
+        # query-count tests in test_engine_queries.py bound this to a flat cost.
+        .select_related("rule_requirement__source")
+        .prefetch_related(
+            "applies_to_categories",
+            # `_applicability_note` asks each requirement which of its
+            # conditions cannot be determined. Prefetched for the same reason
+            # as the categories above: without it the cost is one query per
+            # mapped rule, which grows with the rule set rather than staying
+            # flat.
+            "rule_requirement__applicability_conditions",
+        )
         .order_by("code")
     )
     today = timezone.localdate()
@@ -281,21 +294,45 @@ def _record_findings(
         # The reading behind this outcome, when there is one. `context.field`
         # reads the map loaded once per check, so this is not a query.
         extracted = context.field(outcome.field_key) if outcome.field_key else None
+        # The clause-level requirement, when the rule has been mapped to the
+        # legal framework. `select_related` in `applicable_rules` already
+        # loaded it, so this is an attribute read, not a query.
+        requirement = rule.rule_requirement
         rows.append(
             ComplianceFinding(
                 compliance_check=check,
                 rule=rule,
+                rule_requirement=requirement,
                 violation=violations.get(rule.code),
                 status=_FINDING_STATUS[outcome.status],
                 downgraded_from_failed=downgraded,
                 rule_code=rule.code,
+                clause=requirement.clause if requirement is not None else "",
                 title=rule.title,
                 requirement=rule.requirement,
                 legal_reference=rule.legal_reference,
                 severity=rule.severity,
                 check_type=rule.check_type,
+                detection_method=(
+                    requirement.detection_method if requirement is not None else ""
+                ),
+                legal_source_citation=(
+                    requirement.source.citation
+                    if requirement is not None and requirement.source is not None
+                    else ""
+                ),
+                applicability_note=_applicability_note(rule, requirement),
                 field_key=outcome.field_key or "",
                 extracted_field=extracted,
+                # Raw and normalised are snapshotted side by side, never one in
+                # place of the other: normalisation is an interpretation, and a
+                # reviewer needs the original text to check it against.
+                extracted_raw_value=(
+                    extracted.raw_value if extracted is not None else ""
+                ),
+                extracted_normalized_value=(
+                    extracted.normalized_value if extracted is not None else None
+                ),
                 # Snapshotted from the reading rather than followed through the
                 # foreign key: None stays None. A missing confidence means the
                 # engine did not report one, never zero.
@@ -310,6 +347,66 @@ def _record_findings(
         )
     if rows:
         ComplianceFinding.objects.bulk_create(rows)
+
+
+#: Attached to every finding whose rule is not mapped to a clause of the Rules.
+#: Not a hedge - the rule may be perfectly sound - but a finding that cannot
+#: name its clause cannot be audited against the source, and saying so is
+#: cheaper than a reviewer discovering it.
+_UNMAPPED_NOTE = (
+    "This rule is not linked to a clause of the Legal Metrology (Packaged "
+    "Commodities) Rules, 2011 in the legal framework, so the applicability "
+    "conditions behind it could not be stated. See rules/framework/."
+)
+
+#: Applies to every finding this system produces, without exception. Rule 3 and
+#: rule 26 take packages out of scope on facts - net quantity, buyer type,
+#: commodity class - that are not collected, so an active rule is evaluated
+#: against some packages the Rules do not govern. Rule 33 relaxations are
+#: likewise invisible here.
+_SCOPE_CAVEAT = (
+    "Applicability was decided from the product's commodity category alone. "
+    "The system does not collect the facts that rule 3 and rule 26 turn on - "
+    "net quantity as a trusted value, buyer type, and commodity class - so "
+    "this rule may have been applied to a package that is outside the Rules. "
+    "Any relaxation granted under rule 33 is also unknown to this system."
+)
+
+
+def _applicability_note(rule: ComplianceRule, requirement) -> str:
+    """Describe why this rule was applied, and what about that could not be established.
+
+    Written for every finding rather than only for doubtful ones. The caveats
+    below are true of every result this engine produces, and a caveat recorded
+    only when someone remembers to record it is one a reader cannot rely on the
+    absence of.
+    """
+    if requirement is None:
+        return f"{_UNMAPPED_NOTE}\n\n{_SCOPE_CAVEAT}"
+
+    parts = [
+        f"Clause {requirement.clause}, evaluated on the basis of the product's "
+        f"commodity category."
+    ]
+
+    # `.all()` reads the prefetch cache when one exists and is a single query
+    # otherwise. Findings are written once per check, so this is bounded by the
+    # number of rules evaluated, not by anything that grows with usage.
+    undetermined = [
+        condition
+        for condition in requirement.applicability_conditions.all()
+        if not condition.is_determinable
+    ]
+    if undetermined:
+        parts.append(
+            "The following conditions bear on whether this clause applies and "
+            "CANNOT be established by this system: "
+            + ", ".join(sorted(condition.name for condition in undetermined))
+            + ". The outcome below is therefore conditional on them."
+        )
+
+    parts.append(_SCOPE_CAVEAT)
+    return "\n\n".join(parts)
 
 
 def _json_safe_details(details, *, rule_code: str) -> dict:
