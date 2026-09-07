@@ -376,16 +376,14 @@ verified legal framework. Every answer is recorded against the product with
 `source: "submitter"` and surfaces in the `applicability_note` of every finding
 it influenced, so a reviewer can see who said what.
 
-Condition codes are `ApplicabilityCondition.code` values, defined in
-`rules/framework/applicability_conditions.json` and loaded by
-`manage.py load_legal_framework`. The ones that currently change an outcome are
-`imported-product` (rule 6(1)(aa)), `bidi`, `domestic-lpg-cylinder`,
-`alcoholic-beverage` (rule 6(1)(e) proviso C), `seeds-certified`,
-`cosmetics-and-toiletries`, `incense-sticks` (rule 6(1)(d) provisos), and the
-rule 3 / rule 26 scope gates — `industrial-consumer`, `institutional-consumer`,
-`quantity-above-25kg-25l`, `bags-above-50kg`, `quantity-10g-10ml-or-less`,
-`fast-food-restaurant-packed`, `dpco-formulation`, `thread-coil-handloom`,
-`tobacco-product`.
+Condition codes are `ApplicabilityCondition.code` values, loaded from
+`rules/framework/applicability_conditions.json` by
+`manage.py load_legal_framework`. **Do not hardcode them in a client** — ask
+`GET /api/v1/compliance/applicability-conditions/` (documented below), which
+serves exactly the codes that would change an outcome in the installation the
+client is talking to. A list copied into a client goes stale the moment a
+clause is transcribed or a rule is deactivated, and nothing fails when it
+does.
 
 Rules that hold, and the 400s they produce:
 
@@ -423,6 +421,77 @@ was.
 **400** for a missing, malformed or unknown `extraction_run_id`, an unknown
 `category_code`, or an `applicability_declarations` entry naming a condition
 the framework does not define or cannot use.
+
+### `GET /api/v1/compliance/applicability-conditions/`
+
+The facts a submitter may state that would change what this installation
+concludes. The discovery half of the POST above: it answers "which questions
+are worth asking about this package?"
+
+**Short by construction, and the filters are the contract.** Three of them, and
+each removes questions a submitter must not be asked:
+
+1. **Only conditions bearing on something this installation evaluates** — a
+   scope gate the engine consults for every check (rules 3 and 26), or a clause
+   with an **active** executable rule behind it.
+2. **Only `user_declared` conditions.** A `product_category` condition is
+   already answered by `category_code`; a `database` one needs a register
+   nobody holds; a `not_determinable` one is answered UNKNOWN by the resolver
+   whatever anybody states — which is the safeguard that stops a submitter
+   switching off a check by asserting, say, a rule 33 relaxation.
+3. **Only active rows**, on the condition and on the requirement.
+
+Against the shipped framework this is **17 conditions**, not the 39 the
+framework defines.
+
+The POST is deliberately *more* permissive than this list: it accepts any
+determinable condition, so a reviewer correcting a miscategorised submission can
+still state `food-article` directly. This endpoint describes what a submission
+**form** should ask.
+
+```json
+{
+  "conditions": [
+    {
+      "code": "bidi",
+      "name": "Package containing bidi",
+      "description": "…",
+      "determination": "user_declared",
+      "determination_note": "…",
+      "scope": "clause",
+      "answers": ["yes", "no", "unknown"],
+      "affects": [
+        {
+          "clause": "6(1)(e)",
+          "mode": "exempts",
+          "mode_display": "Does not apply to",
+          "note": "Proviso (C)(i): no declaration as to retail sale price…",
+          "rule_codes": ["LM-PC-0005", "LM-PC-0012"]
+        }
+      ]
+    }
+  ],
+  "answer_semantics": { "yes": "…", "no": "…", "unknown": "…" },
+  "framework_loaded": true
+}
+```
+
+| Field | Meaning |
+|---|---|
+| `scope` | `rules_scope` — answering "yes" takes the package out of the Rules or out of Chapter II and **nothing** is checked. `clause` — it excuses or triggers one clause; the rest of the check stands. |
+| `answers` | The permitted values, served rather than assumed so a client's radio group is built from the API's vocabulary. |
+| `affects[].note` | The framework's own note on the link — the proviso in its own terms. Not composed by the API from the mode and the clause number, and not to be composed by a client either. |
+| `affects[].rule_codes` | The executable rules an answer would affect. Empty for a scope gate, which affects every rule. |
+| `answer_semantics` | What each answer means, in particular that `unknown` is never read as `no`. Served so a client does not write its own, eventually wrong, explanation. |
+| `framework_loaded` | `false` with an empty list means the legal framework was never loaded — a deployment fault, not "nothing is declarable". |
+
+**Never paginated, never filtered.** It is a small fixed vocabulary.
+
+Permissions are the analysis endpoints' — `IsAuthenticatedOrDemoPublic`.
+Nothing here is user data: it is the loaded legal framework, the same content
+that ships in `rules/framework/` in the repository.
+
+**200** always, including with an empty list.
 
 ### `GET /api/v1/compliance/`
 
@@ -503,6 +572,55 @@ single source of the full trace.
 > Until then: `DEMO_PUBLIC_ANALYSIS_API` defaults to `False`, so an unauthenticated
 > caller reaches none of this, and the endpoint must not be opened publicly on a
 > deployment holding real submissions.
+
+### The compliance result body
+
+Returned by `POST /api/v1/compliance/`, `POST /api/v1/images/` and
+`GET /api/v1/compliance/<uuid>/` alike.
+
+**Three kinds of evidence come back, and a client must keep them apart.**
+Collapsing any two of them is the most damaging thing a UI can do with this
+response:
+
+| Key | What it is |
+|---|---|
+| `extraction` | What the pipeline **read** off the photograph — with a confidence and a bounding box per declaration. An observation. |
+| `applicability_declarations` | What a person **asserted** about the goods. No photograph could establish these, and nothing verified them. |
+| `findings` | What the rules **concluded** from both. See *Findings and violations* below for the per-finding fields. |
+
+#### Counts
+
+`rules_evaluated` = `rules_passed` + `rules_failed` + `rules_inconclusive`.
+
+`rules_not_applicable` is **outside** that sum, deliberately. A rule that did
+not govern the package examined nothing, so it is not a pass; adding it to
+`rules_passed` would turn a set of carve-outs into a clean bill of health.
+
+#### `applicability_declarations[]`
+
+The facts stated about this package, so a permalinked result can show *why* a
+clause was excused rather than only that it was.
+
+| Field | Notes |
+|---|---|
+| `code`, `name` | The condition, from the legal framework. |
+| `answer`, `answer_display` | `yes` / `no` / `unknown`. |
+| `source`, `source_display` | Who stated it. Never "read off the label" — using an extracted value to decide whether to check for it would be circular. |
+| `note` | Free text recorded with the answer. |
+| `stated_before_this_check` | Declarations hang off the **product**, not the check, so a fact recorded *after* an evaluation still appears here. `false` marks one that could not have influenced this result. `null` when the check recorded no start time to compare against. |
+
+Empty is the ordinary case, and it means something: nothing was stated, so any
+clause whose applicability turns on such a fact was reported as undetermined
+rather than decided either way.
+
+#### There is no compliance score
+
+**No percentage, no grade, no aggregate confidence exists in this API, and none
+may be derived from it in a client.** A number would imply that partial
+compliance with a labelling requirement is partial credit, which is not how the
+Rules work. The per-reading `extracted_confidence` is the OCR engine's opinion
+of its own characters and affects no outcome; it is not a compliance figure and
+must not be aggregated into one.
 
 ### `GET /api/v1/compliance/<uuid>/`
 
@@ -606,9 +724,22 @@ because a second client should make the same one.
 The scan screen uses the **two-step path**, not the one-shot one:
 
 ```
+GET  /api/v1/compliance/applicability-conditions/   (once, on mount)
 POST /api/v1/extraction/   ->  ExtractionRun id
 POST /api/v1/compliance/   ->  ComplianceCheck   (that id, no re-upload)
 ```
+
+The catalogue is fetched once when the screen mounts, and its failure is **not**
+fatal to the flow: the declarations are optional, and without them the engine
+reports REVIEW REQUIRED on the clauses that turn on an undeclared fact, which is
+a correct result rather than a broken one.
+
+`POST /api/v1/compliance/` is repeatable against the same run id, and the scan
+screen offers exactly that after a verdict: state a fact, re-evaluate the
+**same stored reading**. The photograph is neither uploaded nor read again, so
+the reading on screen cannot change underneath the new verdict. Each call does
+create a new `ComplianceCheck` row, which is intended — a result from before a
+fact was stated stays comparable with the one from after.
 
 It needs the reading on screen next to the verdict, so that a reviewer can
 check a finding against the text it was drawn from. `POST /api/v1/images/`
@@ -633,11 +764,12 @@ as the coordinate space that `bounding_box` is expressed in. A result opened
 from a link shows the findings and their excerpts, and says the photograph is
 not available on that device rather than showing an empty frame.
 
-### Permissions on the five analysis endpoints
+### Permissions on the six analysis endpoints
 
-All five — upload-and-analyse, upload-and-extract, evaluate-a-reading, reading a
-stored result back, and listing stored results — follow the deny-by-default rule
-and require an authenticated user, unless
+All six — upload-and-analyse, upload-and-extract, evaluate-a-reading, reading a
+stored result back, listing stored results, and listing the declarable
+applicability conditions — follow the deny-by-default rule and require an
+authenticated user, unless
 `DEMO_PUBLIC_ANALYSIS_API` is set. That setting **defaults to False** and is
 intended only for a local demonstration, where no login screen exists yet. It
 affects these five endpoints and nothing else, and uploads still go through

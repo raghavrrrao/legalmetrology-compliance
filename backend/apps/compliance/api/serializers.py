@@ -213,6 +213,71 @@ class ComplianceFindingSerializer(serializers.ModelSerializer):
         read_only_fields = fields
 
 
+class AppliedDeclarationSerializer(serializers.ModelSerializer):
+    """One fact stated about the package, as it stood when the result was read.
+
+    The third kind of evidence in a result, and it must not be confused with
+    the other two. An `ExtractedLabelField` is something the pipeline *read off
+    the photograph*. A `ComplianceFinding` is what a rule *concluded*. This is
+    something a **person asserted** about the goods - that the package contains
+    bidi, that it is imported - which no photograph could establish and which
+    the Rules make decisive.
+
+    Surfaced on the result because a finding's `applicability_note` explains
+    the reasoning but not the inputs, and a reviewer opening a permalinked
+    result days later has no other way to see what was declared or by whom.
+
+    `stated_before_this_check` is the honest part. Declarations hang off the
+    `Product`, not off the check, so a fact recorded *after* an evaluation is
+    still attached to the product it describes and would appear here. Rather
+    than snapshot every answer onto every check - a migration, and a second
+    copy of the same fact - the row is compared against the check's own start
+    time, so a client can mark the rare declaration that could not have
+    influenced the result it is being shown beside.
+    """
+
+    code = serializers.CharField(source="condition.code", read_only=True)
+    name = serializers.CharField(source="condition.name", read_only=True)
+    answer_display = serializers.CharField(
+        source="get_answer_display", read_only=True
+    )
+    source_display = serializers.CharField(
+        source="get_source_display", read_only=True
+    )
+    stated_before_this_check = serializers.SerializerMethodField()
+
+    class Meta:
+        model = ProductApplicabilityDeclaration
+        fields = [
+            "code",
+            "name",
+            "answer",
+            "answer_display",
+            "source",
+            "source_display",
+            "note",
+            "stated_before_this_check",
+        ]
+        read_only_fields = fields
+
+    def get_stated_before_this_check(self, declaration) -> bool | None:
+        """Whether this answer already stood when the check was evaluated.
+
+        `updated_at`, not `created_at`: re-declaring a condition corrects the
+        row in place, so an answer created before the check and changed after
+        it is not the answer the check saw.
+
+        None when the check never recorded a start time, which is not something
+        to guess at - a client showing "yes" there would be asserting a
+        comparison nobody made.
+        """
+        check = self.context.get("compliance_check")
+        started = getattr(check, "started_at", None)
+        if started is None:
+            return None
+        return declaration.updated_at <= started
+
+
 class ComplianceEvaluationRequestSerializer(serializers.Serializer):
     """The JSON body of `POST /api/v1/compliance/`.
 
@@ -405,6 +470,14 @@ class ComplianceCheckSerializer(serializers.ModelSerializer):
     of *why* this verdict was reached - including "no rules are loaded, so
     nothing was checked" - and a UI that shows the verdict without it can imply
     a determination the system did not make.
+
+    **Three kinds of evidence come back here and a client must keep them
+    apart.** `extraction` is what the pipeline read off the photograph;
+    `findings` are what the rules concluded from it; `applicability_declarations`
+    are facts a *person asserted* about the goods, which no photograph could
+    establish and which decide whether a clause governs the package at all.
+    Presenting the third as though it were the first would show a submitter's
+    claim as a measurement.
     """
 
     result_display = serializers.CharField(
@@ -415,6 +488,7 @@ class ComplianceCheckSerializer(serializers.ModelSerializer):
     extraction = ExtractionRunSerializer(source="extraction_run", read_only=True)
     image = ProductImageSerializer(source="extraction_run.image", read_only=True)
     product_category_code = serializers.SerializerMethodField()
+    applicability_declarations = serializers.SerializerMethodField()
 
     class Meta:
         model = ComplianceCheck
@@ -433,12 +507,35 @@ class ComplianceCheckSerializer(serializers.ModelSerializer):
             "processing_ms",
             "completed_at",
             "product_category_code",
+            "applicability_declarations",
             "violations",
             "findings",
             "extraction",
             "image",
         ]
         read_only_fields = fields
+
+    def get_applicability_declarations(self, check: ComplianceCheck) -> list:
+        """The facts stated about this package, as evidence beside the findings.
+
+        Empty when the check has no product - a submission whose commodity was
+        never identified has nothing to hang a declaration on - and empty when
+        nobody declared anything, which is the ordinary case and is exactly
+        what a client should show: "no facts were stated, so the clauses that
+        turn on them could not be decided."
+        """
+        if check.product_id is None:
+            return []
+        declarations = (
+            ProductApplicabilityDeclaration.objects.filter(product_id=check.product_id)
+            .select_related("condition")
+            .order_by("condition__code")
+        )
+        return AppliedDeclarationSerializer(
+            declarations,
+            many=True,
+            context={**self.context, "compliance_check": check},
+        ).data
 
     def get_product_category_code(self, check: ComplianceCheck) -> str | None:
         """The category whose rules were considered, or null if none was known.

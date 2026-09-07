@@ -13,6 +13,8 @@ import {
   formatConfidence,
   isUnrecognisedFindingStatus,
   isUnrecognisedResult,
+  needsEvidenceBeyondTheImage,
+  reviewReasonsFor,
   sortFindingsForDisplay,
   toneForFindingStatus,
   toneForResult,
@@ -107,5 +109,100 @@ describe('boundingBoxToPercentages', () => {
     expect(
       boundingBoxToPercentages({ x: 1, y: 1, width: 5, height: 5 }, undefined, 600),
     ).toBeNull();
+  });
+});
+
+describe('not_applicable', () => {
+  it('is a status this build knows, and is not a pass', () => {
+    expect(isUnrecognisedFindingStatus('not_applicable')).toBe(false);
+    expect(toneForFindingStatus('not_applicable')).toBe('muted');
+    expect(toneForFindingStatus('not_applicable')).not.toBe('success');
+  });
+
+  it('sorts after the passes, because nothing about it was examined', () => {
+    const ordered = sortFindingsForDisplay([
+      { id: 1, status: 'not_applicable' },
+      { id: 2, status: 'passed' },
+      { id: 3, status: 'failed' },
+      { id: 4, status: 'inconclusive' },
+    ]);
+
+    expect(ordered.map((finding) => finding.id)).toEqual([3, 4, 2, 1]);
+  });
+});
+
+describe('needsEvidenceBeyondTheImage', () => {
+  it('is true for evidence a photograph cannot carry', () => {
+    expect(
+      needsEvidenceBeyondTheImage({ detectionMethod: 'physical_inspection' }),
+    ).toBe(true);
+    expect(needsEvidenceBeyondTheImage({ detectionMethod: 'database' })).toBe(true);
+  });
+
+  it('is false for the methods this pipeline actually has', () => {
+    expect(needsEvidenceBeyondTheImage({ detectionMethod: 'ocr' })).toBe(false);
+    expect(needsEvidenceBeyondTheImage({ detectionMethod: 'ocr_cv' })).toBe(false);
+    expect(needsEvidenceBeyondTheImage({ detectionMethod: 'cv' })).toBe(false);
+  });
+
+  it('does not treat an unmapped rule as needing a physical inspection', () => {
+    // The field is blank when the rule is not linked to the legal framework,
+    // which says nothing about what evidence the question would need.
+    expect(needsEvidenceBeyondTheImage({ detectionMethod: '' })).toBe(false);
+    expect(needsEvidenceBeyondTheImage({})).toBe(false);
+    expect(needsEvidenceBeyondTheImage(null)).toBe(false);
+  });
+});
+
+describe('reviewReasonsFor', () => {
+  it('says nothing about a finding that was decided', () => {
+    expect(reviewReasonsFor({ status: 'passed', details: {} })).toEqual([]);
+    expect(reviewReasonsFor({ status: 'failed', details: {} })).toEqual([]);
+    expect(reviewReasonsFor({ status: 'not_applicable', details: {} })).toEqual([]);
+  });
+
+  it('names the facts the engine could not establish', () => {
+    const reasons = reviewReasonsFor({
+      status: 'inconclusive',
+      details: { unresolved_conditions: ['bidi', 'domestic-lpg-cylinder'] },
+    });
+
+    expect(reasons).toHaveLength(1);
+    expect(reasons[0].detail).toContain('bidi');
+  });
+
+  it('reports an unreadable photograph and an uninterpretable reading apart', () => {
+    const unreadable = reviewReasonsFor({
+      status: 'inconclusive',
+      details: { extraction_status: 'empty' },
+    });
+    const uninterpretable = reviewReasonsFor({
+      status: 'inconclusive',
+      details: {
+        normalisation_uncertain: true,
+        uncertainty_reasons: ['both DD/MM and MM/DD are valid readings'],
+      },
+    });
+
+    expect(unreadable[0].label).toMatch(/could not be read/i);
+    expect(uninterpretable[0].label).toMatch(/could not be interpreted/i);
+    expect(uninterpretable[0].detail).toContain('DD/MM');
+  });
+
+  it('invents nothing when the response gives no reason', () => {
+    // An undetermined finding with no diagnostics is a real state, and a
+    // plausible-sounding guess next to a legal outcome is worse than silence.
+    expect(reviewReasonsFor({ status: 'inconclusive', details: {} })).toEqual([]);
+    expect(reviewReasonsFor({ status: 'inconclusive' })).toEqual([]);
+  });
+
+  it('reports the unverified-rule safeguard when it fired', () => {
+    const reasons = reviewReasonsFor({
+      status: 'inconclusive',
+      downgradedFromFailed: true,
+      details: {},
+    });
+
+    expect(reasons[0].label).toMatch(/not verified/i);
   });
 });

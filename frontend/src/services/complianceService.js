@@ -55,14 +55,20 @@ import {
  * @typedef {object} Finding
  * @property {number} id
  * @property {string} ruleCode
+ * @property {string} clause          the sub-rule, e.g. '6(1)(c)'; '' if unmapped
  * @property {string} title
  * @property {string} requirement     what the package must declare
  * @property {string} legalReference
+ * @property {string} legalSourceCitation  the amending instrument, or ''
  * @property {string} checkType
+ * @property {string} detectionMethod what evidence could settle it at all
  * @property {string} severity        triage ranking only, no legal weight
- * @property {'passed'|'failed'|'inconclusive'} status
+ * @property {'passed'|'failed'|'inconclusive'|'not_applicable'} status
  * @property {boolean} downgradedFromFailed
+ * @property {string} applicabilityNote why it was applied, and what is unknown
  * @property {string} fieldKey
+ * @property {string} extractedRawValue        the text as recognised
+ * @property {object|null} extractedNormalizedValue  its interpretation, or null
  * @property {number|null} extractedConfidence  null means "not reported"
  * @property {string} message
  * @property {string} evidenceExcerpt
@@ -72,12 +78,25 @@ import {
  */
 
 /**
+ * @typedef {object} AppliedDeclaration
+ * @property {string} code
+ * @property {string} name
+ * @property {'yes'|'no'|'unknown'} answer
+ * @property {string} answerDisplay
+ * @property {string} source          submitter | reviewer | category
+ * @property {string} sourceDisplay
+ * @property {string} note
+ * @property {boolean|null} statedBeforeThisCheck  null when it cannot be told
+ */
+
+/**
  * @typedef {object} ComplianceResult
  * @property {string} id
  * @property {'compliant'|'partially_compliant'|'non_compliant'|'review_required'} result
  * @property {string} resultDisplay
  * @property {string} summary
  * @property {string|null} productCategoryCode
+ * @property {AppliedDeclaration[]} applicabilityDeclarations
  * @property {Finding[]} findings
  * @property {boolean} findingsReported  false against a backend with no findings[]
  * @property {Violation[]} violations
@@ -115,22 +134,70 @@ function mapFinding(finding) {
   return {
     id: finding.id,
     ruleCode: finding.rule_code,
+    // The clause of the Rules this concerns. Blank when the executable rule is
+    // not mapped to the legal framework, which is a real state and not an
+    // error - the UI says so rather than printing an empty label.
+    clause: finding.clause || '',
     title: finding.title || '',
     requirement: finding.requirement || '',
     legalReference: finding.legal_reference || '',
+    // The notification that last amended the clause. Blank is meaningful: the
+    // clause stands as it was made. Never rendered as missing data.
+    legalSourceCitation: finding.legal_source_citation || '',
     checkType: finding.check_type || '',
+    // Anything other than ocr / cv / ocr_cv names evidence this pipeline does
+    // not have - a physical weighing, a register, an e-commerce listing.
+    detectionMethod: finding.detection_method || '',
     severity: finding.severity || '',
-    // Three-valued and passed through verbatim. `inconclusive` is not a soft
-    // fail, and this is the one value the UI must never round to another.
+    // FOUR-valued and passed through verbatim. `inconclusive` is not a soft
+    // fail and `not_applicable` is not a pass; these are the two values the UI
+    // must never round to another.
     status: finding.status,
     downgradedFromFailed: Boolean(finding.downgraded_from_failed),
+    // Why the rule was applied to this package and what could not be
+    // established about whether it should have been. Not boilerplate: it
+    // carries the caveat that applies to every result.
+    applicabilityNote: finding.applicability_note || '',
     fieldKey: finding.field_key || '',
+    // Both, and neither replaces the other: the raw text is what was
+    // recognised, the normalised value is an interpretation of it.
+    extractedRawValue: finding.extracted_raw_value || '',
+    extractedNormalizedValue: finding.extracted_normalized_value ?? null,
     extractedConfidence: finding.extracted_confidence ?? null,
     message: finding.message || '',
     evidenceExcerpt: finding.evidence_excerpt || '',
     boundingBox: finding.bounding_box ?? null,
     details: finding.details ?? {},
     violationId: finding.violation ?? null,
+  };
+}
+
+/**
+ * One fact a person asserted about the package.
+ *
+ * The third kind of evidence in a result, and the UI must keep it apart from
+ * the other two: an extracted field was *read off the photograph*, a finding is
+ * what a rule *concluded*, and this is what somebody *said* about the goods.
+ * Rendering an assertion as though it were a measurement is the specific
+ * confusion this separate mapper exists to prevent.
+ *
+ * @returns {AppliedDeclaration}
+ */
+function mapDeclaration(declaration) {
+  return {
+    code: declaration.code,
+    name: declaration.name || declaration.code,
+    answer: declaration.answer,
+    answerDisplay: declaration.answer_display || '',
+    source: declaration.source || '',
+    sourceDisplay: declaration.source_display || '',
+    note: declaration.note || '',
+    // Null stays null: "the check recorded no start time, so this could not be
+    // compared" is not "yes", and the UI shows nothing rather than a claim.
+    statedBeforeThisCheck:
+      typeof declaration.stated_before_this_check === 'boolean'
+        ? declaration.stated_before_this_check
+        : null,
   };
 }
 
@@ -157,9 +224,20 @@ function mapResult(data) {
     rulesPassed: data.rules_passed,
     rulesFailed: data.rules_failed,
     rulesInconclusive: data.rules_inconclusive,
+    // Counted separately from the three above, and it must stay that way. A
+    // rule that did not govern this package examined nothing; folding it into
+    // `rulesPassed` would turn a set of exemptions into a clean bill of health.
+    // Null against a backend that predates the count, which is not zero.
+    rulesNotApplicable:
+      typeof data.rules_not_applicable === 'number'
+        ? data.rules_not_applicable
+        : null,
     processingMs: data.processing_ms ?? null,
     completedAt: data.completed_at ?? null,
     productCategoryCode: data.product_category_code ?? null,
+    applicabilityDeclarations: Array.isArray(data.applicability_declarations)
+      ? data.applicability_declarations.map(mapDeclaration)
+      : [],
     findingsReported,
     findings: findingsReported ? data.findings.map(mapFinding) : [],
     violations: (data.violations ?? []).map(mapViolation),
@@ -179,13 +257,20 @@ function mapResult(data) {
  * record; there is nothing for a caller to do about that but not treat a
  * repeated call as free.
  *
+ * `declarations` are facts about the goods - "this package contains bidi",
+ * "this package is imported" - that the Rules make decisive and that no
+ * photograph can establish. They do **not** choose which rules run: the engine
+ * still decides what each fact means, from conditions loaded out of the
+ * verified legal framework. Send only codes served by
+ * `fetchApplicabilityConditions`.
+ *
  * @param {string} extractionRunId  as returned by `extractLabel`
- * @param {{categoryCode?: string, signal?: AbortSignal}} [options]
+ * @param {{categoryCode?: string, declarations?: Record<string,string>, signal?: AbortSignal}} [options]
  * @returns {Promise<ComplianceResult>}
  * @throws {import('./apiClient.js').ApiError}
  */
 export async function evaluateExtractionRun(extractionRunId, options = {}) {
-  const { categoryCode, ...requestOptions } = options;
+  const { categoryCode, declarations, ...requestOptions } = options;
 
   const body = { extraction_run_id: extractionRunId };
   // Omitted rather than sent blank when unknown. The backend treats an absent
@@ -195,7 +280,44 @@ export async function evaluateExtractionRun(extractionRunId, options = {}) {
     body.category_code = categoryCode;
   }
 
+  const stated = pruneUnansweredDeclarations(declarations);
+  if (stated) {
+    body.applicability_declarations = stated;
+  }
+
   return mapResult(await apiClient.post('compliance/', body, requestOptions));
+}
+
+/**
+ * Drop the questions nobody answered, keep every answer that was given.
+ *
+ * A form holds one entry per question, most of them unanswered. Sending those
+ * is not wrong - the API treats `unknown` and an absent key identically - but
+ * it puts a row in the database recording an answer of "don't know" for every
+ * question the user skipped, which is noise on the result screen.
+ *
+ * **`unknown` chosen deliberately is kept.** It means "somebody was asked and
+ * did not know", which is worth recording even though it has the same effect on
+ * the engine as silence. What is dropped is the form's own empty state, which
+ * is not an answer at all. Turning either of those into `no` would silently
+ * assert a fact nobody stated, and is the one thing this function must never
+ * do.
+ *
+ * Returns null when nothing was answered, so the caller omits the key entirely.
+ */
+function pruneUnansweredDeclarations(declarations) {
+  if (!declarations || typeof declarations !== 'object') {
+    return null;
+  }
+
+  const stated = {};
+  for (const [code, answer] of Object.entries(declarations)) {
+    if (typeof answer === 'string' && answer !== '') {
+      stated[code] = answer;
+    }
+  }
+
+  return Object.keys(stated).length > 0 ? stated : null;
 }
 
 /**

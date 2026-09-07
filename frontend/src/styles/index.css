@@ -601,6 +601,153 @@ pre {
   border-radius: var(--radius-sm);
 }
 
+/* --- not-applicable, and the declaration form -----------------------------
+ *
+ * `muted` is the tone for "this rule did not govern the package". It is
+ * deliberately NOT the success tone: nothing about those declarations was
+ * examined, and a reviewer scanning the list has to be able to tell an
+ * exemption from a pass. Colour is never the only signal - every status also
+ * carries its own word in the badge, and the not-applicable card carries a
+ * sentence saying it is not a pass.
+ */
+
+.status-badge--muted {
+  background: var(--colour-surface-muted);
+  border-color: var(--colour-border);
+  color: var(--colour-faint);
+  border-style: dashed;
+}
+
+.finding--muted {
+  border-style: dashed;
+}
+
+.finding--muted .finding__index {
+  background: var(--colour-surface-muted);
+  color: var(--colour-faint);
+}
+
+.finding__flag--muted {
+  color: var(--colour-faint);
+}
+
+.count-chip--muted {
+  color: var(--colour-faint);
+}
+
+.count-chip--muted .count-chip__dot {
+  background: var(--colour-faint);
+}
+
+.verdict__note--muted {
+  color: var(--colour-faint);
+}
+
+.finding__value {
+  font-family: var(--font-mono, monospace);
+  font-size: 0.85em;
+  word-break: break-word;
+}
+
+.finding__evidence-label {
+  margin: 0.7rem 0 0.25rem;
+  font-size: 0.78rem;
+  font-weight: 600;
+  color: var(--colour-faint);
+}
+
+.finding__review {
+  margin-top: 0.7rem;
+  padding: 0.6rem 0.75rem;
+  border: 1px solid var(--tone-review-border);
+  border-radius: var(--radius-sm);
+  background: var(--tone-review-bg);
+}
+
+.finding__review-heading {
+  margin: 0 0 0.35rem;
+  font-size: 0.84rem;
+}
+
+.finding__review-list {
+  margin: 0;
+  padding-left: 1.1rem;
+  font-size: 0.84rem;
+}
+
+.finding__review-list li + li {
+  margin-top: 0.25rem;
+}
+
+.finding__applicability {
+  margin-top: 0.7rem;
+  font-size: 0.82rem;
+  color: var(--colour-faint);
+}
+
+.finding__applicability summary {
+  cursor: pointer;
+  font-weight: 600;
+}
+
+.finding__applicability p {
+  margin: 0.5rem 0 0;
+}
+
+.applicability {
+  border-top: 1px solid var(--colour-border);
+}
+
+.applicability > summary {
+  padding: 0.7rem 1rem;
+  cursor: pointer;
+  font-size: 0.86rem;
+  font-weight: 600;
+}
+
+.applicability__body {
+  padding: 0 1rem 1rem;
+}
+
+.applicability__group + .applicability__group {
+  margin-top: 1.25rem;
+}
+
+.applicability__field {
+  margin: 0.85rem 0 0;
+  padding: 0.6rem 0.75rem;
+  border: 1px solid var(--colour-border);
+  border-radius: var(--radius-sm);
+  background: var(--colour-surface-muted);
+}
+
+.applicability__field legend {
+  padding: 0 0.3rem;
+  font-size: 0.86rem;
+  font-weight: 600;
+}
+
+.applicability__options {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.75rem;
+  margin-top: 0.4rem;
+}
+
+.applicability__option {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.35rem;
+  font-size: 0.84rem;
+}
+
+.applicability__effects {
+  margin: 0.5rem 0 0;
+  padding-left: 1.1rem;
+  font-size: 0.78rem;
+  color: var(--colour-faint);
+}
+
 /* --- pipeline stepper (Figma mobile: Upload > Analyze > Extract > ...) ----- */
 
 .stepper {

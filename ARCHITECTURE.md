@@ -69,21 +69,36 @@ The end-to-end flow the whole system exists to serve:
   ExtractionRun + ExtractedLabelField rows
         │                       readings, with confidence and bounding boxes
         ▼
-  apps.compliance.services.engine
-        │
+  apps.compliance.services.engine   ◀── ProductApplicabilityDeclaration
+        │                                   facts a PERSON stated, never
+        │                                   inferred from the photograph
         ├─▶ which rules are candidates?  category + effective date + active
         ├─▶ do they GOVERN this package? rules 3 and 26, then each clause's
         │                                conditions - applicability.py
         ├─▶ evaluate the ones that do    via apps.rules.checks validators
         ├─▶ verified rules only          can produce a violation
         ▼
-  ComplianceCheck + ComplianceViolation + ComplianceEvidence
+  ComplianceCheck + ComplianceFinding + ComplianceViolation + ComplianceEvidence
         │
         ▼
   /api/v1/... JSON response
         │
         ▼
-  React UI: result, violations, evidence, and what could NOT be determined
+  React UI: result, findings, evidence, the facts that were stated, and what
+            could NOT be determined
+```
+
+**One compliance engine, several clients.** The React web app is a client of
+that JSON, and a future React Native client is intended to be another one of the
+same endpoints. Nothing in the API is shaped for a browser: there is no
+server-rendered HTML, no session-only flow, and no web-only assumption in the
+request or response bodies. A second client that reimplemented a rule would be
+a second, unauditable answer, which is why the browser holds none.
+
+```
+React Web ─────┐
+               ├── Django/DRF API ── OCR/extraction ── applicability
+React Native ──┘                   ── compliance engine ── database
 ```
 
 ## What each layer owns
@@ -116,7 +131,46 @@ appearance, and it is presentation-only: partial lookups with a neutral
 fallback, so a status this build has never seen renders as unrecognised rather
 than inheriting a colour that would flatter it. It derives no verdict,
 thresholds no confidence, and combines no statuses - that is the rule against
-compliance logic in the browser, made checkable in one file.
+compliance logic in the browser, made checkable in one file. Its
+`reviewReasonsFor` is the same rule applied to explanations: it turns flags the
+response actually set into sentences, and returns nothing when the response
+gives no reason. A plausible-sounding guess beside a legal outcome is worse
+than silence.
+
+**The legal condition catalogue is not in the browser either.** Several clauses
+apply on facts no photograph can establish - whether the package contains bidi,
+whether it is imported - and `components/ApplicabilityForm.jsx` asks about them.
+Every question, clause reference and explanatory note it renders is served by
+`GET /api/v1/compliance/applicability-conditions/`. A list of condition codes
+written in JSX would be a copy of the legal catalogue that goes stale the moment
+a clause is transcribed or a rule is deactivated, with nothing failing - so
+there is none, and a component test asserts that a condition this build has
+never heard of still renders.
+
+Three properties of that form are safety properties rather than presentation
+ones, and should survive a redesign:
+
+1. **Unanswered is the default and is never "no".** An unstated fact stays
+   unestablished, and the clause that turns on it reaches REVIEW REQUIRED. The
+   form says so before the user answers anything.
+2. **"Don't know" is a distinct, offerable answer.** It records that somebody
+   was asked. It has the same effect on the engine as silence, and is never
+   folded into "no".
+3. **Re-evaluating never re-uploads.** After a verdict the same facts can be
+   stated and the *same stored reading* judged again, so the reading on screen
+   cannot change underneath the new verdict.
+
+**A result screen shows three kinds of evidence under three headings**, because
+collapsing any two of them misrepresents what the system knows: what the
+pipeline *read* (`ExtractionPanel`), what a person *stated*
+(`DeclarationsPanel`), and what the rules *concluded* (`FindingsList`). A
+submitter's assertion that a package contains bidi is not a measurement, and a
+screen that listed it beside the extracted net quantity would present it as one.
+
+**There is no compliance score anywhere in the application**, and none may be
+derived from the API. A percentage would imply that partial compliance with a
+labelling requirement is partial credit. A test asserts that the only percentage
+on a result screen is the OCR engine's own reported confidence in a reading.
 
 ### API layer (`backend/apps/*/api/`)
 
@@ -331,7 +385,7 @@ touching shared files.
 | Field extraction | `ml/labelextract/fields/` | `feature/label-field-extraction` | English patterns landed. Layout-dependent declarations - name, brand, address - still open |
 | Rule dataset | `rules/definitions/` | `feature/legal-rules-dataset` | Twelve rules from rules 6 and 13 landed; eleven active, `LM-PC-0002` inactive pending extraction support. Rules 7-13 are otherwise blocked on evidence the pipeline cannot supply or on clause text nobody has transcribed - see `rules/INVENTORY.md`. Legal counter-review still open - see `rules/SOURCES.md` |
 | Rule engine & validators | `backend/apps/rules/checks/`, `backend/apps/compliance/` | `feature/compliance-rule-engine` | |
-| Frontend UI | `frontend/src/` | `feature/frontend-dashboard` | Scan, result and permalink screens landed against the real two-step API. Authentication UI, a result history list and rule browsing are still open — none has a backing endpoint yet |
+| Frontend UI | `frontend/src/` | `feature/frontend-dashboard` | Scan, result, permalink and inspection-history screens landed against the real API, with the applicability declaration form and the full finding trace. Authentication UI and rule browsing are still open — neither has a backing endpoint yet |
 | Authentication | `backend/apps/accounts/` | `feature/authentication` | |
 
 **Shared files — announce changes before editing:**

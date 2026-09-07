@@ -14,7 +14,9 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { ScanPage } from './ScanPage.jsx';
 import {
+  applicabilityBody,
   complianceBody,
+  declarationBody,
   extractionBody,
   extractionRunBody,
   findingBody,
@@ -38,10 +40,15 @@ function jsonResponse(body, status = 200) {
 /**
  * Route `fetch` by URL rather than by call order.
  *
- * The page makes a health request as well as the two analysis requests, and
- * the order of the first two is not something the tests should depend on.
+ * The page makes a health request and an applicability-catalogue request as
+ * well as the two analysis requests, and the order of those is not something
+ * the tests should depend on.
+ *
+ * The applicability branch must come **before** the compliance one:
+ * `/api/v1/compliance/applicability-conditions/` is a compliance URL, and a
+ * substring match on `/compliance/` would answer it with a verdict.
  */
-function routeFetch({ health, extraction, compliance } = {}) {
+function routeFetch({ health, extraction, compliance, conditions } = {}) {
   fetch.mockImplementation(async (url) => {
     const target = String(url);
     if (target.includes('/health/')) {
@@ -50,6 +57,9 @@ function routeFetch({ health, extraction, compliance } = {}) {
     if (target.includes('/extraction/')) {
       return extraction ?? jsonResponse(extractionBody(), 201);
     }
+    if (target.includes('/applicability-conditions/')) {
+      return conditions ?? jsonResponse(applicabilityBody());
+    }
     if (target.includes('/compliance/')) {
       return compliance ?? jsonResponse(complianceBody(), 201);
     }
@@ -57,8 +67,16 @@ function routeFetch({ health, extraction, compliance } = {}) {
   });
 }
 
-function callsTo(fragment) {
-  return fetch.mock.calls.filter(([url]) => String(url).includes(fragment));
+/**
+ * Requests to exactly one endpoint, matched on the end of the path.
+ *
+ * `endsWith`, not `includes`: the applicability catalogue lives under
+ * `/api/v1/compliance/applicability-conditions/`, so a substring match on
+ * `/compliance/` counts it as an evaluation and every assertion about how many
+ * verdicts were requested becomes wrong by one.
+ */
+function callsTo(path) {
+  return fetch.mock.calls.filter(([url]) => String(url).endsWith(path));
 }
 
 function renderPage() {
@@ -634,5 +652,340 @@ describe('unexpected data', () => {
 
     expect(await screen.findByText(/unrecognised outcome/i)).toBeInTheDocument();
     expect(screen.getByText(/has not treated it as a pass/i)).toBeInTheDocument();
+  });
+});
+
+/**
+ * Open the declaration disclosure and answer one question.
+ *
+ * `within` the first form: the page renders the same component again under
+ * "Resolve a review" once a result exists, and a bare `getByRole` would then
+ * match two groups.
+ */
+function answerFirstQuestion(name, answer) {
+  const [disclosure] = screen.getAllByText(
+    /state what you know about this package/i,
+  );
+  fireEvent.click(disclosure);
+  const [group] = screen.getAllByRole('group', { name });
+  fireEvent.click(within(group).getByRole('radio', { name: answer }));
+}
+
+describe('applicability declarations', () => {
+  it('offers the questions the backend served, and no others', async () => {
+    routeFetch();
+    renderPage();
+
+    await screen.findByText(/state what you know about this package/i);
+    fireEvent.click(screen.getByText(/state what you know about this package/i));
+
+    expect(
+      screen.getByRole('group', { name: /imported product/i }),
+    ).toBeInTheDocument();
+  });
+
+  it('sends nothing when no question was answered', async () => {
+    routeFetch();
+    renderPage();
+    await screen.findByText(/state what you know about this package/i);
+    await uploadAndSubmit();
+
+    await waitFor(() => expect(callsTo('/compliance/')).toHaveLength(1));
+    const body = JSON.parse(callsTo('/compliance/')[0][1].body);
+    // Absent, not an empty object and not a map of "unknown". Silence is the
+    // honest default and the engine already treats it as unestablished.
+    expect(body.applicability_declarations).toBeUndefined();
+  });
+
+  it('sends the answers that were given', async () => {
+    routeFetch();
+    renderPage();
+    await screen.findByText(/state what you know about this package/i);
+    answerFirstQuestion(/imported product/i, 'No');
+    await uploadAndSubmit();
+
+    await waitFor(() => expect(callsTo('/compliance/')).toHaveLength(1));
+    const body = JSON.parse(callsTo('/compliance/')[0][1].body);
+    expect(body.applicability_declarations).toEqual({ 'imported-product': 'no' });
+  });
+
+  it('sends "don’t know" as unknown, never as no', async () => {
+    routeFetch();
+    renderPage();
+    await screen.findByText(/state what you know about this package/i);
+    answerFirstQuestion(/imported product/i, 'Don’t know');
+    await uploadAndSubmit();
+
+    await waitFor(() => expect(callsTo('/compliance/')).toHaveLength(1));
+    const body = JSON.parse(callsTo('/compliance/')[0][1].body);
+    expect(body.applicability_declarations).toEqual({
+      'imported-product': 'unknown',
+    });
+  });
+
+  it('re-checks the same reading without uploading the photograph again', async () => {
+    routeFetch();
+    renderPage();
+    await screen.findByText(/state what you know about this package/i);
+    await uploadAndSubmit();
+    await screen.findByRole('button', { name: /check the rules again/i });
+
+    answerFirstQuestion(/imported product/i, 'No');
+    fireEvent.click(
+      screen.getByRole('button', { name: /check the rules again/i }),
+    );
+
+    await waitFor(() => expect(callsTo('/compliance/')).toHaveLength(2));
+    // One upload, two evaluations - so the reading on screen and the new
+    // verdict are provably about the same evidence.
+    expect(callsTo('/extraction/')).toHaveLength(1);
+    const second = JSON.parse(callsTo('/compliance/')[1][1].body);
+    expect(second.extraction_run_id).toBe(extractionBody().id);
+    expect(second.applicability_declarations).toEqual({
+      'imported-product': 'no',
+    });
+  });
+
+  it('still analyses a label when the catalogue could not be loaded', async () => {
+    routeFetch({ conditions: jsonResponse({ error: { message: 'nope' } }, 500) });
+    renderPage();
+    await uploadAndSubmit();
+
+    await waitFor(() => expect(callsTo('/compliance/')).toHaveLength(1));
+    expect(
+      await screen.findByText(/could not be loaded/i),
+    ).toBeInTheDocument();
+  });
+
+  it('shows what was declared, apart from what was read', async () => {
+    routeFetch({
+      compliance: jsonResponse(
+        complianceBody({
+          applicability_declarations: [
+            declarationBody({ answer: 'yes', answer_display: 'Yes' }),
+          ],
+        }),
+        201,
+      ),
+    });
+    renderPage();
+    await uploadAndSubmit();
+
+    const heading = await screen.findByRole('heading', {
+      name: /declarations — what was stated/i,
+    });
+    expect(heading).toBeInTheDocument();
+    // Labelled as an assertion, never as a measurement.
+    expect(screen.getByText(/asserted by a person/i)).toBeInTheDocument();
+    expect(screen.getByText(/nothing here was verified/i)).toBeInTheDocument();
+  });
+
+  it('says so when nothing was declared', async () => {
+    routeFetch();
+    renderPage();
+    await uploadAndSubmit();
+
+    expect(
+      await screen.findByText(/no fact was stated about this package/i),
+    ).toBeInTheDocument();
+  });
+
+  it('flags a declaration recorded after the check ran', async () => {
+    routeFetch({
+      compliance: jsonResponse(
+        complianceBody({
+          applicability_declarations: [
+            declarationBody({ stated_before_this_check: false }),
+          ],
+        }),
+        201,
+      ),
+    });
+    renderPage();
+    await uploadAndSubmit();
+
+    expect(
+      await screen.findByText(/did not affect this result/i),
+    ).toBeInTheDocument();
+  });
+});
+
+describe('not applicable', () => {
+  it('is shown as its own outcome and never as a pass', async () => {
+    routeFetch({
+      compliance: jsonResponse(
+        complianceBody({
+          rules_not_applicable: 1,
+          findings: [
+            findingBody({
+              status: 'not_applicable',
+              message:
+                'Clause 6(1)(aa) applies only to: Imported product. None was declared for this package.',
+            }),
+          ],
+        }),
+        201,
+      ),
+    });
+    renderPage();
+    await uploadAndSubmit();
+
+    expect(
+      await screen.findByText(/does not govern this package/i),
+    ).toBeInTheDocument();
+    expect(screen.getByText(/so this is not a pass/i)).toBeInTheDocument();
+    // And it is not silently counted among the passes.
+    expect(screen.getByText(/1 did not apply/i)).toBeInTheDocument();
+    expect(screen.getByText(/are not passes/i)).toBeInTheDocument();
+  });
+});
+
+describe('why a review is required', () => {
+  it('names the fact the engine could not establish', async () => {
+    routeFetch({
+      compliance: jsonResponse(
+        complianceBody({
+          result: 'review_required',
+          findings: [
+            findingBody({
+              status: 'inconclusive',
+              details: { unresolved_conditions: ['bidi'] },
+            }),
+          ],
+        }),
+        201,
+      ),
+    });
+    renderPage();
+    await uploadAndSubmit();
+
+    expect(await screen.findByText(/why this needs review/i)).toBeInTheDocument();
+    expect(screen.getByText(/was not stated/i)).toBeInTheDocument();
+  });
+
+  it('says a photograph cannot settle a physical requirement', async () => {
+    routeFetch({
+      compliance: jsonResponse(
+        complianceBody({
+          findings: [
+            findingBody({
+              status: 'inconclusive',
+              detection_method: 'physical_inspection',
+              details: {},
+            }),
+          ],
+        }),
+        201,
+      ),
+    });
+    renderPage();
+    await uploadAndSubmit();
+
+    expect(
+      await screen.findByText(/a photograph cannot settle this/i),
+    ).toBeInTheDocument();
+  });
+
+  it('invents no reason when the response gives none', async () => {
+    routeFetch({
+      compliance: jsonResponse(
+        complianceBody({
+          findings: [findingBody({ status: 'inconclusive', details: {} })],
+        }),
+        201,
+      ),
+    });
+    renderPage();
+    await uploadAndSubmit();
+
+    await screen.findByText(/undetermined/i);
+    expect(screen.queryByText(/why this needs review/i)).not.toBeInTheDocument();
+  });
+});
+
+describe('legal context and evidence', () => {
+  it('shows the clause, the source and the extracted value it was read from', async () => {
+    routeFetch({
+      compliance: jsonResponse(
+        complianceBody({ findings: [findingBody()] }),
+        201,
+      ),
+    });
+    renderPage();
+    await uploadAndSubmit();
+
+    await screen.findByText(/evidence — text read from the photograph/i);
+    expect(screen.getByText(/Rule 6\(1\)\(c\)/)).toBeInTheDocument();
+    expect(screen.getByText(/G\.S\.R\. 202\(E\)/)).toBeInTheDocument();
+    expect(
+      screen.getByText(/the notification that last\s+amended this clause/i),
+    ).toBeInTheDocument();
+  });
+
+  it('says when no amending notification is recorded, rather than showing a gap', async () => {
+    routeFetch({
+      compliance: jsonResponse(
+        complianceBody({
+          findings: [findingBody({ legal_source_citation: '' })],
+        }),
+        201,
+      ),
+    });
+    renderPage();
+    await uploadAndSubmit();
+
+    expect(
+      await screen.findByText(/no amending notification is recorded/i),
+    ).toBeInTheDocument();
+  });
+
+  it('offers the applicability note without putting it in the user’s way', async () => {
+    routeFetch({
+      compliance: jsonResponse(
+        complianceBody({ findings: [findingBody()] }),
+        201,
+      ),
+    });
+    renderPage();
+    await uploadAndSubmit();
+
+    const disclosure = await screen.findByText(
+      /applicability — why this rule was applied/i,
+    );
+    fireEvent.click(disclosure);
+    expect(
+      screen.getByText(/carries no applicability conditions/i),
+    ).toBeInTheDocument();
+  });
+});
+
+describe('no compliance score', () => {
+  it('shows no percentage or score anywhere on the result', async () => {
+    routeFetch({
+      compliance: jsonResponse(
+        complianceBody({
+          result: 'compliant',
+          result_display: 'Compliant',
+          rules_evaluated: 4,
+          rules_passed: 4,
+          findings: [findingBody()],
+        }),
+        201,
+      ),
+    });
+    const { container } = renderPage();
+    await uploadAndSubmit();
+
+    await screen.findByText(/compliant/i);
+    expect(screen.queryByText(/compliance score/i)).not.toBeInTheDocument();
+    expect(screen.queryByText(/\b\d{1,3}\s*\/\s*100\b/)).not.toBeInTheDocument();
+    // The one percentage the screen may show is the OCR engine's own reported
+    // confidence in a reading, which is labelled as such and affects nothing.
+    // Asserted non-empty first, so this cannot pass by there being no numbers
+    // on the page at all.
+    const percentages = container.textContent.match(/\d+%/g) ?? [];
+    expect(percentages.length).toBeGreaterThan(0);
+    expect(new Set(percentages)).toEqual(new Set(['91%']));
+    expect(screen.getAllByText(/reading confidence/i).length).toBeGreaterThan(0);
   });
 });

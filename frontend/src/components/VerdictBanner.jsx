@@ -21,7 +21,14 @@ import {
  * 4. **The right-hand slot carries the engine version, not a score.** The Figma
  *    shows "Scan Confidence: 94%" there; no such aggregate exists in the API,
  *    and inventing one from per-field confidences would put a number on the
- *    screen that nothing computed.
+ *    screen that nothing computed. **There is deliberately no compliance score
+ *    anywhere in this application.** A percentage would imply that partial
+ *    compliance with a labelling requirement is a partial credit, which is not
+ *    how the Rules work.
+ * 5. **Rules that did not apply are counted apart from the passes.** Folding an
+ *    exemption into "passed" would turn a set of carve-outs into a clean bill
+ *    of health, which is the arithmetic the engine goes out of its way to
+ *    avoid.
  */
 export function VerdictBanner({ result }) {
   const tone = toneForResult(result.result);
@@ -62,11 +69,31 @@ export function VerdictBanner({ result }) {
           <span className="count-chip__dot" aria-hidden="true" />
           {result.rulesInconclusive} undetermined
         </span>
+        {/*
+          Null against a backend that predates the count, and omitted then
+          rather than drawn as zero - "no rule was exempt" and "this server
+          does not report exemptions" are different claims.
+        */}
+        {result.rulesNotApplicable !== null && (
+          <span className="count-chip count-chip--muted">
+            <span className="count-chip__dot" aria-hidden="true" />
+            {result.rulesNotApplicable} did not apply
+          </span>
+        )}
         <span className="count-chip">
           <span className="count-chip__dot" aria-hidden="true" />
           {result.rulesEvaluated} rules examined
         </span>
       </div>
+
+      {result.rulesNotApplicable > 0 && (
+        <p className="verdict__note verdict__note--muted">
+          <strong>Rules that did not apply are not passes.</strong>{' '}
+          {result.rulesNotApplicable} rule(s) did not govern this package, so
+          nothing about those declarations was examined. They are excluded from
+          the count of rules examined for that reason.
+        </p>
+      )}
 
       {result.result === 'review_required' && (
         <p className="verdict__note">
