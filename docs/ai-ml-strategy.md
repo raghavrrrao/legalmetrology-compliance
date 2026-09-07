@@ -188,6 +188,19 @@ them is more credible than a round number with no provenance:
   `tesseract-ocr-hin` is installed, but **the field extractor matches English
   only** — so a Hindi-only declaration is recognised as text and then not
   interpreted.
+
+  **What that is worth has now been bounded, and it is less than it sounds.**
+  Five of the 28 frozen photographs carry a Devanagari, bilingual or trilingual
+  condition, but **0 of all 364 annotated cells has a ground-truth value in a
+  non-Latin script**: Indian packs print the legally required declarations in
+  English even when the rest of the panel is not, and the Devanagari carries
+  brand names, marketing copy and ingredient lists — none of which this layer
+  attempts. So adding Hindi recognition cannot convert a single scored cell on
+  this dataset by reading Devanagari. Its remaining plausible value is the `₹`
+  glyph and cleaner segmentation of mixed-script panels, and **neither has been
+  measured** — the experiment is blocked for want of the language pack.
+  `docs/evaluation-results.md` §12. One photograph is Gujarati, which needs
+  `guj` and not `hin` at all.
 - **Several declarations are not extracted at all.** Product and brand name,
   generic name and manufacturer address need layout understanding this layer
   does not have. The unsupported list is derived from the code, not maintained
@@ -224,12 +237,16 @@ them is more credible than a round number with no provenance:
   it read exactly and the extractor failed to use. Recognition, not
   interpretation, is the binding constraint.
 - **Tesseract's `eng` model cannot output `₹` at all**, and this is a property
-  of the character set rather than of any photograph. `₹ 0.08 per g` was
-  re-recognised from its own bounding box at 2×, 4× and 6× under three
-  page-segmentation modes and came back as `%`, `<`, `&` or nothing; the same
-  string *rendered* as clean 64 px type in three fonts came back as `=`, `O`,
-  `=`. No preprocessing fixes it and **no character substitution may be written
-  to paper over it** — a rule turning `Z` into `₹` would manufacture a currency
+  of the character set rather than of any photograph. Established twice, and the
+  second time decisively: `₹ 0.08 per g` was re-recognised from its own bounding
+  box at 2×, 4× and 6× under three page-segmentation modes and came back as `%`,
+  `<`, `&` or nothing, and the same string *rendered* as clean 64 px type came
+  back as `=` or `O`. Then the model's alphabet was read directly out of
+  `eng.traineddata` with `combine_tessdata -u`: **112 entries, and U+20B9 is not
+  among them.** It carries `$`, `¢`, `£`, `¥` and `€`. A character absent from
+  the LSTM unicharset cannot be emitted for any input, so every `₹` on every
+  pack is forced onto the nearest of 112 available glyphs. No preprocessing
+  fixes it and **no character substitution may be written to paper over it** — a rule turning `Z` into `₹` would manufacture a currency
   the engine never read, which is the fabricated-value failure this whole design
   exists to prevent. The practical consequence is that the extractor's
   "a per-unit rate with no keyword is a price only if a currency token was read"
