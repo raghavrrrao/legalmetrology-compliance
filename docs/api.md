@@ -170,27 +170,55 @@ uptime check can rely on the status code alone.
   "extraction_engine": {
     "name": "null-engine",
     "version": "0.1.0",
-    "is_placeholder": true
+    "is_placeholder": true,
+    "available": true,
+    "detail": ""
   },
   "compliance_rules": {
     "active_total": 0,
     "verified": 0,
-    "unverified": 0
+    "unverified": 0,
+    "applicability_conditions": 0
   }
 }
 ```
 
-Two fields are worth understanding:
+Four fields are worth understanding:
 
 - **`extraction_engine.is_placeholder`** — `true` means no OCR engine is
   installed and the pipeline reads no text. The UI must surface this rather
   than presenting wiring output as a reading.
+- **`extraction_engine.available`** — whether the configured pipeline can
+  actually run here. For the Tesseract pipeline this resolves `pytesseract`
+  **and** calls the `tesseract` binary, so it is `false` on a deployment whose
+  image lacks the binary. That is a different failure from `is_placeholder`,
+  and the only one of the two a deployment usually hits: the pipeline is real,
+  so `is_placeholder` is `false` and everything looks configured, while every
+  upload fails. `available: false` makes the endpoint answer **503**, and
+  `detail` carries a short code (`engine_not_available`, `pipeline_not_found`)
+  and never a path, a version string or a traceback.
+
+  A deployment genuinely doing OCR reports `is_placeholder: false` **and**
+  `available: true`. Either one alone is not that claim.
 - **`compliance_rules.verified`** — only verified rules can make a product
   non-compliant. While this is `0`, nothing can be found non-compliant.
+- **`compliance_rules.applicability_conditions`** — `0` alongside a healthy
+  `active_total` means `load_rules` was run and `load_legal_framework` was not.
+  That state is worse than an empty rule set because it does not look like one:
+  findings come back with no clause and no source citation, and a clause gated
+  on a fact nobody stated has no gate to check, so it is evaluated anyway and
+  can record a violation the correctly loaded database would have sent to
+  review. See the setup sequence in README.md.
 
 The endpoint reports *whether* each dependency answered, never *why* it did
 not. Error detail is logged server-side; the response says only `unavailable`,
 so it stays useful to the team without being useful to a scanner.
+
+**This is the deployment health-check path.** `railway.json` points
+`healthcheckPath` at it, and `SECURE_REDIRECT_EXEMPT` in `config/settings.py`
+exempts this one path from the HTTPS redirect so a platform probe arriving over
+plain HTTP on an internal network is answered rather than sent a 301. Every
+other path still redirects. See [deployment.md](deployment.md).
 
 ### `POST /api/v1/images/`
 
@@ -555,23 +583,24 @@ single source of the full trace.
 **Empty history is `200` with `count: 0` and `results: []`**, never a 404.
 "Nothing has been evaluated yet" is a state the screen must be able to draw.
 
-> **Known limitation — results are not scoped to the requesting user.** Every
-> caller the permission class lets through sees **every** stored check.
-> `ComplianceCheck` records `requested_by`, but it is not filtered on, and a
-> check requested anonymously has no owner at all.
+> **Results are scoped to the caller.** An authenticated caller lists the
+> checks **they** requested and no others; `requested_by` is recorded on every
+> check and is now filtered on. An anonymous caller — only possible with
+> `DEMO_PUBLIC_ANALYSIS_API` on — lists the checks that were requested
+> anonymously.
 >
-> This is the **same** limitation `GET /api/v1/compliance/<uuid>/` already has —
-> a result is addressable by anyone who can reach the endpoint, with no object
-> ownership enforced — made more visible: the detail endpoint requires guessing
-> a UUID, and this one lists them. It is a real widening of the existing
-> exposure and is recorded here rather than half-fixed, because scoping the list
-> to `request.user` would leave anonymous demonstration checks unreachable by
-> anybody and would still not stop a direct fetch by id. Object ownership
-> belongs to the authentication work, not to a list view.
+> `GET /api/v1/compliance/<uuid>/` applies the same rule, so an id obtained
+> anywhere does not read a result the caller does not own. A result belonging to
+> somebody else is **404**, byte-identical to one that does not exist: a 403
+> would confirm that the id names a real submission.
 >
-> Until then: `DEMO_PUBLIC_ANALYSIS_API` defaults to `False`, so an unauthenticated
-> caller reaches none of this, and the endpoint must not be opened publicly on a
-> deployment holding real submissions.
+> **What remains open:** anonymous checks are a *shared pool*. Two people using
+> the same demonstration deployment see each other's uploads, because an
+> anonymous caller has no identity to scope to. Closing that needs an owner for
+> a check with no user — a session binding, a signed link — and belongs with the
+> authentication work. `DEMO_PUBLIC_ANALYSIS_API` defaults to `False`, so a
+> deployment holding real submissions has no anonymous pool unless it is opened
+> on purpose.
 
 ### The compliance result body
 
@@ -775,11 +804,13 @@ intended only for a local demonstration, where no login screen exists yet. It
 affects these five endpoints and nothing else, and uploads still go through
 validation and anonymous throttling either way.
 
-**What the permission class does not do is authorisation.** It answers "may this
-caller reach the analysis API?", never "is this result theirs?" — no endpoint
-here enforces object ownership, so any caller who gets through can read any
-stored result, and `GET /api/v1/compliance/` now lists them rather than
-requiring a UUID to be guessed. See the note under that endpoint. See
+**The permission class does not do authorisation.** It answers "may this caller
+reach the analysis API?", never "is this result theirs?". The second question is
+answered separately, by `CallerScopedCheckQuerysetMixin` in
+`apps/compliance/api/views.py`, which scopes both the history list and the
+detail endpoint to the caller — see the note under `GET /api/v1/compliance/` for
+what that covers and what it leaves open. Reaching the API and being entitled to
+a row are two permissions, and only the first is the permission class's job. See
 `apps/core/api/permissions.py` (re-exported from
 `apps/compliance/api/permissions.py`, which is where it used to live).
 

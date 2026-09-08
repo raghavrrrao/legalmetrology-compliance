@@ -38,6 +38,28 @@ SECRET_KEY = env("DJANGO_SECRET_KEY")
 
 ALLOWED_HOSTS = env.list("DJANGO_ALLOWED_HOSTS", default=["localhost", "127.0.0.1"])
 
+# Railway reaches the container with two hostnames nobody would think to put in
+# DJANGO_ALLOWED_HOSTS, and Django answers 400 DisallowedHost to both:
+#
+#   healthcheck.railway.app   the platform's own health probe, documented at
+#                             docs.railway.com/guides/healthchecks. A 400 here
+#                             fails the deployment - the new container is never
+#                             promoted, and the error names a host rather than
+#                             the health check, so it reads as a routing bug.
+#   RAILWAY_PUBLIC_DOMAIN     the service's generated *.up.railway.app domain,
+#                             which is not known until the service exists.
+#
+# Appended only when RAILWAY_ENVIRONMENT_NAME is present, so this widens nothing
+# anywhere else: on a laptop, in CI and on any other host the list is exactly
+# what DJANGO_ALLOWED_HOSTS said. A custom domain still goes in that variable.
+if env("RAILWAY_ENVIRONMENT_NAME", default=""):
+    for _platform_host in (
+        "healthcheck.railway.app",
+        env("RAILWAY_PUBLIC_DOMAIN", default=""),
+    ):
+        if _platform_host and _platform_host not in ALLOWED_HOSTS:
+            ALLOWED_HOSTS.append(_platform_host)
+
 ROOT_URLCONF = "config.urls"
 WSGI_APPLICATION = "config.wsgi.application"
 ASGI_APPLICATION = "config.asgi.application"
@@ -82,6 +104,15 @@ INSTALLED_APPS = DJANGO_APPS + THIRD_PARTY_APPS + LOCAL_APPS
 
 MIDDLEWARE = [
     "django.middleware.security.SecurityMiddleware",
+    # Serves STATIC_ROOT in a deployment, so the admin has its CSS without a
+    # separate web server in front of Django. Placed directly below
+    # SecurityMiddleware, as WhiteNoise requires, and above everything else so
+    # a static file is answered without running session or auth middleware.
+    #
+    # It serves STATIC_ROOT and nothing else. MEDIA_ROOT - the uploaded label
+    # photographs - is deliberately not reachable through it; see the files
+    # section below.
+    "whitenoise.middleware.WhiteNoiseMiddleware",
     # CorsMiddleware must sit above CommonMiddleware so CORS headers are
     # attached even to responses CommonMiddleware short-circuits.
     "corsheaders.middleware.CorsMiddleware",
@@ -113,19 +144,42 @@ TEMPLATES = [
 # Database (PostgreSQL)
 # ---------------------------------------------------------------------------
 
-DATABASES = {
-    "default": {
-        "ENGINE": "django.db.backends.postgresql",
-        "NAME": env("DATABASE_NAME"),
-        "USER": env("DATABASE_USER"),
-        "PASSWORD": env("DATABASE_PASSWORD"),
-        "HOST": env("DATABASE_HOST", default="127.0.0.1"),
-        "PORT": env("DATABASE_PORT", default="5432"),
-        # Reuse connections between requests. Set to 0 if you later run behind
-        # an external connection pooler such as PgBouncer.
-        "CONN_MAX_AGE": env.int("DATABASE_CONN_MAX_AGE", default=60),
+# Two ways in, one of them preferred by managed platforms and the other by a
+# developer with a local server. `DATABASE_URL` wins when it is set, because a
+# platform that provides one (Railway, Heroku, Fly) provides it complete - and
+# a half-overridden connection, where the URL supplies the host and a stale
+# DATABASE_NAME supplies the database, is the failure this ordering prevents.
+#
+# Nothing is hard-coded either way: both branches read the environment, and the
+# discrete branch still has no default for NAME, USER or PASSWORD, so a missing
+# credential fails at startup instead of connecting somewhere unintended.
+_DATABASE_URL = env("DATABASE_URL", default="")
+
+if _DATABASE_URL:
+    DATABASES = {"default": env.db_url("DATABASE_URL")}
+else:
+    DATABASES = {
+        "default": {
+            "ENGINE": "django.db.backends.postgresql",
+            "NAME": env("DATABASE_NAME"),
+            "USER": env("DATABASE_USER"),
+            "PASSWORD": env("DATABASE_PASSWORD"),
+            "HOST": env("DATABASE_HOST", default="127.0.0.1"),
+            "PORT": env("DATABASE_PORT", default="5432"),
+        }
     }
-}
+
+# Applied to whichever branch produced the connection, so the two cannot drift.
+# Reuse connections between requests; set to 0 if you later run behind an
+# external connection pooler such as PgBouncer.
+DATABASES["default"]["CONN_MAX_AGE"] = env.int("DATABASE_CONN_MAX_AGE", default=60)
+# A reused connection is checked before it is handed to a view. Without this, a
+# connection dropped between requests - which is routine behind a managed
+# platform's proxy, and cannot happen with CONN_MAX_AGE=0 - surfaces as an
+# InterfaceError on a request that did nothing wrong.
+DATABASES["default"]["CONN_HEALTH_CHECKS"] = env.bool(
+    "DATABASE_CONN_HEALTH_CHECKS", default=True
+)
 
 
 # ---------------------------------------------------------------------------
@@ -186,6 +240,34 @@ REST_FRAMEWORK = {
 
 
 # ---------------------------------------------------------------------------
+# Cache (and what it means for throttling)
+# ---------------------------------------------------------------------------
+
+# Django's default, written out rather than left implicit, because DRF's
+# throttle counters live in it and that makes the default a deployment
+# constraint rather than an internal detail.
+#
+# LocMemCache is per-process. One worker means one counter and the configured
+# rate is the real rate. N workers means N independent counters, so the
+# effective limit is roughly N x the configured rate and a caller can exceed it
+# by being load-balanced across workers.
+#
+# The deployment therefore runs a single gunicorn worker by default
+# (backend/gunicorn.conf.py), which keeps throttling globally correct. Raising
+# WEB_CONCURRENCY above 1 is a deliberate trade: either accept per-worker
+# throttling, or point this at a shared backend (Redis, Memcached) first. No
+# shared cache is introduced here - there is nothing else in this project that
+# needs one, and adding infrastructure to serve a demonstration's rate limiter
+# would be the wrong shape.
+CACHES = {
+    "default": {
+        "BACKEND": "django.core.cache.backends.locmem.LocMemCache",
+        "LOCATION": "legalmetrology-default",
+    }
+}
+
+
+# ---------------------------------------------------------------------------
 # CORS
 # ---------------------------------------------------------------------------
 
@@ -220,6 +302,21 @@ CSRF_COOKIE_SAMESITE = "Lax"
 SESSION_COOKIE_SECURE = not DEBUG
 CSRF_COOKIE_SECURE = not DEBUG
 
+# The one path the HTTPS redirect must not apply to. A platform health probe
+# reaches the container over plain HTTP on the internal network and does not
+# follow redirects; with the redirect applied, `/api/v1/health/` answers 301,
+# every probe fails, and the deployment is never promoted - which presents as
+# "the deploy hangs and then rolls back", naming nothing.
+#
+# Narrow on purpose. It is one exact path, it is the endpoint that is already
+# public and returns no configuration, no credentials and no user data, and
+# every other path still redirects. HSTS is unaffected, so a browser that has
+# seen this host once will not issue plain HTTP to it again.
+#
+# Matched against the path with its leading slash stripped, which is what
+# SecurityMiddleware compares against.
+SECURE_REDIRECT_EXEMPT = [r"^api/v1/health/$"]
+
 if not DEBUG:
     SECURE_SSL_REDIRECT = env.bool("DJANGO_SECURE_SSL_REDIRECT", default=True)
     SECURE_HSTS_SECONDS = env.int("DJANGO_SECURE_HSTS_SECONDS", default=31536000)
@@ -235,6 +332,30 @@ if not DEBUG:
 
 STATIC_URL = "static/"
 STATIC_ROOT = BACKEND_DIR / "staticfiles"
+
+# How WhiteNoise serves what `collectstatic` wrote.
+#
+# CompressedManifestStaticFilesStorage hashes each file into its name and
+# writes a manifest, so a deployment can send far-future cache headers and a
+# changed file still reaches the browser. It requires `collectstatic` to have
+# run - a template asking for a file the manifest does not list raises - which
+# is why it is used only when DEBUG is False. The Dockerfile runs collectstatic
+# at build time, so the manifest is always present in an image.
+#
+# In development Django serves static files from the apps themselves, so the
+# plain storage keeps a fresh clone working with no build step at all.
+STORAGES = {
+    "default": {
+        "BACKEND": "django.core.files.storage.FileSystemStorage",
+    },
+    "staticfiles": {
+        "BACKEND": (
+            "whitenoise.storage.CompressedManifestStaticFilesStorage"
+            if not DEBUG
+            else "django.contrib.staticfiles.storage.StaticFilesStorage"
+        ),
+    },
+}
 
 # Uploaded product images are third-party content (trade dress, and sometimes
 # incidental personal data). They are stored outside the static tree and are

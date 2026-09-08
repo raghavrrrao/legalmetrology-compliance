@@ -140,6 +140,98 @@ def default_pipeline_is_placeholder() -> bool:
     return pipeline.is_placeholder
 
 
+@dataclass(frozen=True)
+class PipelineStatus:
+    """What the health endpoint may say about the configured pipeline.
+
+    Three separate facts, kept separate because they fail independently and
+    conflating them is how a deployment reports itself healthy while doing no
+    recognition at all:
+
+    `is_placeholder`  the pipeline is wiring only. True means no pixel is read,
+                      whatever else is working.
+    `is_available`    the pipeline's runtime dependencies resolve - for
+                      Tesseract, that pytesseract is importable AND the
+                      `tesseract` binary answers. False here is the deployment
+                      failure that `is_placeholder=False` alone cannot show:
+                      the real engine is *configured*, so nothing looks like a
+                      placeholder, and every upload fails one at a time.
+    `detail`          a short, non-sensitive reason when something is wrong.
+
+    No version string for the binary, and that is deliberate: the health
+    endpoint is public and states only whether each dependency answered. See
+    `apps.core.api.views.HealthView`.
+    """
+
+    name: str
+    version: str
+    is_placeholder: bool | None
+    is_available: bool
+    detail: str = ""
+
+
+def default_pipeline_status() -> PipelineStatus:
+    """Resolve the configured pipeline and check it can actually run.
+
+    Never raises. Every failure is reported as `is_available=False` with a
+    reason, because this exists to answer a health check - an endpoint that
+    500s when a dependency is missing tells an operator less than one that
+    says which dependency it was.
+
+    `warmup()` is what makes this more than a registry lookup. Resolving a
+    pipeline only proves it is registered; the Tesseract engine's warmup calls
+    the binary, so a container built without `tesseract` installed is caught
+    here rather than on a user's first upload.
+    """
+    name = settings.DEFAULT_EXTRACTION_ENGINE_NAME
+    version = settings.DEFAULT_EXTRACTION_ENGINE_VERSION
+
+    try:
+        pipeline = registry.get_pipeline(name, version)
+    except Exception as exc:
+        logger.exception("Configured extraction pipeline could not be resolved")
+        return PipelineStatus(
+            name=name,
+            version=version,
+            is_placeholder=None,
+            is_available=False,
+            detail=f"pipeline not resolvable: {exc.__class__.__name__}",
+        )
+
+    is_placeholder = pipeline.is_placeholder
+
+    try:
+        pipeline.warmup()
+    except LabelExtractError as exc:
+        # The expected shape of "this engine cannot run here": pytesseract is
+        # missing, or the binary is not on PATH. `exc.code` is a stable, short
+        # identifier from the ml/ layer - not a path, not a traceback.
+        logger.warning("Extraction pipeline %s %s is unavailable: %s", name, version, exc)
+        return PipelineStatus(
+            name=name,
+            version=version,
+            is_placeholder=is_placeholder,
+            is_available=False,
+            detail=exc.code,
+        )
+    except Exception as exc:
+        logger.exception("Extraction pipeline %s %s failed to warm up", name, version)
+        return PipelineStatus(
+            name=name,
+            version=version,
+            is_placeholder=is_placeholder,
+            is_available=False,
+            detail=exc.__class__.__name__,
+        )
+
+    return PipelineStatus(
+        name=name,
+        version=version,
+        is_placeholder=is_placeholder,
+        is_available=True,
+    )
+
+
 def build_image_ref(image: ProductImage) -> ImageRef:
     """Convert a stored image row into the ML layer's input contract.
 

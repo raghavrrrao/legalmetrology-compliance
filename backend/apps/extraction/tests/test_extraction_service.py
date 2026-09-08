@@ -111,3 +111,80 @@ def test_build_image_ref_carries_measured_metadata(product_image):
 
 def test_default_pipeline_is_reported_as_a_placeholder():
     assert extraction_service.default_pipeline_is_placeholder() is True
+
+
+# --- can the configured pipeline actually run here? -------------------------
+
+
+def test_default_pipeline_status_reports_the_placeholder_as_available():
+    """Available and placeholder are separate facts, and both are reported.
+
+    The placeholder needs nothing installed, so it is available. It is still a
+    placeholder. A caller that conflated the two would read this as a working
+    OCR deployment.
+    """
+    status = extraction_service.default_pipeline_status()
+
+    assert status.name == "null-engine"
+    assert status.is_placeholder is True
+    assert status.is_available is True
+    assert status.detail == ""
+
+
+def test_default_pipeline_status_reports_a_missing_engine_binary(monkeypatch):
+    """The deployment failure this function exists to catch.
+
+    A real pipeline whose binary is not installed: it resolves from the
+    registry, it is not a placeholder, and it cannot run. `warmup()` is what
+    surfaces that - a registry lookup alone would report success, and every
+    upload would then fail one at a time instead.
+
+    The ml/ layer's stable `code` is passed through as the detail, so the health
+    endpoint can report a reason without inventing English of its own.
+    """
+    from labelextract.exceptions import EngineNotAvailableError
+
+    class UnavailablePipeline:
+        is_placeholder = False
+
+        def warmup(self):
+            raise EngineNotAvailableError("The tesseract binary was not found.")
+
+    monkeypatch.setattr(
+        extraction_service.registry,
+        "get_pipeline",
+        lambda name, version: UnavailablePipeline(),
+    )
+
+    status = extraction_service.default_pipeline_status()
+
+    assert status.is_placeholder is False
+    assert status.is_available is False
+    assert status.detail == "engine_not_available"
+
+
+def test_default_pipeline_status_reports_an_unregistered_pipeline(settings):
+    """A name/version that is not registered is a configuration error, not a
+    crash. It is reported the same way, so the health endpoint answers rather
+    than 500s."""
+    settings.DEFAULT_EXTRACTION_ENGINE_NAME = "no-such-engine"
+
+    status = extraction_service.default_pipeline_status()
+
+    assert status.is_available is False
+    assert status.is_placeholder is None
+    assert "not resolvable" in status.detail
+
+
+def test_default_pipeline_status_never_raises(monkeypatch):
+    """It answers a health check. An exception here would turn a degraded
+    dependency into a 500 that says less than the degraded report would."""
+    def explode(name, version):
+        raise RuntimeError("something entirely unexpected")
+
+    monkeypatch.setattr(extraction_service.registry, "get_pipeline", explode)
+
+    status = extraction_service.default_pipeline_status()
+
+    assert status.is_available is False
+    assert status.detail

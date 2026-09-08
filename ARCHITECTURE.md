@@ -372,6 +372,54 @@ nothing about its declarations was examined — counted separately from
 `rules_evaluated`, because folding it into `passed` would let exemptions read
 as compliance.
 
+## Deployment topology
+
+The layer diagram above is the code. This is where it runs.
+
+```
+   React web client                        React Native client
+   static bundle, hosted separately        (not built - later phase)
+          │                                        │
+          │  HTTPS, VITE_API_BASE_URL              │  same API, same verdicts
+          └──────────────────┬─────────────────────┘
+                             ▼
+   ┌──────────────────────────────────────────────────────┐
+   │  ONE container  (Dockerfile)                         │
+   │                                                      │
+   │  gunicorn ── Django/DRF ── services ── rule engine   │
+   │      │                          │                    │
+   │  WhiteNoise                  labelextract            │
+   │  (STATIC_ROOT only)          └─ tesseract binary     │
+   └──────────────────────────────────┬───────────────────┘
+                                      ▼
+                              PostgreSQL (managed)
+```
+
+Three properties of this shape are deliberate and worth stating, because each
+is a decision that could be undone by accident:
+
+**There is exactly one compliance engine, and it is on the server.** Every
+client - the React web app today, a React Native app later - asks the same API
+and gets the same verdict from the same rule rows. A rule evaluated on a device
+would be a second engine that could disagree with the first about what the law
+requires, which is the one kind of drift this project cannot tolerate. It is
+also why the mobile client is a later phase and not a parallel one: there is
+nothing to build against until the API is deployed and stable.
+
+**OCR runs inside the same process as the API.** Extraction is a synchronous
+subprocess call to `tesseract`, so the container needs the binary and the
+request waits for it. That is why the image is built from a Dockerfile rather
+than by a Python builder, why gunicorn uses threads, and why a queue is the
+nearest of the deferred decisions below to being needed.
+
+**The frontend is a static bundle with the API origin compiled in.** It shares
+no runtime with the backend and holds no secret. Moving the API means rebuilding
+the frontend, not reconfiguring it - see `docs/deployment.md`.
+
+Operational detail - variables, initialisation order, media persistence,
+throttling and worker count - lives in [docs/deployment.md](docs/deployment.md)
+rather than here.
+
 ## Ownership and parallel work
 
 Six developers, seven Django apps. Work inside your area; coordinate before
@@ -403,9 +451,9 @@ Things we did **not** build, and why. Revisit each when its trigger fires.
 |---|---|---|
 | Celery / Redis / task queue | Extraction still runs synchronously. Tesseract is fast enough on a cropped panel that a queue would be infrastructure ahead of the problem, and `run_extraction` is already the single place that would move behind one. | Measured latency puts an upload request over a few seconds - which is likely as soon as full-resolution phone photos are the input. **This is now the closest of these triggers to firing.** |
 | Bounding-box mapping from preprocessed space back to source space | Preprocessing is geometry-preserving by default, so boxes already line up with the original. Building the mapping now would be code with no caller. | Resizing (`max_dimension`/`min_dimension`) is switched on, or a preprocessor that crops or deskews lands. Run metadata records both dimension sets so the mismatch is detectable rather than silent. |
-| Docker | Adds a toolchain every teammate must learn to solve a problem we do not yet have. The README setup is a handful of standard commands. | Deployment, or environment drift across the team. |
+| ~~Docker~~ **- now built, for deployment only** | The trigger fired: deployment. There is a production `Dockerfile` because Tesseract is a system binary that `pip` cannot install, so an automatic Python builder produces an image that looks configured and reads nothing. It is **not** part of local development - the README setup is still a handful of standard commands, no teammate needs Docker installed, and no `docker-compose.yml` exists. | It would be needed for local development too. It is not today. |
 | Token / JWT authentication | No endpoint in the base requires a user. Session auth plus deny-by-default permissions covers it safely. | `feature/authentication` adds real login. |
-| Cloud object storage | Local `MEDIA_ROOT` is configurable via `DJANGO_MEDIA_ROOT`; the storage backend is a Django setting. | Deployment across more than one server. |
+| Cloud object storage | Local `MEDIA_ROOT` is configurable via `DJANGO_MEDIA_ROOT`. **The storage backend is no longer merely a Django setting, and this row is now a known deployment blocker rather than a deferral:** `extraction_service.build_image_ref` opens `ProductImage.image.path`, and a remote backend raises `NotImplementedError` for `.path`, so every extraction would fail as `invalid_image`. Adopting object storage means changing that function to stream bytes first. On a platform with an ephemeral filesystem the consequence today is that uploaded photographs are lost on each deploy unless a volume is mounted. | Uploaded evidence has to outlive a deploy, or more than one replica serves traffic. `docs/deployment.md` states the interim position. |
 | Split settings (base/dev/prod) | The differences are a handful of values already read from the environment. | The environments genuinely diverge in structure. |
 | Frontend state library | Three pages, one hook each, and the only shared state is a result the API can be asked for again by id. Adding Redux now would be ceremony. | State has to outlive a route change, or two screens must stay in step. |
 | Ruff / Python linter | No Python linter. Nothing in the current code violates a rule it would catch, and it is one more toolchain for six people to install. ESLint was added for JavaScript because six people write JSX and hook-dependency bugs are silent. | Python style disagreements start costing review time. |
