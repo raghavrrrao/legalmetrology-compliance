@@ -5,6 +5,8 @@ important ones are the last group: an attacker controls the filename and the
 declared content type, so validation must reach a verdict from the bytes.
 """
 
+import io
+
 import pytest
 from django.core.exceptions import ValidationError
 from django.core.files.uploadedfile import SimpleUploadedFile
@@ -29,6 +31,71 @@ def test_valid_png_is_accepted_and_measured(png_bytes):
     assert result.height == 64
     assert result.size_bytes == len(png_bytes)
     assert len(result.checksum_sha256) == 64
+
+
+def _encoded(pillow_format: str, size: tuple[int, int] = (64, 64)) -> bytes:
+    """Bytes of a real image in `pillow_format`, encoded by Pillow itself.
+
+    `conftest.make_png_bytes` writes a PNG by hand and is used everywhere else
+    in the suite, which is why the suite had never once validated a JPEG. That
+    is the format a phone camera produces, so it is the one the demonstration
+    actually uploads - and the only evidence that it is accepted was that the
+    allowlist mentions it. Encoding here rather than committing binary fixtures
+    keeps the test readable and lets the format be a parameter.
+    """
+    from PIL import Image
+
+    buffer = io.BytesIO()
+    Image.new("RGB", size, (200, 180, 160)).save(buffer, format=pillow_format)
+    return buffer.getvalue()
+
+
+@pytest.mark.parametrize(
+    ("pillow_format", "filename", "declared_type", "expected_format"),
+    [
+        ("JPEG", "label.jpg", "image/jpeg", "jpeg"),
+        ("JPEG", "label.jpeg", "image/jpg", "jpeg"),
+        ("WEBP", "label.webp", "image/webp", "webp"),
+        ("PNG", "label.png", "image/png", "png"),
+    ],
+)
+def test_every_allowlisted_format_is_accepted_and_named_from_its_bytes(
+    pillow_format, filename, declared_type, expected_format
+):
+    """All three supported formats, decoded rather than taken on trust.
+
+    `image/jpg` is in the list on purpose: it is not a registered media type,
+    some mobile browsers send it anyway, and `ALLOWED_CONTENT_TYPES` accepts it
+    for that reason. That accommodation is only safe because the format below
+    is read from the decoded bytes, so this asserts both halves at once.
+    """
+    result = validate_image_upload(
+        _upload(filename, _encoded(pillow_format), declared_type)
+    )
+
+    assert result.image_format == expected_format
+    assert result.content_type == f"image/{expected_format}"
+    assert result.width == 64
+    assert result.height == 64
+
+
+@pytest.mark.parametrize("pillow_format", ["TIFF", "GIF", "BMP"])
+def test_a_real_image_in_an_unsupported_format_is_rejected(pillow_format):
+    """Decodable is not the same as supported.
+
+    Every other rejection test here uses bytes that are not an image at all, so
+    the decoded-format allowlist was the one check nothing exercised on its own
+    terms. These files are genuine images: they open, they measure, and they
+    are refused on what they are. GIF and TIFF are excluded for the reasons in
+    `apps/images/constants.py`, and passing one to OCR under a `.png` name is
+    the confusion this rejects.
+    """
+    with pytest.raises(ValidationError) as exc:
+        validate_image_upload(
+            _upload("label.png", _encoded(pillow_format), "image/png")
+        )
+
+    assert exc.value.code == "unsupported_image_format"
 
 
 def test_checksum_is_of_the_actual_bytes(png_bytes):

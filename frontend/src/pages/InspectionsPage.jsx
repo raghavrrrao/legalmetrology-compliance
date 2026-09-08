@@ -55,9 +55,9 @@ export function InspectionsPage() {
           </ol>
           <h1 className="page-title">Inspections</h1>
           <p className="page-lede">
-            Every compliance assessment stored by this installation, most recent
-            first. Open one to see the rules that were examined, the violations
-            recorded and the text the label was read to say.
+            The compliance assessments you can see, most recent first. Open one
+            to see the rules that were examined, the violations recorded and the
+            text the label was read to say.
           </p>
         </div>
         <div className="page-header__actions">

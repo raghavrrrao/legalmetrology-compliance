@@ -120,12 +120,70 @@ class ComplianceEvaluationView(APIView):
         return ProductCategory.objects.filter(code=code, is_active=True).first()
 
 
-class ComplianceCheckDetailView(generics.RetrieveAPIView):
+class CallerScopedCheckQuerysetMixin:
+    """Restrict a `ComplianceCheck` queryset to the results the caller owns.
+
+    `IsAuthenticatedOrDemoPublic` answers "may this caller reach the analysis
+    API?". It has never answered "is this result theirs?", and until this mixin
+    existed nothing did: every caller the permission class let through could
+    read - and, once the history endpoint landed, *list* - every stored check.
+    A reviewer's submission and a stranger's were the same row to this API.
+
+    Two rules, and they are the whole of it:
+
+    **An authenticated caller sees the checks they requested.** `requested_by`
+    was already recorded on every check; it is now filtered on. Somebody else's
+    result is not 403 but **404** - a 403 confirms that the id names a real
+    result, which is precisely the fact a caller who does not own it must not
+    be able to establish.
+
+    **An anonymous caller sees the checks that were requested anonymously.**
+    That is a deliberate decision rather than an oversight, and it is the
+    narrowest one available without inventing an identity for a caller that has
+    none. `DEMO_PUBLIC_ANALYSIS_API` exists so a demonstration can run without a
+    login screen; the checks it produces have `requested_by = NULL` and no owner
+    to scope to, so scoping them to nobody would make the demonstration's own
+    result unreadable one HTTP request after it was created.
+
+    What that leaves, stated plainly rather than buried: anonymous checks are a
+    **shared pool**. Two people using the same demonstration deployment see each
+    other's uploads. What they can no longer see is an *authenticated* user's
+    work, which is the exposure that mattered - and the demo switch still
+    defaults to False, so on any deployment that does not deliberately open it
+    there is no anonymous pool at all. Binding an anonymous check to its session
+    would close the remainder; it needs a column, a migration and a cookie that
+    survives a cross-site deployment, and it belongs with the authentication
+    work rather than here.
+
+    Staff are not special-cased. A superuser who needs every row has the admin
+    site, which is already the place with unrestricted access and an audit trail
+    around it; a bypass here would be a second one, reachable by anything
+    holding a staff session.
+    """
+
+    def scope_to_caller(
+        self, queryset: QuerySet[ComplianceCheck]
+    ) -> QuerySet[ComplianceCheck]:
+        user = getattr(self.request, "user", None)
+        if user is not None and user.is_authenticated:
+            return queryset.filter(requested_by=user)
+        return queryset.filter(requested_by__isnull=True)
+
+
+class ComplianceCheckDetailView(
+    CallerScopedCheckQuerysetMixin, generics.RetrieveAPIView
+):
     """`GET /api/v1/compliance/<uuid>/` - one compliance result in full.
 
     The id is a UUID rather than a sequence number precisely so this endpoint
     can exist: a reviewer holding a link to their own result must not be able
     to walk to somebody else's by subtracting one.
+
+    An unguessable id was never the whole answer, though - it only made the
+    result hard to *find*, not protected once found. The queryset is scoped to
+    the caller as well; see `CallerScopedCheckQuerysetMixin`. A result the
+    caller does not own is a **404**, identical to one that does not exist,
+    because the two must not be distinguishable from outside.
     """
 
     serializer_class = ComplianceCheckSerializer
@@ -140,20 +198,18 @@ class ComplianceCheckDetailView(generics.RetrieveAPIView):
         serializer that is a query per row; prefetching makes it a fixed
         handful regardless of how many rules were evaluated.
         """
-        return (
+        return self.scope_to_caller(
             ComplianceCheck.objects.select_related(
                 "extraction_run",
                 "extraction_run__image",
                 "product",
                 "product__category",
-            )
-            .prefetch_related(
+            ).prefetch_related(
                 "findings",
                 "violations",
                 "violations__evidence",
                 "extraction_run__fields",
             )
-            .all()
         )
 
 
@@ -185,7 +241,9 @@ def _related_row_count(queryset: QuerySet) -> Coalesce:
     )
 
 
-class ComplianceCheckListView(generics.ListAPIView):
+class ComplianceCheckListView(
+    CallerScopedCheckQuerysetMixin, generics.ListAPIView
+):
     """`GET /api/v1/compliance/` - stored results, newest first, paginated.
 
     The history behind the two endpoints above: what has been evaluated, when,
@@ -220,18 +278,17 @@ class ComplianceCheckListView(generics.ListAPIView):
     and the `created_at` index are already there - and adding it later is
     additive under the versioning rules in `docs/api.md`.
 
-    **Permissions are the project's existing ones, and so is their limitation.**
-    `IsAuthenticatedOrDemoPublic`, exactly as the other analysis endpoints. Any
-    caller who is allowed through sees **every** stored check, not only their
-    own: `requested_by` is recorded but not filtered on, because
-    `ComplianceCheck` has no ownership model to filter by - a check requested
-    anonymously has no owner at all. This is the same limitation the detail
-    endpoint already has, in a more visible form. The detail endpoint requires
-    guessing a UUID; this one lists them. It is documented in `docs/api.md`
-    rather than half-fixed here: scoping history to `request.user` would leave
-    anonymous demo checks unreachable by anybody and would still not stop a
-    direct fetch by id, so ownership belongs to the authentication work, not to
-    a list view.
+    **Scoped to the caller.** `IsAuthenticatedOrDemoPublic` decides who reaches
+    the endpoint; `CallerScopedCheckQuerysetMixin` decides which rows they see.
+    An authenticated caller lists the checks they requested, and nobody else's;
+    an anonymous caller lists the checks requested anonymously, which is the
+    demonstration pool and is documented as shared. See that mixin for why the
+    anonymous half is drawn where it is and what remains open.
+
+    This is the endpoint that made the missing scoping urgent rather than
+    theoretical - the detail endpoint at least required a UUID to be guessed,
+    and a list hands them out - but both are scoped by the same rule, because
+    an id obtained anywhere must not read a result the caller does not own.
     """
 
     serializer_class = ComplianceCheckListSerializer
@@ -240,7 +297,11 @@ class ComplianceCheckListView(generics.ListAPIView):
 
     def get_queryset(self) -> QuerySet[ComplianceCheck]:
         return (
-            ComplianceCheck.objects.select_related("product", "product__category")
+            self.scope_to_caller(
+                ComplianceCheck.objects.select_related(
+                    "product", "product__category"
+                )
+            )
             .annotate(
                 findings_count=_related_row_count(ComplianceFinding.objects),
                 violations_count=_related_row_count(ComplianceViolation.objects),

@@ -483,9 +483,17 @@ def test_the_history_denies_anonymous_callers_by_default(client, make_check, set
 def test_an_authenticated_user_is_allowed_with_the_switch_off(
     client, make_check, settings, user
 ):
+    """Reaching the endpoint, and seeing one's own row on it.
+
+    The check is created with `requested_by=user` rather than anonymously,
+    because the two halves are now separate questions: the permission class
+    decides whether the request is answered at all, and the queryset scoping
+    decides what is in the answer. Asserting a count of one here needs a row
+    the caller owns.
+    """
     settings.DEMO_PUBLIC_ANALYSIS_API = False
     client.force_login(user)
-    make_check()
+    make_check(requested_by=user)
 
     response = _history(client)
 
@@ -503,27 +511,34 @@ def test_the_demo_switch_opens_the_history_to_anonymous_callers(
     assert _history(client).status_code == 200
 
 
-def test_the_history_is_not_scoped_to_the_requesting_user(
+def test_the_history_is_scoped_to_the_requesting_user(
     client, make_check, user, settings
 ):
-    """The known limitation, asserted rather than left implicit.
+    """A logged-in caller's history is theirs, not everybody's.
 
-    `ComplianceCheck` has no ownership model - a check requested anonymously
-    has no owner at all - so every caller who is allowed through sees every
-    stored check. This is the same limitation `GET /api/v1/compliance/<uuid>/`
-    already has, made more visible by listing what previously had to be
-    guessed. It is documented in `docs/api.md` and belongs to the
-    authentication work, not to this view. If ownership scoping is ever added,
-    this test is the one to change - deliberately, not by accident.
+    This test used to assert the opposite, as the known limitation of the day:
+    `requested_by` was recorded and not filtered on, so any caller the
+    permission class let through listed every stored check. It said that if
+    ownership scoping were ever added this was the test to change deliberately.
+    This is that change.
+
+    An anonymous check is used as the foreign row on purpose. It is the one a
+    demonstration produces, so it is the one most likely to be sitting in a
+    database when a real user logs in - and the pairing that has to hold is
+    that a demo pool and a user's own work are separate lists, not one list.
+
+    The full cross-user matrix lives in `test_result_ownership_api.py`; what is
+    asserted here is that *this* endpoint participates in it.
     """
     settings.DEMO_PUBLIC_ANALYSIS_API = False
     somebody_elses = make_check()
+    mine = make_check(requested_by=user)
     client.force_login(user)
 
     body = _history(client).json()
 
-    assert [row["id"] for row in body["results"]] == [str(somebody_elses.pk)]
-    assert ComplianceCheck.objects.get().requested_by_id is None
+    assert [row["id"] for row in body["results"]] == [str(mine.pk)]
+    assert str(somebody_elses.pk) not in {row["id"] for row in body["results"]}
 
 
 # --- the endpoints this one must not have broken ---------------------------------
