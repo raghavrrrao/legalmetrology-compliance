@@ -22,15 +22,25 @@ class InvalidCheckParameters(ValueError):
 class CheckStatus(str, Enum):
     """Outcome of evaluating one rule against one extraction run.
 
-    INCONCLUSIVE is the reason this is three-valued rather than boolean, and it
-    is the most important state here. "We could not read the photograph" is not
-    the same as "the declaration is missing", and collapsing them would make
-    the system report bad photography as a legal violation.
+    INCONCLUSIVE is the reason this is not boolean, and it is the most
+    important state here. "We could not read the photograph" is not the same as
+    "the declaration is missing", and collapsing them would make the system
+    report bad photography as a legal violation.
+
+    NOT_APPLICABLE is the fourth state and answers a different question again:
+    the rule was not evaluated because it does not govern this package. A 5 g
+    sachet is outside the Rules under rule 26; a domestic package is outside
+    rule 6(1)(aa). Neither is a pass - nothing about the declarations was
+    checked - and neither is an inconclusive reading, because there is no
+    uncertainty to resolve. Folding it into PASSED would count exemptions as
+    evidence of compliance; folding it into INCONCLUSIVE would send a reviewer
+    to look at a rule that never applied.
     """
 
     PASSED = "passed"
     FAILED = "failed"
     INCONCLUSIVE = "inconclusive"
+    NOT_APPLICABLE = "not_applicable"
 
 
 @dataclass(frozen=True)

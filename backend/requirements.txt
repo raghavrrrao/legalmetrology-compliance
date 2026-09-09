@@ -43,6 +43,27 @@ django-environ>=0.12,<0.13
 # installed by this file.
 Pillow>=11.3,<12
 
+# --- Production serving -----------------------------------------------------
+#
+# Both are runtime dependencies of a deployment, not of development, but they
+# belong here rather than in requirements-dev.txt: requirements-dev.txt exists
+# so a deployment does not install a test runner, and these two are the exact
+# opposite - a deployment that skipped them would have no server to run and no
+# way to serve the admin's CSS.
+
+# WSGI server. `manage.py runserver` is a development server and says so; it is
+# single-threaded, does not restart a crashed worker, and is not written to
+# face the internet. Gunicorn is configured in backend/gunicorn.conf.py.
+gunicorn>=23.0,<24
+
+# Serves STATIC_ROOT from inside the application process, so a deployment needs
+# no second web server or CDN for the handful of files the Django admin uses.
+# Wired in config/settings.py (middleware + STORAGES).
+#
+# It serves static files only. Uploaded product images are NOT served through
+# it - see docs/deployment.md for what that means for media storage.
+whitenoise>=6.9,<7
+
 # --- OCR is deliberately NOT listed here -----------------------------------
 #
 # The Tesseract pipeline's Python dependency (pytesseract) lives in the `ocr`

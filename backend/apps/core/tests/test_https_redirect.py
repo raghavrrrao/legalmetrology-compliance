@@ -12,7 +12,7 @@ The failure looks like a URL-routing problem and is not one. The two redirects
 have completely different signatures, and confusing them sends you to the wrong
 file:
 
-    SECURE_SSL_REDIRECT   301  Location: https://testserver/api/v1/health/
+    SECURE_SSL_REDIRECT   301  Location: https://testserver/api/v1/compliance/
                                absolute URL, scheme changed, path UNCHANGED
 
     APPEND_SLASH          301  Location: /admin/
@@ -21,6 +21,12 @@ file:
 `conftest.py` disables the SSL redirect for the suite, because the test client
 is not a browser. These tests then assert the real behaviour directly, so the
 production guarantee stays covered rather than being lost with it.
+
+One path is deliberately exempt from the redirect - `/api/v1/health/`, so a
+deployment platform's plain-HTTP health probe is answered rather than
+redirected. That exemption is a deployment requirement with a security cost, so
+it is asserted in both directions below: the health path must not redirect, and
+everything else must.
 """
 
 import pytest
@@ -59,6 +65,13 @@ def test_suite_runs_without_the_ssl_redirect(settings):
 # --- the production guarantee, asserted directly -----------------------------
 
 
+#: A path the redirect must apply to. Any API path outside the health check
+#: would do; this one is used because it exists, is routed, and needs no
+#: fixtures - SecurityMiddleware answers before authentication is ever reached,
+#: so the 403 it would otherwise return never happens.
+REDIRECTED_PATH = "/api/v1/compliance/"
+
+
 def test_ssl_redirect_still_works_when_enabled():
     """Turning the setting on must genuinely redirect HTTP to HTTPS.
 
@@ -72,10 +85,10 @@ def test_ssl_redirect_still_works_when_enabled():
     pass for the wrong reason.
     """
     with override_settings(SECURE_SSL_REDIRECT=True):
-        response = Client().get("/api/v1/health/")
+        response = Client().get(REDIRECTED_PATH)
 
     assert response.status_code == 301
-    assert response["Location"] == "https://testserver/api/v1/health/"
+    assert response["Location"] == "https://testserver" + REDIRECTED_PATH
 
 
 def test_ssl_redirect_preserves_the_path_and_only_changes_the_scheme():
@@ -85,19 +98,67 @@ def test_ssl_redirect_preserves_the_path_and_only_changes_the_scheme():
     Location header alone.
     """
     with override_settings(SECURE_SSL_REDIRECT=True):
-        response = Client().get("/api/v1/health/")
+        response = Client().get(REDIRECTED_PATH)
 
     location = response["Location"]
     assert location.startswith("https://")
-    assert location.endswith("/api/v1/health/")
+    assert location.endswith(REDIRECTED_PATH)
     # The path is untouched - no slash was added or removed.
-    assert location == "https://testserver" + reverse("v1:health")
+    assert location == "https://testserver" + REDIRECTED_PATH
 
 
 def test_https_requests_are_not_redirected_even_when_enabled():
     """Confirms the redirect is scheme-driven, not path-driven."""
     with override_settings(SECURE_SSL_REDIRECT=True):
-        response = Client().get("/api/v1/health/", secure=True)
+        response = Client().get(REDIRECTED_PATH, secure=True)
+
+    assert response.status_code != 301
+
+
+# --- the one path the redirect must not apply to -----------------------------
+
+
+def test_the_health_endpoint_is_exempt_from_the_ssl_redirect():
+    """The deployment requirement, asserted rather than trusted to a setting.
+
+    A platform health probe reaches the container over plain HTTP on an
+    internal network and does not follow redirects. With the redirect applied
+    to this path, every probe gets a 301, the health check never passes, and
+    the deployment is rolled back with an error that names neither HTTPS nor
+    the health check.
+
+    `SECURE_REDIRECT_EXEMPT` in config/settings.py is what prevents that. This
+    test is the reason it may not later be removed as dead configuration.
+    """
+    with override_settings(SECURE_SSL_REDIRECT=True):
+        response = Client().get(reverse("v1:health"))
+
+    assert response.status_code == 200
+    assert response["Content-Type"].startswith("application/json")
+
+
+def test_the_exemption_covers_only_the_health_endpoint():
+    """The exemption is one exact path, not a prefix and not a pattern.
+
+    Written down because the cost of getting this wrong is asymmetric: an
+    over-broad pattern here silently stops enforcing HTTPS on real endpoints,
+    and nothing else in the suite would notice.
+    """
+    with override_settings(SECURE_SSL_REDIRECT=True):
+        client = Client()
+        # A path that merely starts the same way is not exempt.
+        assert client.get("/api/v1/health/extra/").status_code == 301
+        assert client.get(REDIRECTED_PATH).status_code == 301
+
+
+def test_the_health_endpoint_over_https_is_unchanged_by_the_exemption():
+    """The exemption must not turn into a downgrade.
+
+    It stops a redirect from being issued; it does not stop the endpoint from
+    working over HTTPS, which is how every browser will reach it.
+    """
+    with override_settings(SECURE_SSL_REDIRECT=True):
+        response = Client().get(reverse("v1:health"), secure=True)
 
     assert response.status_code == 200
     assert response["Content-Type"].startswith("application/json")

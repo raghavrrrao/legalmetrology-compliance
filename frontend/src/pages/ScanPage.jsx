@@ -1,6 +1,7 @@
-import { useEffect, useState } from 'react';
+import { useCallback, useEffect, useState } from 'react';
 import { Link } from 'react-router-dom';
 
+import { ApplicabilityForm } from '../components/ApplicabilityForm.jsx';
 import { ComplianceResult } from '../components/ComplianceResult.jsx';
 import { ConfigurationPanel } from '../components/ConfigurationPanel.jsx';
 import { ExtractionPanel } from '../components/ExtractionPanel.jsx';
@@ -8,6 +9,7 @@ import { PipelineStepper } from '../components/PipelineStepper.jsx';
 import { UploadPanel } from '../components/UploadPanel.jsx';
 import { PHASES, useLabelAnalysis } from '../hooks/useLabelAnalysis.js';
 import { useApiHealth } from '../hooks/useApiHealth.js';
+import { useApplicabilityConditions } from '../hooks/useApplicabilityConditions.js';
 
 /**
  * Upload a label photograph and show what the system made of it.
@@ -33,6 +35,12 @@ import { useApiHealth } from '../hooks/useApiHealth.js';
  *    heading, so a reviewer can check a finding against the text it came from.
  * 4. **The two requests fail separately.** A failed compliance call leaves the
  *    reading on screen with a retry that does not re-upload.
+ * 5. **The declarations are optional and unanswered is never "no".** The facts
+ *    several clauses turn on cannot be seen in a photograph, so the user may
+ *    state them - and leaving one unstated is a supported choice that costs a
+ *    REVIEW REQUIRED on that clause rather than a guess. After a result, the
+ *    same facts can be stated and the *same reading* re-evaluated, which is the
+ *    intended way to resolve a review without re-uploading anything.
  */
 export function ScanPage() {
   const [file, setFile] = useState(null);
@@ -40,8 +48,17 @@ export function ScanPage() {
   const [viewType, setViewType] = useState('unspecified');
   const [categoryCode, setCategoryCode] = useState('');
   const [copied, setCopied] = useState(false);
+  // One entry per question the user has actually answered. A question with no
+  // entry is UNANSWERED, which is not "no" - `evaluateExtractionRun` drops the
+  // empty ones and the engine treats a missing answer as unestablished.
+  const [declarations, setDeclarations] = useState({});
 
   const { data: health } = useApiHealth();
+  const {
+    data: conditions,
+    error: conditionsError,
+    isLoading: conditionsLoading,
+  } = useApplicabilityConditions();
   const {
     phase,
     extraction,
@@ -69,19 +86,54 @@ export function ScanPage() {
     return () => URL.revokeObjectURL(url);
   }, [file]);
 
+  const setDeclaration = useCallback((code, answer) => {
+    setDeclarations((current) => {
+      const next = { ...current };
+      if (answer === '') {
+        // Removed rather than stored as an empty string, so "the user cleared
+        // this" and "the user never touched it" are the same state - which is
+        // what they mean to the engine.
+        delete next[code];
+      } else {
+        next[code] = answer;
+      }
+      return next;
+    });
+  }, []);
+
+  const clearDeclarations = useCallback(() => setDeclarations({}), []);
+
   function handleSubmit(event) {
     event.preventDefault();
     if (!file || isBusy) {
       return;
     }
     setCopied(false);
-    analyse(file, { viewType, categoryCode: categoryCode.trim() });
+    analyse(file, {
+      viewType,
+      categoryCode: categoryCode.trim(),
+      declarations,
+    });
   }
 
   function handleReset() {
     setFile(null);
     setCopied(false);
+    setDeclarations({});
     reset();
+  }
+
+  /**
+   * Re-run the rules over the reading already held, with the facts now stated.
+   *
+   * The photograph is not uploaded or read again - `useLabelAnalysis` keeps the
+   * run id - so the reading on screen and the new verdict are provably about
+   * the same evidence. This is what turns a REVIEW REQUIRED the user can
+   * resolve into one they actually can.
+   */
+  function handleReEvaluate() {
+    setCopied(false);
+    evaluate({ categoryCode: categoryCode.trim(), declarations });
   }
 
   async function handleCopyLink() {
@@ -152,6 +204,16 @@ export function ScanPage() {
           </div>
 
           <div className="workspace__aside">
+            <ApplicabilityForm
+              catalogue={conditions}
+              isLoading={conditionsLoading}
+              error={conditionsError}
+              answers={declarations}
+              onChange={setDeclaration}
+              onClearAll={clearDeclarations}
+              disabled={isBusy}
+            />
+
             <ConfigurationPanel
               categoryCode={categoryCode}
               onCategoryCodeChange={setCategoryCode}
@@ -207,14 +269,59 @@ export function ScanPage() {
             type="button"
             className="button"
             disabled={isBusy}
-            onClick={() => evaluate({ categoryCode: categoryCode.trim() })}
+            onClick={() =>
+              evaluate({ categoryCode: categoryCode.trim(), declarations })
+            }
           >
             Check the rules again
           </button>
         </div>
       )}
 
-      {result && <ComplianceResult result={result} imageUrl={previewUrl} />}
+      {result && (
+        <>
+          <ComplianceResult result={result} imageUrl={previewUrl} />
+
+          {/*
+            Offered after the verdict, not only before it. A user learns which
+            facts mattered by reading the findings that could not be decided
+            without them, and at that point re-checking must not cost another
+            upload - it evaluates the same stored reading.
+          */}
+          <h2 className="section-heading">Resolve a review</h2>
+          <p className="page-lede">
+            A clause reported as needing review often turns on a fact no
+            photograph can show. State what you know and check the same reading
+            again — the photograph is not uploaded or read a second time.
+          </p>
+          <ApplicabilityForm
+            catalogue={conditions}
+            isLoading={conditionsLoading}
+            error={conditionsError}
+            answers={declarations}
+            onChange={setDeclaration}
+            onClearAll={clearDeclarations}
+            disabled={isBusy}
+          />
+          <p className="field field--actions">
+            <button
+              type="button"
+              className="button button--primary"
+              disabled={isBusy}
+              onClick={handleReEvaluate}
+            >
+              {isEvaluating ? (
+                <>
+                  <span className="spinner" aria-hidden="true" />
+                  Checking rules…
+                </>
+              ) : (
+                'Check the rules again'
+              )}
+            </button>
+          </p>
+        </>
+      )}
 
       {/*
         The reading, on its own, when there is no verdict to show it inside.

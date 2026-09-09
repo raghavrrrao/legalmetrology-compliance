@@ -1,0 +1,31 @@
+{
+  "_comment_1": "Rule 6(1)(d) LMPC 2011 - whether the manufacture-date declaration actually establishes a MONTH and a YEAR. LM-PC-0004 asks whether the declaration was read at all; this asks what it resolved to.",
+  "_comment_2": "STEP 3. LM-PC-0004's own _comment_4 recorded the gap this closes: 'PRESENCE ONLY. Whether the date is correctly FORMATTED as a month and year is not checked - that needs a format check this repository does not have.'",
+  "_comment_3": "NO FORMAT IS ENFORCED, AND THAT IS DELIBERATE. The clause requires 'the month and year in which the commodity is manufactured' and prescribes no printed form for it. So the check asks only whether a month and a year could be established from the reading. '12/2024', 'DEC 2024' and '12.2024' all pass; a reading labelextract could not resolve is INCONCLUSIVE, never a violation - an unusual printing and a misrecognised one are indistinguishable from here.",
+  "_comment_4": "THE AMBIGUOUS-DATE CASE IS WHY THIS RULE EARNS ITS PLACE. '03/04/2025' reads as 3 April or as 4 March and the normaliser refuses to choose, emitting both candidates and marking the value uncertain. The YEAR is settled either way; the MONTH is not, so the clause's requirement is not established and a human has to look. LM-PC-0004 passes that package on presence alone.",
+  "_comment_5": "The words 'or pre-packed or imported' were omitted from the clause vide G.S.R. 779(E), in force from 1 October 2022 vide G.S.R. 226(E), so the operative clause covers MANUFACTURE only. That is why field_key is date_of_manufacture and effective_from is 2022-10-01, matching LM-PC-0004.",
+  "_comment_6": "Applicability and category targeting are IDENTICAL to LM-PC-0004's, and for identical reasons: the food, seeds and cosmetics provisos and proviso (A) for bidi, incense sticks and domestic LPG cylinders are carried as conditions on the clause's RuleRequirement and resolved before this validator runs. requires_applicability_conditions is true, so the engine refuses to evaluate this rule while the legal framework is unloaded rather than applying it to every package.",
+
+  "code": "LM-PC-0011",
+  "title": "Month and year of manufacture must be determinable",
+
+  "requirement": "Where a month and year of manufacture is declared, it must state a month and a year. This rule checks only that a month and a year could be established from the declaration; it enforces no printed format, because the Rules prescribe none, and it cannot establish that the date is true.",
+
+  "legal_reference": "Rule 6(1)(d) of the Legal Metrology (Packaged Commodities) Rules, 2011",
+  "source_status": "verified",
+  "source_note": "Checked 2026-08-30 by Claude Code (automated legal-source check) for raghavrrrao against the Department of Consumer Affairs (Ministry of Consumer Affairs, Food and Public Distribution) consolidated publication 'Book on Legal Metrology Packaged Commodities Rules, 2011 with all amendments', https://consumeraffairs.gov.in/public/upload/admin/cmsfiles/whatsnews/Book_on_Legal_Metrology_Packaged_Commodities_Rules,2011_with_all_amendments_whatsnews.pdf (sha256 0ef948f9c6b89f5dfb20d384861901714fd0dc54fc67b5b86c772d2c3f983a4b; server Last-Modified 2025-04-14). Clause (d) reads there, verbatim: 'The month and year in which the commodity is manufactured or pre-packed or imported shall be mentioned in the package:', with the source recording that 'the words, - \"or pre-packed or imported\" shall be omitted vide GSR 779(E) dated 2nd November, 2021 w.e.f. 1.4.2022 (now w.e.f 01.10.2022 vide GSR 226(E) dated 28.3.2022)'. The clause names the two components - month and year - and prescribes no form for them; NO FORMAT REQUIREMENT WAS FOUND IN THE SOURCE AND NONE IS INVENTED HERE. NO NEW LEGAL SOURCE WAS CONSULTED FOR THIS RULE IN STEP 3: the provisos are those already recorded verbatim on LM-PC-0004 and on the clause's RuleRequirement. Provenance, verification method and residual gaps, including the 2022-2025 amendment-chain gap: rules/SOURCES.md. HUMAN COUNTER-REVIEW BY A NAMED REVIEWER IS STILL OUTSTANDING.",
+
+  "severity": "major",
+
+  "check_type": "month_year_declaration",
+  "parameters": {
+    "field_key": "date_of_manufacture"
+  },
+
+  "applies_to_category_codes": ["packaged-non-food"],
+
+  "effective_from": "2022-10-01",
+  "effective_to": null,
+  "is_active": true,
+  "requires_applicability_conditions": true
+}

@@ -27,8 +27,18 @@ class ProductImage(UUIDPrimaryKeyModel, TimeStampedModel):
 
         Which declarations one can expect to find depends on the panel: an
         absent net quantity on a photo of the *front* panel is not evidence
-        that the package lacks one. The compliance engine needs this to avoid
-        reporting a framing choice as a violation.
+        that the package lacks one.
+
+        **Recorded, not acted on.** Nothing in `apps.compliance` or in
+        `labelextract` reads this column today: a declaration missing from a
+        front-panel photograph is still reported FAILED, exactly as it would be
+        on a photograph of the declaration panel. That gap is carried in the
+        interface instead - the scan screen tells the submitter that an absent
+        declaration on a front-panel photograph is not evidence the package
+        lacks one - and it is listed in PROJECT_STATUS.md. Whether a panel
+        makes a clause undeterminable rather than failed is a legal judgement
+        per clause, not a switch, which is why the column stores the fact and
+        stops there.
         """
 
         UNSPECIFIED = "unspecified", "Unspecified"

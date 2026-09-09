@@ -1,0 +1,20 @@
+{
+  "_comment_1": "Rule 13(4) LMPC 2011 - dozen, score, gross, great gross.",
+  "_comment_2": "STEP 2. The clause names the prohibited units verbatim, so detecting them needs no judgement and no applicability input.",
+  "_comment_3": "DELIBERATELY UNDER-CLAIMS, TWICE. (1) The clause also prohibits units 'or the like', which is open-ended and no list can close - a pass therefore reports only that the NAMED units are absent. (2) It reaches anything 'specified or indicated on any package', but only the net quantity declaration is scanned: matching the whole recognised text would flag 'Gross Weight', which is lawful, and a false violation is worse than an under-claim.",
+  "code": "LM-PC-0009",
+  "title": "No dozen, score, gross or great gross on the package",
+  "requirement": "The net quantity must not be expressed using a number called the dozen, score, gross or great gross.",
+  "legal_reference": "Rule 13(4) of the Legal Metrology (Packaged Commodities) Rules, 2011",
+  "source_status": "verified",
+  "source_note": "Checked 2026-08-30 by Claude Code (automated legal-source check) for raghavrrrao against the Department of Consumer Affairs consolidated publication 'Book on Legal Metrology Packaged Commodities Rules, 2011 with all amendments' (sha256 0ef948f9c6b89f5dfb20d384861901714fd0dc54fc67b5b86c772d2c3f983a4b; server Last-Modified 2025-04-14), via the verbatim quotation recorded in rules/INVENTORY.md. Clause 13(4) reads verbatim: 'No number called the dozen, score, gross, great gross or the like shall be specified or indicated on any package.' HUMAN COUNTER-REVIEW BY A NAMED REVIEWER IS OUTSTANDING, and the 2022-2025 amendment-chain gap in rules/SOURCES.md applies.",
+  "severity": "minor",
+  "check_type": "prohibited_counting_unit",
+  "parameters": {},
+  "applies_to_category_codes": [
+    "packaged-commodity"
+  ],
+  "effective_from": "2011-04-01",
+  "effective_to": null,
+  "is_active": true
+}

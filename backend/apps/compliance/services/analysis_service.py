@@ -59,12 +59,17 @@ from __future__ import annotations
 import logging
 from dataclasses import dataclass
 
-from apps.catalog.models import Product, ProductCategory
+from apps.catalog.models import (
+    Product,
+    ProductApplicabilityDeclaration,
+    ProductCategory,
+)
 from apps.compliance.models import ComplianceCheck
 from apps.compliance.services import engine
 from apps.extraction.models import ExtractionRun
 from apps.extraction.services import extraction_service
 from apps.images.models import ProductImage
+from apps.rules.models import ApplicabilityCondition
 
 logger = logging.getLogger(__name__)
 
@@ -157,6 +162,7 @@ def evaluate_run(
     *,
     product: Product | None = None,
     category: ProductCategory | None = None,
+    declarations: dict[str, str] | None = None,
     requested_by=None,
 ) -> ComplianceCheck:
     """Evaluate a reading that already exists against the applicable rules.
@@ -178,6 +184,13 @@ def evaluate_run(
         product: The commodity this reading is of, when known.
         category: Used only when `product` is None, and only when the run's
             image is not already linked to a product. See below.
+        declarations: Facts about the package that decide whether a clause
+            governs it, as {condition_code: answer}. Recorded against the
+            resolved product before evaluation, with source SUBMITTER, and
+            ignored entirely when there is no product to hang them on - a
+            submission whose commodity is unknown has no applicable rules for a
+            declaration to affect. The API rejects that combination before it
+            reaches here.
         requested_by: The authenticated user, or None.
 
     Returns:
@@ -196,6 +209,9 @@ def evaluate_run(
         product = run.image.product
     if product is None and category is not None:
         product = _product_for_category(category, created_by=requested_by)
+
+    if declarations and product is not None:
+        _record_declarations(product, declarations)
 
     check = engine.evaluate(run, product=product, requested_by=requested_by)
 
@@ -231,6 +247,54 @@ def analyse_image(
         run, product=product or image.product, requested_by=requested_by
     )
     return AnalysisOutcome(image=image, run=run, check=check)
+
+
+def _record_declarations(product: Product, declarations: dict[str, str]) -> None:
+    """Store the facts stated about this submission, before it is evaluated.
+
+    Upserted on (product, condition), which is the pair the model's unique
+    constraint already names. Re-declaring corrects an earlier answer rather
+    than adding a second one - two rows saying opposite things about the same
+    package would leave the resolver picking one.
+
+    Source is SUBMITTER, unconditionally. A reviewer's correction is a
+    different act and belongs to a reviewer-facing path that does not exist
+    yet; recording one as the other would put a name to a claim nobody made.
+
+    A code that names no loaded condition is skipped rather than raised: the
+    API validates codes before calling this, so reaching here means the
+    framework was reloaded mid-request, which is not the caller's fault and
+    must not cost them their result. It is logged.
+
+    Nothing here is read from the label, and nothing here decides anything. The
+    answer is a fact about the goods; what the Rules make of it is
+    `apps.compliance.services.applicability`'s decision, from conditions loaded
+    out of the verified framework.
+    """
+    conditions = {
+        condition.code: condition
+        for condition in ApplicabilityCondition.objects.filter(
+            code__in=list(declarations), is_active=True
+        )
+    }
+    for code, answer in declarations.items():
+        condition = conditions.get(code)
+        if condition is None:
+            logger.warning(
+                "Applicability condition %r is not loaded; the answer stated "
+                "for product %s was not recorded",
+                code,
+                product.pk,
+            )
+            continue
+        ProductApplicabilityDeclaration.objects.update_or_create(
+            product=product,
+            condition=condition,
+            defaults={
+                "answer": answer,
+                "source": ProductApplicabilityDeclaration.Source.SUBMITTER,
+            },
+        )
 
 
 #: Name given to a product row created solely to carry a category for a

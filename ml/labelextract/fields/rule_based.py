@@ -592,9 +592,44 @@ class RuleBasedFieldExtractor(FieldExtractor):
     # --- consumer care contact ----------------------------------------------
 
     def _consumer_care_contact(self, lines: list[_Line]) -> list[_Candidate]:
-        found: list[_Candidate] = []
+        """Locate the consumer-care declaration and every contact element in it.
+
+        **One candidate for the whole label, not one per line.** Rule 6(2)
+        requires a name, an address, a telephone number and an e-mail address,
+        and a package prints those across several lines - the keyword on one,
+        the toll-free number on the next, the e-mail on the one after. Emitting
+        a candidate per line meant `_resolve` kept exactly one of them and
+        discarded the rest, so a label carrying `Customer Care` above
+        `care@example.com` came out as a value-less uncertain reading with the
+        e-mail thrown away. A rules-layer check asking which elements are
+        present would then report an e-mail missing from a package that plainly
+        declares one.
+
+        So the elements are unioned across every line that carries one, in
+        reading order, and the resulting `emails` / `phones` lists are what a
+        check may treat as "every contact element recognised on this label".
+        Nothing is invented by the union: each entry was matched by
+        `patterns.EMAIL`, `TOLL_FREE_PHONE` or `MOBILE_PHONE` on a line that was
+        actually read.
+
+        The cost of the union is precision about *which* declaration an element
+        belongs to: a manufacturer's address line carrying a mobile number now
+        contributes that number. That error runs in the safe direction - it can
+        only make a contact element look present, never absent - and the
+        alternative discarded real readings outright.
+
+        Confidence and the bounding box come from the first line that carried a
+        value, so the evidence points at a reading rather than at a keyword.
+        """
+        emails: list[str] = []
+        phones: list[str] = []
+        keyword_seen = False
+        toll_free_seen = False
+        contributing: list[_Line] = []
+        primary: _Line | None = None
+
         for line in lines:
-            emails = P.EMAIL.findall(line.text)
+            line_emails = P.EMAIL.findall(line.text)
             toll_free = P.TOLL_FREE_PHONE.findall(line.text)
             mobiles = [
                 number
@@ -603,48 +638,61 @@ class RuleBasedFieldExtractor(FieldExtractor):
             ]
             has_keyword = bool(P.CONTACT_KEYWORD.search(line.text))
 
-            if not (emails or toll_free or mobiles or has_keyword):
+            if not (line_emails or toll_free or mobiles or has_keyword):
                 continue
-            if has_keyword and not (emails or toll_free or mobiles):
-                # "Customer care:" with the number on another line. Recorded as
-                # located-but-unread rather than dropped, because the absence
-                # of a value here is a different fact from the absence of the
-                # declaration.
-                normalized = uncertain(
-                    "a consumer-care keyword was found but no email or phone "
-                    "number was read on this line"
-                )
-            else:
-                values: dict[str, Any] = {}
-                if emails:
-                    values["emails"] = [normalise_text(e) for e in emails]
-                phones = [normalise_text(p) for p in [*toll_free, *mobiles]]
-                if phones:
-                    values["phones"] = phones
-                if has_keyword or toll_free or emails:
-                    normalized = certain(**values)
-                else:
-                    # A bare ten-digit number with no keyword could belong to
-                    # the manufacturer's address rather than to consumer care.
-                    normalized = uncertain(
-                        "a phone number was read with no consumer-care keyword "
-                        "on the line",
-                        **values,
-                    )
 
-            found.append(
-                _candidate(
-                    LabelFieldKey.CONSUMER_CARE_CONTACT,
-                    line,
-                    normalized,
-                    MATCHED_BY_KEYWORD if has_keyword else MATCHED_BY_PATTERN,
-                    signature=(
-                        tuple(normalized.get("emails", ())),
-                        tuple(normalized.get("phones", ())),
-                    ),
-                )
+            contributing.append(line)
+            keyword_seen = keyword_seen or has_keyword
+            toll_free_seen = toll_free_seen or bool(toll_free)
+            _extend_unique(emails, (normalise_text(e) for e in line_emails))
+            _extend_unique(
+                phones, (normalise_text(p) for p in [*toll_free, *mobiles])
             )
-        return found
+            if primary is None and (line_emails or toll_free or mobiles):
+                primary = line
+
+        if not contributing:
+            return []
+
+        if not (emails or phones):
+            # "Customer care:" with the number on another line that OCR did not
+            # read. Recorded as located-but-unread rather than dropped, because
+            # the absence of a value here is a different fact from the absence
+            # of the declaration.
+            normalized = uncertain(
+                "a consumer-care keyword was found but no email or phone "
+                "number was read from the label"
+            )
+        else:
+            values: dict[str, Any] = {}
+            if emails:
+                values["emails"] = emails
+            if phones:
+                values["phones"] = phones
+            if keyword_seen or toll_free_seen or emails:
+                normalized = certain(**values)
+            else:
+                # A bare ten-digit number with no keyword anywhere could belong
+                # to the manufacturer's address rather than to consumer care.
+                normalized = uncertain(
+                    "a phone number was read with no consumer-care keyword "
+                    "anywhere on the label",
+                    **values,
+                )
+
+        anchor = primary or contributing[0]
+        return [
+            _candidate(
+                LabelFieldKey.CONSUMER_CARE_CONTACT,
+                anchor,
+                normalized,
+                MATCHED_BY_KEYWORD if keyword_seen else MATCHED_BY_PATTERN,
+                raw_value=_CONTACT_LINE_JOIN.join(
+                    line.text for line in contributing
+                ),
+                signature=(tuple(emails), tuple(phones)),
+            )
+        ]
 
     # --- country of origin --------------------------------------------------
 
@@ -813,6 +861,31 @@ def _lines_from(ocr: OcrResult) -> list[_Line]:
                 )
             )
     return lines
+
+
+#: How the lines making up one consumer-care declaration are joined into the
+#: field's `raw_value`. The declaration spans several printed lines and the
+#: evidence a reviewer is shown has to include the line each contact element
+#: was read from, not only the one the box points at. A single contributing
+#: line is unchanged by the join, which is the ordinary case.
+_CONTACT_LINE_JOIN = " | "
+
+
+def _extend_unique(target: list[str], values: Iterable[str]) -> None:
+    """Append `values` to `target`, skipping ones already there.
+
+    Case-insensitive, because `CARE@X.COM` and `care@x.com` are the same
+    address printed twice - on the front panel and on the back - and listing
+    both would suggest a package declares two contacts when it declares one.
+    Reading order is preserved: the first printing is the one kept.
+    """
+    seen = {existing.casefold() for existing in target}
+    for value in values:
+        folded = value.casefold()
+        if not value or folded in seen:
+            continue
+        seen.add(folded)
+        target.append(value)
 
 
 def _candidate(

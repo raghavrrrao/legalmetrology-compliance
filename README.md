@@ -123,10 +123,13 @@ those limits are enforced by tests rather than only documented:
 │   ├── SCHEMA.md
 │   ├── SOURCES.md       what each rule was verified against
 │   ├── INVENTORY.md     every LMPC requirement and whether we can check it
-│   └── definitions/     six rules from rule 6; two active
+│   └── definitions/     twelve rules from rules 6 and 13; eleven active
 │
-├── docs/              API, security, ML-integration and strategy docs
-├── .github/workflows/ CI: backend, ML and frontend on every pull request
+├── docs/              API, security, deployment and strategy docs
+├── .github/workflows/ CI: backend, ML, frontend and the container image
+├── Dockerfile         production image - Python, Tesseract, gunicorn
+├── .dockerignore      keeps .env, media and the frontend out of the image
+├── railway.json       build, start, pre-deploy and health-check configuration
 ├── .env.example
 ├── .gitignore
 ├── README.md
@@ -322,17 +325,69 @@ defined by the Rules.
 python backend/manage.py load_rules
 ```
 
-This loads six rules and reports each one. Two are active; four load with
-`is_active: false` and are never evaluated — see
+This loads twelve rules and reports each one. Eleven are active;
+`LM-PC-0002` loads with `is_active: false` and is never evaluated, because the
+extractor does not read the declaration it names — see
 [`rules/README.md`](rules/README.md) for why, and
-[`rules/SOURCES.md`](rules/SOURCES.md) for what they were verified against.
+[`rules/SOURCES.md`](rules/SOURCES.md) for what each was verified against.
 Add `--dry-run` to validate the files without writing.
 
-### 10. Create an admin user (optional)
+Every one of the eleven tests **less than its clause requires**, deliberately.
+`rules/FRAMEWORK.md` has the clause-by-clause table of what is and is not
+checked.
+
+### 10. Load the legal framework
+
+```bash
+python backend/manage.py load_legal_framework
+```
+
+**Do not skip this.** It loads the instruments, the clause-level requirements of
+rules 1-34, and the applicability conditions — 14 instruments, 35 rules, 69
+requirements and 39 conditions. Idempotent; `--dry-run` reports without writing.
+
+`load_rules` above loaded what the software can *execute*. This loads what the
+law *requires*, and links the two. Without it a database has rules but no legal
+framework, and three things go wrong at once:
+
+- every finding loses its clause, its source citation and its detection method,
+  so a result cites no law;
+- the applicability conditions do not exist, so the declaration form is empty
+  and the rule 3 and rule 26 scope gates cannot be answered;
+- **the verdicts change.** A clause gated on a fact nobody stated — "is this an
+  imported package?" — has no gate to check, so the rule runs anyway and records
+  a violation. On the same photograph, a correctly loaded database answers
+  REVIEW REQUIRED with nothing failed; a database missing this step answers
+  PARTIALLY COMPLIANT with a violation against clause 6(1)(a). The engine's rule
+  that an unestablished fact never produces a verdict depends on this command
+  having been run.
+
+Recording a requirement here does **not** mean the system evaluates it. The
+command's own summary says how many of the 69 are implemented (8), and
+[`rules/INVENTORY.md`](rules/INVENTORY.md) says why each of the rest is not.
+
+### 11. Create an admin user (optional)
 
 ```bash
 python backend/manage.py createsuperuser
 ```
+
+### Steps 7-10 in one command
+
+Once you have a database and a `.env`, these four:
+
+```bash
+python backend/manage.py deploy_setup
+```
+
+It runs migrate, seed_categories, load_rules and load_legal_framework in that
+order, then **checks the result** and exits non-zero if anything a verdict
+depends on is empty. Idempotent, so it is safe to re-run at any time — and it is
+exactly what a deployment runs, so a green run here means the deployment's
+initialisation works too.
+
+The eleven steps above are still the ones to read the first time. This is the
+one to type afterwards, and the one that makes forgetting step 10 impossible.
 
 ---
 
@@ -392,6 +447,57 @@ All five commands run in CI on every pull request
 (`.github/workflows/ci.yml`), against a real PostgreSQL service container. If
 CI needs a command that is not documented here, one of the two is wrong.
 
+CI also builds the production container image and checks that the Tesseract
+binary is actually inside it — the one thing `pip install` cannot tell you, and
+the difference between a deployment that reads labels and one that fails every
+upload while looking healthy.
+
+---
+
+## Deployment
+
+Full instructions, required variables and known limitations:
+**[docs/deployment.md](docs/deployment.md)**.
+
+**Status: ready to deploy, not deployed.** The configuration exists and has been
+verified locally; no Railway project has been created from this repository.
+
+The short version — the backend runs as a container on Railway with Railway
+PostgreSQL:
+
+| | |
+|---|---|
+| Server | gunicorn (`backend/gunicorn.conf.py`), one worker, four threads |
+| Image | `Dockerfile` — Python 3.11, **the Tesseract binary**, `collectstatic`, non-root |
+| Static files | WhiteNoise, from inside the app process |
+| Database | PostgreSQL via `DATABASE_URL` |
+| Initialisation | `manage.py deploy_setup` as the pre-deploy command |
+| Health check | `GET /api/v1/health/` |
+| Frontend | `npm run build` with `VITE_API_BASE_URL`, hosted separately |
+
+Three things are worth knowing before anyone promises a deployment to anyone:
+
+- **Uploaded photographs do not persist** on a platform with an ephemeral
+  filesystem unless a volume is mounted. The database keeps the results; the
+  images they were drawn from are gone after the next deploy. Object storage is
+  not a drop-in replacement today — extraction opens a local path.
+- **A deployment is doing real OCR only when `/api/v1/health/` reports both**
+  `is_placeholder: false` **and** `available: true`. The first says a real
+  pipeline is configured; only the second says the binary answered.
+- **`DEMO_PUBLIC_ANALYSIS_API` defaults to False** and should stay there on any
+  deployment holding real submissions.
+
+To rehearse the production configuration locally:
+
+```bash
+DJANGO_DEBUG=False python backend/manage.py collectstatic --noinput
+DJANGO_DEBUG=False python backend/manage.py check --deploy
+python backend/manage.py deploy_setup
+```
+
+Gunicorn is POSIX-only and does not run on Windows; use the container or
+`runserver` with `DJANGO_DEBUG=False` and `DJANGO_SECURE_SSL_REDIRECT=False`.
+
 ---
 
 ## Development workflow
@@ -422,6 +528,7 @@ CI needs a command that is not documented here, one of the two is wrong.
 | [rules/README.md](rules/README.md) | How compliance rules are authored and verified |
 | [ml/README.md](ml/README.md) | How to plug in a real OCR engine |
 | [docs/api.md](docs/api.md) | API conventions and the error envelope |
+| [docs/deployment.md](docs/deployment.md) | Deploying to Railway, and what does not work yet |
 | [docs/security.md](docs/security.md) | Upload validation, secrets, threat notes |
 | [docs/ai-ml-strategy.md](docs/ai-ml-strategy.md) | What AI does and does not decide |
 | [docs/data-strategy.md](docs/data-strategy.md) | Training, evaluation, demo and legal reference data |

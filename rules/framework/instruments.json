@@ -1,0 +1,136 @@
+{
+  "_comment_1": "The Gazette notifications and official publications the framework in rules.json is drawn from. Every fact here is taken from rules/SOURCES.md, which records how each document was retrieved and what could not be established.",
+  "_comment_2": "effective_from is left null wherever an instrument brings different clauses into force on different dates - G.S.R. 385(E) is the case that forces this. The per-clause commencement lives on the requirement, which is why RuleRequirement carries its own effective_from.",
+  "_comment_3": "verification_status is 'verified' only where the document itself was read. Where an amendment is known to exist but its text could not be retrieved, the status is 'requires_review' and verification_note says so. No instrument here is recorded from memory.",
+
+  "instruments": [
+    {
+      "citation": "G.S.R. 202(E)",
+      "title": "Legal Metrology (Packaged Commodities) Rules, 2011 (principal rules)",
+      "instrument_type": "principal",
+      "notified_on": "2011-03-07",
+      "effective_from": "2011-04-01",
+      "verification_status": "unverified",
+      "verification_note": "Recorded 2026-08-30 by Claude Code (automated legal-source check) for raghavrrrao from the Department of Consumer Affairs consolidated publication described in rules/SOURCES.md, which states: 'The principal rules are G.S.R. 202(E) dated 7 March 2011, in force from 1 April 2011.' MARKED UNVERIFIED DELIBERATELY: the principal rules were NOT retrieved as a standalone Gazette document, so this record rests entirely on the Department's own consolidated publication. 'Verified' in this framework means the instrument itself was read, and only G.S.R. 128(E) and G.S.R. 312(E) meet that bar."
+    },
+    {
+      "citation": "Book on LMPC Rules 2011 with all amendments (DoCA)",
+      "title": "Book on Legal Metrology Packaged Commodities Rules, 2011 with all amendments, Department of Consumer Affairs",
+      "instrument_type": "consolidated_publication",
+      "effective_from": null,
+      "source_url": "https://consumeraffairs.gov.in/public/upload/admin/cmsfiles/whatsnews/Book_on_Legal_Metrology_Packaged_Commodities_Rules,2011_with_all_amendments_whatsnews.pdf",
+      "source_sha256": "0ef948f9c6b89f5dfb20d384861901714fd0dc54fc67b5b86c772d2c3f983a4b",
+      "verification_status": "requires_review",
+      "verification_note": "Retrieved 2026-08-30 by Claude Code (automated legal-source check) for raghavrrrao; 978,073 bytes, server Last-Modified 2025-04-14 12:18:18 GMT. This is the primary source for almost every quotation in the framework. FLAGGED REQUIRES_REVIEW, not because the document is doubtful, but because of the amendment-chain gap recorded in rules/SOURCES.md: this publication's own footnotes stop at G.S.R. 226(E) (28 March 2022), while G.S.R. 128(E) states the principal rules were 'last amended vide number G.S.R. 881(E), dated 2nd December, 2025'. Amendments notified between those dates - including one dated 6 October 2023 - are not annotated here and their Gazette texts could not be retrieved, because the hosts carrying them (consumeraffairs.nic.in, doca.gov.in, cwnm.nic.in and others) were unreachable or served expired certificates. A NAMED HUMAN REVIEWER MUST CONFIRM THE 2022-2025 AMENDMENT CHAIN before anything resting on this document is relied on."
+    },
+    {
+      "citation": "G.S.R. 427(E)",
+      "title": "Amendment inserting rule 6(7) - 'GM' declaration on genetically modified food",
+      "instrument_type": "amendment",
+      "effective_from": "2013-01-01",
+      "verification_status": "unverified",
+      "verification_note": "Recorded from the amendment annotation in the Department's consolidated publication as cited in rules/INVENTORY.md ('Inserted by G.S.R. 427(E), w.e.f. 1 Jan 2013'). The notification itself was not retrieved and its date of notification is not recorded there, so notified_on is left null rather than guessed."
+    },
+    {
+      "citation": "G.S.R. 137",
+      "title": "Amendment inserting rule 6(8) - vegetarian / non-vegetarian mark on cosmetics and toiletries",
+      "instrument_type": "amendment",
+      "notified_on": "2014-06-15",
+      "effective_from": "2014-07-01",
+      "verification_status": "unverified",
+      "verification_note": "Recorded from the amendment annotation cited in rules/INVENTORY.md ('Inserted by G.S.R. 137 dated 15 Jun 2014, w.e.f. 1 Jul 2014'). The citation appears there without the '(E)' suffix that the other notifications carry; that is reproduced as found rather than corrected. The notification itself was not retrieved."
+    },
+    {
+      "citation": "G.S.R. 385(E)",
+      "title": "Legal Metrology (Packaged Commodities) Amendment Rules, 2015",
+      "instrument_type": "amendment",
+      "notified_on": "2015-05-14",
+      "effective_from": null,
+      "verification_status": "unverified",
+      "verification_note": "Recorded from the amendment annotations in the Department's consolidated publication. effective_from is deliberately null: this instrument brings different clauses into force on different dates - the rule 6(2) substitution is recorded as effective 1 January 2016 ('dispensed upto 30.6.2016') and the rule 26 tobacco proviso w.e.f. 1 July 2016. Each commencement is recorded on its requirement instead. The notification itself was not retrieved."
+    },
+    {
+      "citation": "G.S.R. 858(E)",
+      "title": "Amendment inserting the essential-commodities proviso to rule 6(1)(e)",
+      "instrument_type": "amendment",
+      "notified_on": "2016-09-07",
+      "effective_from": null,
+      "verification_status": "unverified",
+      "verification_note": "Recorded from the amendment annotation in the Department's consolidated publication, quoted in rules/SOURCES.md: 'Proviso inserted vide G.S.R. 858(E) dated 7 September 2016'. The publication does not state a separate commencement date for this proviso, so effective_from is null rather than assumed equal to the notification date. The notification itself was not retrieved."
+    },
+    {
+      "citation": "G.S.R. 629(E)",
+      "title": "Legal Metrology (Packaged Commodities) Amendment Rules, 2017",
+      "instrument_type": "amendment",
+      "notified_on": "2017-06-23",
+      "effective_from": "2018-01-01",
+      "verification_status": "unverified",
+      "verification_note": "The most consequential amendment in this framework: it substitutes rule 3, substitutes Explanation III to rule 6(1)(a), inserts rule 6(1)(aa), substitutes rule 6(1)(da), amends rule 6(1)(e), substitutes rule 2(m), substitutes rule 7 and rule 10(1), and substitutes rule 26(c). All of that is recorded from the amendment annotations in the Department's consolidated publication, quoted clause by clause in rules/SOURCES.md and rules/INVENTORY.md, which give a uniform commencement of 1 January 2018. The Gazette notification itself was NOT retrieved separately."
+    },
+    {
+      "citation": "G.S.R. 1373(E)",
+      "title": "Correction to Table-I of rule 7 (minimum height of numerals and letters)",
+      "instrument_type": "amendment",
+      "notified_on": "2017-11-07",
+      "effective_from": null,
+      "verification_status": "unverified",
+      "verification_note": "Recorded from the annotation cited in rules/INVENTORY.md against rule 7: 'Table-I corrected by G.S.R. 1373(E) dated 7 Nov 2017'. No commencement date is recorded there, so effective_from is null. The notification itself was not retrieved."
+    },
+    {
+      "citation": "G.S.R. 779(E)",
+      "title": "Legal Metrology (Packaged Commodities) Second Amendment Rules, 2021",
+      "instrument_type": "amendment",
+      "notified_on": "2021-11-02",
+      "effective_from": null,
+      "verification_status": "unverified",
+      "verification_note": "Omits rule 5, omits the words 'or pre-packed or imported' from rule 6(1)(d), substitutes rule 4(2), amends rule 6(1)(e) and substitutes rule 13(5)(ii). effective_from is null on purpose: the publication records its commencement as 'w.e.f. 1.4.2022 (now w.e.f 01.10.2022 vide GSR 226(E) dated 28.3.2022)', so the operative date comes from G.S.R. 226(E) and is recorded on each requirement as 2022-10-01. Recording 2022-04-01 here would assert a commencement that was superseded before it took effect. The notification itself was not retrieved."
+    },
+    {
+      "citation": "G.S.R. 226(E)",
+      "title": "Amendment deferring the commencement of G.S.R. 779(E) to 1 October 2022",
+      "instrument_type": "amendment",
+      "notified_on": "2022-03-28",
+      "effective_from": "2022-10-01",
+      "verification_status": "unverified",
+      "verification_note": "Recorded from the commencement annotation reproduced throughout the Department's consolidated publication: 'now w.e.f 01.10.2022 vide GSR 226(E) dated 28.3.2022'. NOTE: this is the LAST amendment the consolidated publication's own footnotes cover - see the amendment-chain gap on 'Book on LMPC Rules 2011 with all amendments (DoCA)'. The notification itself was not retrieved."
+    },
+    {
+      "citation": "Legal Metrology (Packaged Commodities) Amendment Rules, 2025",
+      "title": "Amendment harmonising the Rules with the Medical Devices Rules, 2017",
+      "instrument_type": "amendment",
+      "notified_on": "2025-10-29",
+      "effective_from": null,
+      "verification_status": "requires_review",
+      "verification_note": "Known ONLY from the Press Information Bureau release of 29 October 2025 (PRID 2183777), not from the Gazette notification, which was not retrieved. Its G.S.R. number is therefore not known and the citation above is the descriptive title from the release rather than a Gazette citation. Per rules/SOURCES.md the release states the amendment harmonises the Rules with the Medical Devices Rules, 2017 for the height and width of numerals and letters, for rule 33 relaxations and for principal-display-panel placement, and states expressly that 'the requirement to make mandatory declarations remains'. The notified_on date is the date of the PIB release, which is not necessarily the date of notification. REQUIRES A NAMED HUMAN REVIEWER to obtain the Gazette text before any requirement is dated or worded from it."
+    },
+    {
+      "citation": "G.S.R. 881(E)",
+      "title": "Amendment to the principal rules dated 2 December 2025",
+      "instrument_type": "amendment",
+      "notified_on": "2025-12-02",
+      "effective_from": null,
+      "verification_status": "requires_review",
+      "verification_note": "Known ONLY from a recital in G.S.R. 128(E), which states that the principal rules were 'last amended vide number G.S.R. 881(E), dated 2nd December, 2025'. THE TEXT OF THIS AMENDMENT WAS NOT RETRIEVED and what it changes is not known. It is recorded here rather than omitted so that the gap is visible: any requirement in this framework dated before 2 December 2025 may have been amended by it without this framework knowing. This is the concrete edge of the amendment-chain gap in rules/SOURCES.md and it is the single most important open item in the legal record."
+    },
+    {
+      "citation": "G.S.R. 128(E)",
+      "title": "Legal Metrology (Packaged Commodities) Amendment Rules, 2026",
+      "instrument_type": "amendment",
+      "notified_on": "2026-02-13",
+      "effective_from": "2026-07-01",
+      "source_url": "https://consumeraffairs.gov.in/public/upload/files/2026.02.13%20PCR%201st%20COO%20Filter%20on%20e-commerce%20websites_1771231030.pdf",
+      "verification_status": "verified",
+      "verification_note": "Retrieved directly and read in full on 2026-08-30 by Claude Code (automated legal-source check) for raghavrrrao, as recorded in rules/SOURCES.md. In force 1 July 2026. Inserts rule 6(10A) only - a country-of-origin filter on e-commerce listings. Confirmed NOT to amend rule 6(1)(a)-(g) or rule 6(2)."
+    },
+    {
+      "citation": "G.S.R. 312(E)",
+      "title": "Legal Metrology (Packaged Commodities) Second Amendment Rules, 2026",
+      "instrument_type": "amendment",
+      "notified_on": "2026-04-27",
+      "effective_from": "2027-07-01",
+      "source_url": "https://consumeraffairs.gov.in/public/upload/files/2026.4.27%20PCR%202nd%20COO%20from%201.7.2027_1777348487.pdf",
+      "verification_status": "verified",
+      "verification_note": "Retrieved directly and read in full on 2026-08-30 by Claude Code (automated legal-source check) for raghavrrrao, as recorded in rules/SOURCES.md. In force 1 July 2027. Substitutes rule 6(10A) only. Confirmed NOT to amend rule 6(1)(a)-(g) or rule 6(2). Note the fourteen-month gap between notification and commencement, which is why notified_on and effective_from are separate fields."
+    }
+  ]
+}

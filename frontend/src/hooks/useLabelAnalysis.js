@@ -87,8 +87,14 @@ export function useLabelAnalysis() {
    * Silently does nothing without a run id or while a request is in flight -
    * both are "this call should not happen", and the caller has no sensible
    * recovery for either.
+   *
+   * `declarations` are facts about the goods that decide whether a clause
+   * governs the package. Re-evaluating with more of them stated is the
+   * intended way to move a clause out of REVIEW REQUIRED, and it costs no
+   * upload: the same stored reading is judged again, so the reading the user
+   * is looking at cannot change underneath the new verdict.
    */
-  const evaluate = useCallback(async ({ categoryCode } = {}) => {
+  const evaluate = useCallback(async ({ categoryCode, declarations } = {}) => {
     const runId = runIdRef.current;
     if (!runId || evaluatingRef.current) {
       return;
@@ -104,6 +110,7 @@ export function useLabelAnalysis() {
     try {
       const evaluated = await evaluateExtractionRun(runId, {
         categoryCode,
+        declarations,
         signal: controller.signal,
       });
       if (!mountedRef.current) {
@@ -142,7 +149,7 @@ export function useLabelAnalysis() {
    * guarantee something the UI cannot get wrong.
    */
   const analyse = useCallback(
-    async (file, { viewType, categoryCode } = {}) => {
+    async (file, { viewType, categoryCode, declarations } = {}) => {
       if (!file) {
         return;
       }
@@ -182,7 +189,7 @@ export function useLabelAnalysis() {
       setImage(run.image);
       setPhase(PHASES.EXTRACTED);
 
-      await evaluate({ categoryCode });
+      await evaluate({ categoryCode, declarations });
     },
     [evaluate],
   );

@@ -1,3 +1,4 @@
+import { DeclarationsPanel } from './DeclarationsPanel.jsx';
 import { EvidencePanel } from './EvidencePanel.jsx';
 import { ExtractionPanel } from './ExtractionPanel.jsx';
 import { FindingsList } from './FindingsList.jsx';
@@ -21,6 +22,17 @@ import { ViolationsList } from './ViolationsList.jsx';
  * under its own heading - because a reading and a verdict are different claims
  * and a screen that runs them together invites the first to be read as the
  * second.
+ *
+ * Three kinds of evidence appear here and each gets its own heading, in its own
+ * words, for the same reason:
+ *
+ *     Extraction    what the pipeline READ off the photograph
+ *     Declarations  what a person SAID about the goods
+ *     Findings      what the rules CONCLUDED from both
+ *
+ * A submitter's assertion that a package contains bidi is not a measurement,
+ * and a screen that listed it beside the extracted net quantity would present
+ * it as one.
  */
 export function ComplianceResult({ result, imageUrl }) {
   return (
@@ -46,6 +58,9 @@ export function ComplianceResult({ result, imageUrl }) {
 
         <h3 className="section-heading">Extraction — what was read</h3>
         <ExtractionPanel extraction={result.extraction} />
+
+        <h3 className="section-heading">Declarations — what was stated</h3>
+        <DeclarationsPanel declarations={result.applicabilityDeclarations} />
       </div>
 
       <div className="result-layout__findings">

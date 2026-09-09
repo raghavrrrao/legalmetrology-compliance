@@ -77,27 +77,53 @@ def _database_is_reachable() -> bool:
 
 
 def _extraction_status() -> tuple[bool, dict]:
-    """Report the configured OCR pipeline and whether it is a placeholder.
+    """Report the configured OCR pipeline: what it is, and whether it can run.
 
-    `is_placeholder` is surfaced deliberately. While it is True the system
-    performs no real recognition, and the UI must say so rather than presenting
-    wiring output as a reading.
+    Two facts, and a deployment can fail either one without failing the other:
+
+    `is_placeholder`  True while the system performs no real recognition. The
+                      UI must say so rather than presenting wiring output as a
+                      reading.
+    `available`       whether the pipeline's runtime actually resolves. For the
+                      Tesseract pipeline this calls the binary, so a container
+                      built without `tesseract` installed is reported here
+                      instead of failing every upload one at a time.
+
+    The second is the one a deployment needs. A container with
+    `DEFAULT_EXTRACTION_ENGINE_NAME=tesseract` and no binary reports
+    `is_placeholder: false` - it is not a placeholder, it is a real pipeline -
+    and nothing about the old response distinguished it from a working one.
+    Now it reports `available: false` and the endpoint answers 503.
+
+    A deployment doing real OCR shows `is_placeholder: false` **and**
+    `available: true`. Either alone is not that claim.
+
+    `detail` carries a short, stable error code from the ml/ layer
+    (`engine_not_available`, `pipeline_not_found`) - never a path, a version
+    string or a traceback. See `HealthView` on what this endpoint may say.
     """
     info = {
         "name": settings.DEFAULT_EXTRACTION_ENGINE_NAME,
         "version": settings.DEFAULT_EXTRACTION_ENGINE_VERSION,
         "is_placeholder": None,
+        "available": False,
+        "detail": "",
     }
     try:
         # Imported lazily so a broken ML install degrades this endpoint rather
         # than preventing the module from importing at all.
         from apps.extraction.services import extraction_service
 
-        info["is_placeholder"] = extraction_service.default_pipeline_is_placeholder()
+        pipeline_status = extraction_service.default_pipeline_status()
     except Exception:
         logger.exception("Health check: extraction pipeline could not be resolved")
+        info["detail"] = "extraction_service_unavailable"
         return False, info
-    return True, info
+
+    info["is_placeholder"] = pipeline_status.is_placeholder
+    info["available"] = pipeline_status.is_available
+    info["detail"] = pipeline_status.detail
+    return pipeline_status.is_available, info
 
 
 def _rules_status() -> dict:
@@ -106,9 +132,25 @@ def _rules_status() -> dict:
     `verified` is what the compliance engine may use to fail a product. When it
     is zero - which it is on a fresh clone - no product can be found
     non-compliant, and this endpoint is where that becomes visible.
+
+    `applicability_conditions` is here for a failure that is worse than an empty
+    rule set, because it does not look like one. A database loaded with
+    `load_rules` but not `load_legal_framework` has a full complement of rules
+    and no conditions - so the two counts above look healthy, every finding
+    comes back with no clause and no source citation, and a clause gated on a
+    fact nobody stated has no gate to check and is evaluated anyway. That last
+    one changes verdicts: the same photograph reaches REVIEW_REQUIRED on a
+    correctly loaded database and PARTIALLY_COMPLIANT, with a violation
+    recorded, on one missing the second command. Reporting the count is what
+    makes "the framework was never loaded" visible before a demonstration
+    rather than after it.
+
+    Counted, not judged: this function returns numbers and does not decide that
+    zero is an outage. The setup order is documented in README.md and pinned by
+    `apps/rules/tests/test_setup_sequence.py`.
     """
     try:
-        from apps.rules.models import ComplianceRule
+        from apps.rules.models import ApplicabilityCondition, ComplianceRule
 
         active = ComplianceRule.objects.filter(is_active=True)
         return {
@@ -119,10 +161,16 @@ def _rules_status() -> dict:
             "unverified": active.filter(
                 source_status=ComplianceRule.SourceStatus.UNVERIFIED
             ).count(),
+            "applicability_conditions": ApplicabilityCondition.objects.count(),
         }
     except Exception:
         logger.exception("Health check: rule counts could not be read")
-        return {"active_total": None, "verified": None, "unverified": None}
+        return {
+            "active_total": None,
+            "verified": None,
+            "unverified": None,
+            "applicability_conditions": None,
+        }
 
 
 class ApiNotFoundView(APIView):

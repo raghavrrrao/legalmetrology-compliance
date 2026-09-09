@@ -1,0 +1,23 @@
+{
+  "_comment_1": "Rule 6(1)(aa) LMPC 2011 - country of origin for imported products.",
+  "_comment_2": "STEP 2. rules/INVENTORY.md called this 'the closest requirement to implementable - it needs one applicability input, not a new check type'. That input now exists: the 'imported-product' condition is declared per submission and is a REQUIRES link on this clause's RuleRequirement.",
+  "_comment_3": "APPLICABILITY IS EVERYTHING HERE. A package DECLARED imported is checked. A package DECLARED not imported is recorded NOT_APPLICABLE. A package where import status was never declared reaches REVIEW_REQUIRED - it is NOT assumed domestic. Import status must never be inferred from the presence of importer_name: a package omitting both would then look exempt from a declaration it owes.",
+  "code": "LM-PC-0007",
+  "title": "Country of origin for imported products",
+  "requirement": "An imported package must state the name of the country of origin, or of manufacture, or of assembly.",
+  "legal_reference": "Rule 6(1)(aa) of the Legal Metrology (Packaged Commodities) Rules, 2011",
+  "source_status": "verified",
+  "source_note": "Checked 2026-08-30 by Claude Code (automated legal-source check) for raghavrrrao against the Department of Consumer Affairs consolidated publication 'Book on Legal Metrology Packaged Commodities Rules, 2011 with all amendments' (sha256 0ef948f9c6b89f5dfb20d384861901714fd0dc54fc67b5b86c772d2c3f983a4b; server Last-Modified 2025-04-14), via the verbatim quotation recorded in rules/INVENTORY.md. Clause (aa), inserted vide G.S.R. 629(E) dated 23 June 2017 w.e.f. 1 January 2018, reads verbatim: 'The name of the country of origin or manufacture or assembly in case of imported products shall be mentioned on the package;'. HUMAN COUNTER-REVIEW BY A NAMED REVIEWER IS OUTSTANDING, and the 2022-2025 amendment-chain gap in rules/SOURCES.md applies.",
+  "severity": "major",
+  "check_type": "field_presence",
+  "parameters": {
+    "field_key": "country_of_origin"
+  },
+  "applies_to_category_codes": [
+    "packaged-commodity"
+  ],
+  "effective_from": "2018-01-01",
+  "effective_to": null,
+  "is_active": true,
+  "requires_applicability_conditions": true
+}

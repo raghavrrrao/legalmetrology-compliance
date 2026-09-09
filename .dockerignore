@@ -1,0 +1,102 @@
+# What must never enter the production image.
+#
+# Two jobs. The first is keeping secrets and local state out of a build context
+# that gets shipped to a build server and baked into layers - a `.env` copied
+# into an image is a credential leak that survives every later `rm`. The second
+# is keeping the image small and the build fast.
+#
+# This file is NOT a duplicate of .gitignore. .gitignore keeps things out of
+# Git; this keeps things out of a running container, and the two lists differ:
+# `frontend/` is committed and belongs in Git but has no business in a backend
+# image, while `.venv/` is in neither.
+
+# ---------------------------------------------------------------------------
+# Secrets and local environment - the reason this file exists
+# ---------------------------------------------------------------------------
+.env
+.env.*
+!.env.example
+*.pem
+*.key
+*.p12
+*.pfx
+
+# ---------------------------------------------------------------------------
+# Version control and CI
+# ---------------------------------------------------------------------------
+.git
+.gitignore
+.github
+
+# ---------------------------------------------------------------------------
+# Local Python state
+# ---------------------------------------------------------------------------
+# A host virtualenv holds platform-specific binaries. Copying one into a Linux
+# image ships megabytes of Windows or macOS wheels that cannot run there.
+.venv
+venv
+ENV
+__pycache__
+*.py[cod]
+*.egg-info
+.pytest_cache
+.mypy_cache
+.ruff_cache
+.coverage
+.coverage.*
+htmlcov
+coverage.xml
+
+# ---------------------------------------------------------------------------
+# The frontend
+# ---------------------------------------------------------------------------
+# This image runs the Django API. The React bundle is built and hosted
+# separately - see docs/deployment.md. node_modules alone would dwarf
+# everything else in the context.
+frontend
+
+# ---------------------------------------------------------------------------
+# Uploaded and sample images
+# ---------------------------------------------------------------------------
+# Uploaded label photographs are third-party content: trade dress, and
+# sometimes incidental personal data. A developer's local uploads must not be
+# baked into a deployed image where they would be served to other people.
+backend/media
+samples
+uploads
+
+# ---------------------------------------------------------------------------
+# Build output
+# ---------------------------------------------------------------------------
+# Regenerated inside the image by `collectstatic`. Copying a host build in
+# would let a stale manifest win over the one the build produces.
+backend/staticfiles
+build
+dist
+ml/build
+ml/dist
+
+# ---------------------------------------------------------------------------
+# ML data and artifacts
+# ---------------------------------------------------------------------------
+# Evaluation photographs and any model weights. Nothing at runtime reads these;
+# `ml/labelextract` is the only part of ml/ the container needs, and it is
+# installed as a package.
+ml/data
+ml/artifacts
+ml/models
+ml/tests
+ml/.pytest_cache
+
+# ---------------------------------------------------------------------------
+# Documentation
+# ---------------------------------------------------------------------------
+# `rules/` is deliberately NOT here. It is read at runtime by load_rules and
+# load_legal_framework, not documentation - see the Dockerfile.
+docs
+
+# Root-level prose only. A bare `*.md` pattern matches one path segment, so
+# this leaves rules/*.md alone - which is what we want: those sit beside the
+# JSON the loaders read, and separating them would make the directory harder
+# to reason about for no gain in image size.
+*.md

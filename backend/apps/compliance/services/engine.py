@@ -49,6 +49,7 @@ from apps.compliance.models import (
     ComplianceFinding,
     ComplianceViolation,
 )
+from apps.compliance.services import applicability
 from apps.extraction.models import ExtractionRun
 from apps.rules import checks
 from apps.rules.checks.base import CheckContext, CheckOutcome, CheckStatus
@@ -75,7 +76,24 @@ def applicable_rules(product: Product | None) -> list[ComplianceRule]:
     codes = product.applicable_category_codes
     candidates = (
         ComplianceRule.objects.filter(is_active=True)
-        .prefetch_related("applies_to_categories")
+        # The clause-level requirement and the instrument behind it are
+        # snapshotted onto every finding. select_related, not a second query
+        # per rule: `_record_findings` reads both for each outcome, and the
+        # query-count tests in test_engine_queries.py bound this to a flat cost.
+        .select_related("rule_requirement__source")
+        .prefetch_related(
+            "applies_to_categories",
+            # `_applicability_note` asks each requirement which of its
+            # conditions cannot be determined. Prefetched for the same reason
+            # as the categories above: without it the cost is one query per
+            # mapped rule, which grows with the rule set rather than staying
+            # flat.
+            "rule_requirement__applicability_conditions",
+            # The links themselves, with their mode and their condition. The
+            # applicability resolver reads these for every rule, so without
+            # this the scope-gate decision would cost a query per rule.
+            "rule_requirement__applicability_links__condition",
+        )
         .order_by("code")
     )
     today = timezone.localdate()
@@ -113,17 +131,94 @@ def evaluate(
 
     rules = applicable_rules(product)
     context = CheckContext.from_run(extraction_run)
+    #: The applicability facts stated about this package, loaded once for the
+    #: whole check rather than per rule.
+    declarations = applicability.DeclarationSet(product)
 
     passed: list[ComplianceRule] = []
     failed: list[tuple[ComplianceRule, CheckOutcome]] = []
     inconclusive: list[tuple[ComplianceRule, CheckOutcome]] = []
-    #: Every outcome, in evaluation order, with whether it was downgraded.
-    #: Collected alongside the three buckets rather than derived from them
-    #: afterwards, because the downgrade below rewrites an outcome and the
-    #: original status would not be recoverable from the buckets.
-    outcomes: list[tuple[ComplianceRule, CheckOutcome, bool]] = []
+    #: Rules that do not govern this package at all. Kept apart from the three
+    #: buckets above because it is neither a pass nor a doubt: counting an
+    #: exemption as a pass would let a package reach COMPLIANT on the strength
+    #: of the rules that did not apply to it.
+    not_applicable: list[tuple[ComplianceRule, CheckOutcome]] = []
+    #: Every outcome, in evaluation order, with whether it was downgraded and
+    #: the applicability decision behind it. Collected alongside the buckets
+    #: rather than derived from them afterwards, because the downgrade below
+    #: rewrites an outcome and the original status would not be recoverable.
+    outcomes: list[
+        tuple[ComplianceRule, CheckOutcome, bool, applicability.ApplicabilityDecision]
+    ] = []
+
+    # Rules 3 and 26 first, and once for the whole check: they remove a package
+    # from Chapter II or from the Rules entirely, so if either bites there is
+    # nothing to evaluate and every rule below is recorded as not applicable.
+    # A gate nobody answered does NOT bite - see `applicability.decide_scope`.
+    scope = applicability.decide_scope(declarations)
 
     for rule in rules:
+        if scope.applicability is applicability.Applicability.DOES_NOT_APPLY:
+            outcome = CheckOutcome(
+                status=CheckStatus.NOT_APPLICABLE,
+                message=scope.explain(),
+                details={"applicability": "out_of_scope"},
+            )
+            not_applicable.append((rule, outcome))
+            outcomes.append((rule, outcome, False, scope))
+            continue
+
+        # A rule unblocked BY applicability must not run without it. Left
+        # unmapped it would find no trigger and apply to everything - rule
+        # 6(1)(aa) would fail every domestic package for want of a country
+        # of origin it never had to declare.
+        if rule.requires_applicability_conditions and rule.rule_requirement is None:
+            outcome = CheckOutcome(
+                status=CheckStatus.INCONCLUSIVE,
+                message=(
+                    f"Rule {rule.code} could not be evaluated: it applies "
+                    f"only to packages meeting conditions recorded in the "
+                    f"legal framework, and this rule is not linked to a "
+                    f"clause. Run 'manage.py load_legal_framework'. No "
+                    f"conclusion has been drawn about this requirement."
+                ),
+                details={"applicability": "unmapped_conditional_rule"},
+            )
+            inconclusive.append((rule, outcome))
+            outcomes.append(
+                (rule, outcome, False, applicability.UNMAPPED_CONDITIONAL)
+            )
+            continue
+
+        decision = applicability.decide(rule.rule_requirement, declarations)
+
+        # Applicability is settled BEFORE the validator runs. A rule that does
+        # not govern this package must not read its label at all - evaluating
+        # it and discarding the result would still let a misread declaration
+        # reach a finding on a package the clause never covered.
+        if decision.applicability is applicability.Applicability.DOES_NOT_APPLY:
+            outcome = CheckOutcome(
+                status=CheckStatus.NOT_APPLICABLE,
+                message=decision.explain(),
+                details={"applicability": decision.applicability.value},
+            )
+            not_applicable.append((rule, outcome))
+            outcomes.append((rule, outcome, False, decision))
+            continue
+
+        if decision.is_undetermined:
+            outcome = CheckOutcome(
+                status=CheckStatus.INCONCLUSIVE,
+                message=decision.explain(),
+                details={
+                    "applicability": decision.applicability.value,
+                    "unresolved_conditions": decision.unresolved,
+                },
+            )
+            inconclusive.append((rule, outcome))
+            outcomes.append((rule, outcome, False, decision))
+            continue
+
         outcome = _evaluate_rule(rule, context)
         if outcome is None:
             continue
@@ -146,7 +241,7 @@ def evaluate(
                 details=outcome.details,
             )
             inconclusive.append((rule, downgraded))
-            outcomes.append((rule, downgraded, True))
+            outcomes.append((rule, downgraded, True, decision))
             continue
 
         if outcome.status is CheckStatus.PASSED:
@@ -155,7 +250,7 @@ def evaluate(
             failed.append((rule, outcome))
         else:
             inconclusive.append((rule, outcome))
-        outcomes.append((rule, outcome, False))
+        outcomes.append((rule, outcome, False, decision))
 
     violations = _record_violations(check, failed, extraction_run, context)
     _record_findings(check, outcomes, context, violations)
@@ -167,6 +262,7 @@ def evaluate(
         passed=passed,
         failed=failed,
         inconclusive=inconclusive,
+        not_applicable=not_applicable,
     )
 
     check.status = ComplianceCheck.Status.COMPLETED
@@ -176,6 +272,7 @@ def evaluate(
     check.rules_passed = len(passed)
     check.rules_failed = len(failed)
     check.rules_inconclusive = len(inconclusive)
+    check.rules_not_applicable = len(not_applicable)
     check.completed_at = timezone.now()
     check.processing_ms = int((time.perf_counter() - started) * 1000)
     check.save()
@@ -254,12 +351,20 @@ _FINDING_STATUS = {
     CheckStatus.PASSED: ComplianceFinding.Status.PASSED,
     CheckStatus.FAILED: ComplianceFinding.Status.FAILED,
     CheckStatus.INCONCLUSIVE: ComplianceFinding.Status.INCONCLUSIVE,
+    CheckStatus.NOT_APPLICABLE: ComplianceFinding.Status.NOT_APPLICABLE,
 }
 
 
 def _record_findings(
     check: ComplianceCheck,
-    outcomes: list[tuple[ComplianceRule, CheckOutcome, bool]],
+    outcomes: list[
+        tuple[
+            ComplianceRule,
+            CheckOutcome,
+            bool,
+            applicability.ApplicabilityDecision,
+        ]
+    ],
     context: CheckContext,
     violations: dict[str, ComplianceViolation],
 ) -> None:
@@ -277,25 +382,49 @@ def _record_findings(
     `test_engine_queries.py` bound this.
     """
     rows = []
-    for rule, outcome, downgraded in outcomes:
+    for rule, outcome, downgraded, decision in outcomes:
         # The reading behind this outcome, when there is one. `context.field`
         # reads the map loaded once per check, so this is not a query.
         extracted = context.field(outcome.field_key) if outcome.field_key else None
+        # The clause-level requirement, when the rule has been mapped to the
+        # legal framework. `select_related` in `applicable_rules` already
+        # loaded it, so this is an attribute read, not a query.
+        requirement = rule.rule_requirement
         rows.append(
             ComplianceFinding(
                 compliance_check=check,
                 rule=rule,
+                rule_requirement=requirement,
                 violation=violations.get(rule.code),
                 status=_FINDING_STATUS[outcome.status],
                 downgraded_from_failed=downgraded,
                 rule_code=rule.code,
+                clause=requirement.clause if requirement is not None else "",
                 title=rule.title,
                 requirement=rule.requirement,
                 legal_reference=rule.legal_reference,
                 severity=rule.severity,
                 check_type=rule.check_type,
+                detection_method=(
+                    requirement.detection_method if requirement is not None else ""
+                ),
+                legal_source_citation=(
+                    requirement.source.citation
+                    if requirement is not None and requirement.source is not None
+                    else ""
+                ),
+                applicability_note=_applicability_note(requirement, decision),
                 field_key=outcome.field_key or "",
                 extracted_field=extracted,
+                # Raw and normalised are snapshotted side by side, never one in
+                # place of the other: normalisation is an interpretation, and a
+                # reviewer needs the original text to check it against.
+                extracted_raw_value=(
+                    extracted.raw_value if extracted is not None else ""
+                ),
+                extracted_normalized_value=(
+                    extracted.normalized_value if extracted is not None else None
+                ),
                 # Snapshotted from the reading rather than followed through the
                 # foreign key: None stays None. A missing confidence means the
                 # engine did not report one, never zero.
@@ -310,6 +439,74 @@ def _record_findings(
         )
     if rows:
         ComplianceFinding.objects.bulk_create(rows)
+
+
+#: Attached to every finding whose rule is not mapped to a clause of the Rules.
+#: Not a hedge - the rule may be perfectly sound - but a finding that cannot
+#: name its clause cannot be audited against the source, and saying so is
+#: cheaper than a reviewer discovering it.
+_UNMAPPED_NOTE = (
+    "This rule is not linked to a clause of the Legal Metrology (Packaged "
+    "Commodities) Rules, 2011 in the legal framework, so the applicability "
+    "conditions behind it could not be stated. See rules/framework/."
+)
+
+#: Applies to every finding this system produces, without exception. Rule 3 and
+#: rule 26 take packages out of scope on facts - net quantity, buyer type,
+#: commodity class - that are not collected, so an active rule is evaluated
+#: against some packages the Rules do not govern. Rule 33 relaxations are
+#: likewise invisible here.
+_SCOPE_CAVEAT = (
+    "Applicability rests on the product's commodity category and on the "
+    "facts declared for this submission. Anything not declared is not "
+    "established, and the scope gates in rule 3 and rule 26 turn on such "
+    "facts - so an undeclared package may have been checked against rules "
+    "that do not govern it. Any relaxation granted under rule 33 is "
+    "invisible to this system whatever is declared."
+)
+
+
+def _applicability_note(requirement, decision) -> str:
+    """Record why this rule was applied, and what could not be established.
+
+    Written for every finding, including passing ones and ones the rule did not
+    govern. Two things go in it, and both matter to a reviewer:
+
+    The **decision**: which condition exempted the package, which trigger it
+    met, or which fact was missing. "Rule 6(1)(e) was not checked" is not
+    something a user can act on; "not checked: you declared this package
+    contains bidi, which proviso (C) excuses from the retail sale price
+    declaration" is.
+
+    The **residual caveat**: what remains unknown even after the declarations
+    were consulted. Facts a submitter never stated stay unstated, and a rule 33
+    relaxation is invisible from here whatever anyone declares. A caveat
+    recorded only when someone remembers to record it is one a reader cannot
+    rely on the absence of.
+    """
+    parts = list(decision.reasons)
+
+    if requirement is not None:
+        # Conditions the framework says this system cannot establish at all,
+        # as opposed to ones simply left unanswered. `.all()` reads the
+        # prefetch cache loaded in `applicable_rules`.
+        undeterminable = sorted(
+            condition.name
+            for condition in requirement.applicability_conditions.all()
+            if not condition.is_determinable
+        )
+        if undeterminable:
+            parts.append(
+                "The following conditions bear on this clause and CANNOT be "
+                "established by this system at all: "
+                + ", ".join(undeterminable)
+                + "."
+            )
+    else:
+        parts.append(_UNMAPPED_NOTE)
+
+    parts.append(_SCOPE_CAVEAT)
+    return "\n\n".join(part for part in parts if part)
 
 
 def _json_safe_details(details, *, rule_code: str) -> dict:
@@ -346,9 +543,26 @@ def _decide(
     passed: list,
     failed: list,
     inconclusive: list,
+    not_applicable: list,
 ) -> tuple[str, str]:
-    """Derive the overall result and a plain-language explanation."""
+    """Derive the overall result and a plain-language explanation.
+
+    `applicable_count` counts the rules that were *selected* for this
+    product by category and effective date. `not_applicable` counts those
+    of them that applicability then ruled out. The difference matters for
+    guarantee 1: a package every rule exempted has had nothing checked, and
+    must reach REVIEW_REQUIRED rather than COMPLIANT.
+    """
     Result = ComplianceCheck.Result
+    #: Rules that actually reached a validator. Exemptions are excluded,
+    #: because an exemption is not evidence that a package complies.
+    considered = applicable_count - len(not_applicable)
+    exempt_note = (
+        f" {len(not_applicable)} further rule(s) did not apply to this "
+        f"package and were not checked."
+        if not_applicable
+        else ""
+    )
 
     # Guarantee 1: nothing checked means nothing established.
     if applicable_count == 0:
@@ -366,20 +580,35 @@ def _decide(
             "complies - see rules/README.md.",
         )
 
+    # Guarantee 1 again, for the case applicability creates: every rule was
+    # ruled out, so nothing about this package's declarations was examined.
+    # Reporting COMPLIANT here would turn a set of exemptions into a clean
+    # bill of health.
+    if considered == 0:
+        return (
+            Result.REVIEW_REQUIRED,
+            f"None of the {applicable_count} rule(s) selected for this "
+            f"product applied to it, on the facts declared for this "
+            f"submission, so no declaration was checked. This is not a "
+            f"finding that the product complies - see the findings below "
+            f"for why each rule did not apply.",
+        )
+
     if not run.produced_usable_output:
         return (
             Result.REVIEW_REQUIRED,
             f"No readable text was extracted from this image "
             f"(extraction status: {run.status}), so none of the "
-            f"{applicable_count} applicable rule(s) could be decided. Try a "
-            f"clearer, closer photograph of the label.",
+            f"{considered} applicable rule(s) could be decided. Try a "
+            f"clearer, closer photograph of the label.{exempt_note}",
         )
 
     if failed and not inconclusive:
         return (
             Result.NON_COMPLIANT,
-            f"{len(failed)} of {applicable_count} applicable rule(s) were not "
-            f"met. See the violations below for the evidence behind each one.",
+            f"{len(failed)} of {considered} applicable rule(s) were not "
+            f"met. See the violations below for the evidence behind each "
+            f"one.{exempt_note}",
         )
 
     if failed and inconclusive:
@@ -387,15 +616,16 @@ def _decide(
             Result.PARTIALLY_COMPLIANT,
             f"{len(failed)} rule(s) were not met and {len(inconclusive)} could "
             f"not be determined from this image. The undetermined rules are "
-            f"neither a pass nor a failure and need human review.",
+            f"neither a pass nor a failure and need human review."
+            f"{exempt_note}",
         )
 
     if inconclusive:
         return (
             Result.REVIEW_REQUIRED,
-            f"{len(inconclusive)} of {applicable_count} applicable rule(s) "
+            f"{len(inconclusive)} of {considered} applicable rule(s) "
             f"could not be determined, so no compliance conclusion has been "
-            f"drawn. {len(passed)} rule(s) passed.",
+            f"drawn. {len(passed)} rule(s) passed.{exempt_note}",
         )
 
     # Guarantee 3: reaching COMPLIANT requires rules to have actually passed.
@@ -405,7 +635,7 @@ def _decide(
             f"All {len(passed)} applicable rule(s) were met. This covers only "
             f"the rules currently loaded in this system and only what was "
             f"legible in the submitted image - it is not a certification of "
-            f"legal compliance.",
+            f"legal compliance.{exempt_note}",
         )
 
     return (

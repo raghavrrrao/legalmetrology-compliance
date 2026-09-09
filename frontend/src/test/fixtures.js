@@ -60,25 +60,110 @@ export function imageBody(overrides = {}) {
   };
 }
 
-/** One entry of `findings[]`, with every field the serializer declares. */
+/**
+ * One entry of `findings[]`, with every field the serializer declares.
+ *
+ * Including the four that come from the legal framework rather than from the
+ * executable rule - `clause`, `legal_source_citation`, `detection_method`,
+ * `applicability_note`. A fixture that omitted them would let a component test
+ * pass while the screen dropped the legal context on a real response, which is
+ * exactly the failure that is invisible in a browser.
+ */
 export function findingBody(overrides = {}) {
   return {
     id: 1,
     rule_code: 'LM-PC-0001',
+    clause: '6(1)(c)',
     title: 'Net quantity declaration',
     requirement: 'The package must declare its net quantity.',
     legal_reference: 'Rule 6(1)(e), LMPC Rules 2011',
+    legal_source_citation: 'G.S.R. 202(E)',
     check_type: 'field_presence',
+    detection_method: 'ocr',
     severity: 'major',
     status: 'passed',
     downgraded_from_failed: false,
+    applicability_note:
+      'Clause 6(1)(c) carries no applicability conditions, so it applies to every package in scope.\n\nApplicability rests on the product’s commodity category and on the facts declared for this submission.',
     field_key: 'net_quantity',
+    extracted_raw_value: 'Net Qty: 500 g',
+    extracted_normalized_value: { quantity: 500, unit: 'g', uncertain: false },
     extracted_confidence: 0.91,
     message: 'The declaration was found in the text read from this image.',
     evidence_excerpt: 'Net Qty: 500 g',
     bounding_box: { x: 40, y: 60, width: 200, height: 24 },
     details: {},
     violation: null,
+    ...overrides,
+  };
+}
+
+/** One entry of `applicability_declarations[]` on a compliance result. */
+export function declarationBody(overrides = {}) {
+  return {
+    code: 'imported-product',
+    name: 'Imported product or imported package',
+    answer: 'no',
+    answer_display: 'No',
+    source: 'submitter',
+    source_display: 'Declared by the submitter',
+    note: '',
+    stated_before_this_check: true,
+    ...overrides,
+  };
+}
+
+/** One entry of `GET /api/v1/compliance/applicability-conditions/`. */
+export function applicabilityConditionBody(overrides = {}) {
+  return {
+    code: 'imported-product',
+    name: 'Imported product or imported package',
+    description: 'Whether this package was imported into India.',
+    determination: 'user_declared',
+    determination_note: 'Nothing on the label establishes import status.',
+    scope: 'clause',
+    answers: ['yes', 'no', 'unknown'],
+    affects: [
+      {
+        clause: '6(1)(aa)',
+        mode: 'requires',
+        mode_display: 'Applies only to',
+        note: 'Applies to imported products only.',
+        rule_codes: ['LM-PC-0007'],
+      },
+    ],
+    ...overrides,
+  };
+}
+
+/** The body of `GET /api/v1/compliance/applicability-conditions/`. */
+export function applicabilityBody(overrides = {}) {
+  return {
+    conditions: [
+      applicabilityConditionBody(),
+      applicabilityConditionBody({
+        code: 'institutional-consumer',
+        name: 'Package meant for an institutional consumer',
+        description: 'Supplied to an institution rather than sold at retail.',
+        scope: 'rules_scope',
+        affects: [
+          {
+            clause: '3',
+            mode: 'scope_gate',
+            mode_display: 'Takes the package out of scope',
+            note: 'Rule 3(c): Chapter II does not apply.',
+            rule_codes: [],
+          },
+        ],
+      }),
+    ],
+    answer_semantics: {
+      yes: 'The fact holds for this package.',
+      no: 'The fact does not hold.',
+      unknown:
+        'Not established. Identical in effect to sending nothing: the clause reaches REVIEW REQUIRED. It is never read as “no”.',
+    },
+    framework_loaded: true,
     ...overrides,
   };
 }
@@ -97,9 +182,11 @@ export function complianceBody(overrides = {}) {
     rules_passed: 0,
     rules_failed: 0,
     rules_inconclusive: 0,
+    rules_not_applicable: 0,
     processing_ms: 12,
     completed_at: '2026-08-30T12:00:00Z',
     product_category_code: null,
+    applicability_declarations: [],
     violations: [],
     findings: [],
     extraction: extractionRunBody(),

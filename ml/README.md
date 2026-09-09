@@ -252,12 +252,29 @@ would be unexplainable in a tool whose output is meant to be evidence.
 | Date of packing | `date_of_packing` | `{date}` or `{year_month}` |
 | Date of import | `date_of_import` | `{date}` or `{year_month}` |
 | Best before / use by / expiry | `best_before` | `{date}`, `{year_month}`, or `{duration_value, duration_unit}` |
-| Consumer care contact | `consumer_care_contact` | `{emails[], phones[]}` |
+| Consumer care contact | `consumer_care_contact` | `{emails[], phones[]}` — **one field for the whole label**, unioning every e-mail and telephone token recognised on any line that carries one. See below |
 | Country of origin | `country_of_origin` | `{country_text}` — certain only from an explicit "Country of Origin" declaration |
 | Manufacturer name | `manufacturer_name` | `{name}` — always flagged uncertain |
 | Packer name | `packer_name` | `{name}` — always flagged uncertain |
 | Importer name | `importer_name` | `{name}` — always flagged uncertain |
 | "Marketed by" | `other` | `{name, declaration: "marketed_by"}` |
+
+**The consumer-care declaration is merged across lines, and it is the one
+field that is.** Rule 6(2) requires a name, an address, a telephone number and
+an e-mail address, and a package prints those on separate lines - the keyword on
+one, the toll-free number on the next, the e-mail after that. One candidate per
+line meant `_resolve` kept exactly one and discarded the rest, so a label
+reading `Customer Care` above `care@example.com` came out as a value-less
+uncertain reading with the e-mail thrown away. So `emails` and `phones` are
+unioned in reading order across every contributing line, and `raw_value` joins
+those lines with ` | ` so the evidence shows where each element was read.
+
+The cost is precision about *which* declaration an element belongs to: an
+address line carrying a mobile number now contributes that number. That error
+runs in the safe direction - it can only make a contact element look present,
+never absent - and it is what lets the rules layer treat an empty `emails` list
+as "no e-mail address was recognised on this label" rather than as an artefact
+of which line won.
 
 Two rules apply to every name in that list, both added in 0.3.0 and both
 measured (`docs/evaluation-results.md` §11.5):

@@ -33,7 +33,12 @@ from django.core.management import call_command
 
 from apps.catalog.models import ProductCategory
 from apps.rules.loader import discover_rule_files, parse_rule_file
-from apps.rules.models import ComplianceRule
+from apps.rules.models import (
+    ApplicabilityCondition,
+    ComplianceRule,
+    LegalInstrument,
+    RuleRequirement,
+)
 
 pytestmark = pytest.mark.django_db
 
@@ -155,4 +160,77 @@ def test_the_readme_documents_the_seeding_step():
     assert "manage.py seed_categories" in readme
     assert readme.index("manage.py seed_categories") < readme.index(
         "manage.py load_rules"
+    )
+
+
+# --- the second loader, and why it is not optional --------------------------
+
+
+def test_the_readme_documents_the_legal_framework_loader():
+    """A setup that stops at `load_rules` produces different verdicts.
+
+    `load_rules` loads what the software can execute; `load_legal_framework`
+    loads what the law requires - the clauses, the source citations, and the
+    applicability conditions - and links the two. The README documented only
+    the first, and following it exactly left a database with twelve rules and
+    zero applicability conditions.
+
+    That is not merely cosmetic, which is why this is pinned rather than left
+    to a docs review. A clause gated on a fact nobody stated has no gate to
+    check when no conditions are loaded, so the rule is evaluated anyway. On one
+    photograph from `ml/data/our-evaluation-set`, a correctly loaded database
+    answers REVIEW_REQUIRED with nothing failed and a database missing this step
+    answers PARTIALLY_COMPLIANT with a violation recorded against clause
+    6(1)(a). The engine's guarantee that an unestablished fact never produces a
+    verdict rests on this command having been run.
+    """
+    readme = (WORKFLOW.parents[2] / "README.md").read_text(encoding="utf-8")
+
+    assert "manage.py load_legal_framework" in readme, (
+        "The README does not tell a developer to load the legal framework. A "
+        "setup that follows it produces findings with no clause and no source, "
+        "and different verdicts."
+    )
+    assert readme.index("manage.py load_rules") < readme.index(
+        "manage.py load_legal_framework"
+    )
+
+
+def test_ci_loads_the_legal_framework_after_the_rules():
+    """The process half, read from the workflow for the same reason as above."""
+    steps = _backend_job_steps()
+    joined = " | ".join(steps)
+
+    load = next((i for i, s in enumerate(steps) if "Rule loader" in s), None)
+    framework = next(
+        (i for i, s in enumerate(steps) if "Legal framework loader" in s), None
+    )
+
+    assert framework is not None, (
+        f"CI never runs load_legal_framework, so nothing exercises the shipped "
+        f"framework files against a clean database. Steps: {joined}"
+    )
+    assert load is not None and load < framework
+
+
+def test_the_full_documented_sequence_succeeds_on_an_empty_database():
+    """All four commands, in the documented order, against the real files.
+
+    `test_seed_categories_then_load_rules_succeeds_on_an_empty_database` above
+    stops at the rule loader, which is where the documented setup used to stop.
+    This carries on to the end of it and asserts the state a developer is left
+    in: rules *and* the framework behind them.
+    """
+    assert not ProductCategory.objects.exists()
+
+    call_command("seed_categories", stdout=StringIO())
+    call_command("load_rules", stdout=StringIO())
+    call_command("load_legal_framework", stdout=StringIO())
+
+    assert ComplianceRule.objects.filter(is_active=True).exists()
+    assert LegalInstrument.objects.exists()
+    assert RuleRequirement.objects.exists()
+    assert ApplicabilityCondition.objects.exists(), (
+        "No applicability conditions were loaded, so every clause gated on a "
+        "stated fact would be evaluated as though it had no gate."
     )

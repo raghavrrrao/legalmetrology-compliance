@@ -28,7 +28,7 @@ from __future__ import annotations
 
 from rest_framework import serializers
 
-from apps.catalog.models import ProductCategory
+from apps.catalog.models import ProductApplicabilityDeclaration, ProductCategory
 from apps.compliance.models import (
     ComplianceCheck,
     ComplianceEvidence,
@@ -41,6 +41,7 @@ from apps.extraction.api.serializers import (
 )
 from apps.extraction.models import ExtractionRun
 from apps.images.api.serializers import ProductImageSerializer
+from apps.rules.models import ApplicabilityCondition
 
 __all__ = [
     "ComplianceCheckListSerializer",
@@ -137,12 +138,25 @@ class ComplianceFindingSerializer(serializers.ModelSerializer):
         message                         why, in plain language
         severity                        triage ranking only, no legal weight
 
-    Three of these are easy to misread and are worth stating plainly:
+    Four further fields come from the legal framework rather than from the
+    executable rule, and are blank when the rule is not mapped to a clause:
 
-    - **`status` is three-valued.** `inconclusive` is not a soft fail. It means
+        clause                  the sub-rule this concerns, e.g. '6(1)(c)'
+        legal_source_citation   the instrument that established it
+        detection_method        what evidence could settle it at all
+        applicability_note      why it was applied, and what could not be
+                                established about whether it applies
+
+    Five of these are easy to misread and are worth stating plainly:
+
+    - **`status` is four-valued.** `inconclusive` is not a soft fail: it means
       the check could not be decided - usually because the photograph was not
-      readable - and treating it as either a pass or a violation is the single
-      most damaging thing a client can do with this data.
+      readable, or because a fact deciding whether the rule applies was never
+      declared - and treating it as either a pass or a violation is the single
+      most damaging thing a client can do with this data. `not_applicable` is
+      different again: the rule does not govern this package, so nothing about
+      its declarations was examined. It is not a pass, and a client that counts
+      it as one turns a set of exemptions into a clean bill of health.
     - **`extracted_confidence` is recorded, not enforced.** No rule in this
       repository conditions its outcome on it, so a `passed` finding built on a
       low-confidence reading is still `passed`. The number is exposed precisely
@@ -153,6 +167,21 @@ class ComplianceFindingSerializer(serializers.ModelSerializer):
       verified** against the authoritative legal text, so the engine recorded
       it as inconclusive rather than as a violation. It is surfaced because a
       reviewer needs to see the safeguard fire, not infer it from a rule code.
+    - **`detection_method` says whether a photograph could ever have settled
+      this.** Anything other than `ocr`, `cv` or `ocr_cv` names evidence this
+      pipeline does not have - a physical weighing, a regulator's register, an
+      e-commerce listing - and a finding carrying one of those is a prompt for
+      human review whatever its `status` reads.
+    - **`applicability_note` is not boilerplate.** It carries the caveat that
+      applies to every result: applicability is decided from the commodity
+      category alone, and the facts rules 3 and 26 turn on are not collected,
+      so a rule may have been applied to a package outside the Rules. A client
+      that hides this is presenting a narrower claim than the data supports.
+
+    `extracted_raw_value` and `extracted_normalized_value` are both present and
+    neither replaces the other. The raw text is what was recognised; the
+    normalised value is an interpretation of it, and is `null` when no
+    normaliser ran - never because the reading was empty.
     """
 
     class Meta:
@@ -160,14 +189,20 @@ class ComplianceFindingSerializer(serializers.ModelSerializer):
         fields = [
             "id",
             "rule_code",
+            "clause",
             "title",
             "requirement",
             "legal_reference",
+            "legal_source_citation",
             "check_type",
+            "detection_method",
             "severity",
             "status",
             "downgraded_from_failed",
+            "applicability_note",
             "field_key",
+            "extracted_raw_value",
+            "extracted_normalized_value",
             "extracted_confidence",
             "message",
             "evidence_excerpt",
@@ -178,10 +213,75 @@ class ComplianceFindingSerializer(serializers.ModelSerializer):
         read_only_fields = fields
 
 
+class AppliedDeclarationSerializer(serializers.ModelSerializer):
+    """One fact stated about the package, as it stood when the result was read.
+
+    The third kind of evidence in a result, and it must not be confused with
+    the other two. An `ExtractedLabelField` is something the pipeline *read off
+    the photograph*. A `ComplianceFinding` is what a rule *concluded*. This is
+    something a **person asserted** about the goods - that the package contains
+    bidi, that it is imported - which no photograph could establish and which
+    the Rules make decisive.
+
+    Surfaced on the result because a finding's `applicability_note` explains
+    the reasoning but not the inputs, and a reviewer opening a permalinked
+    result days later has no other way to see what was declared or by whom.
+
+    `stated_before_this_check` is the honest part. Declarations hang off the
+    `Product`, not off the check, so a fact recorded *after* an evaluation is
+    still attached to the product it describes and would appear here. Rather
+    than snapshot every answer onto every check - a migration, and a second
+    copy of the same fact - the row is compared against the check's own start
+    time, so a client can mark the rare declaration that could not have
+    influenced the result it is being shown beside.
+    """
+
+    code = serializers.CharField(source="condition.code", read_only=True)
+    name = serializers.CharField(source="condition.name", read_only=True)
+    answer_display = serializers.CharField(
+        source="get_answer_display", read_only=True
+    )
+    source_display = serializers.CharField(
+        source="get_source_display", read_only=True
+    )
+    stated_before_this_check = serializers.SerializerMethodField()
+
+    class Meta:
+        model = ProductApplicabilityDeclaration
+        fields = [
+            "code",
+            "name",
+            "answer",
+            "answer_display",
+            "source",
+            "source_display",
+            "note",
+            "stated_before_this_check",
+        ]
+        read_only_fields = fields
+
+    def get_stated_before_this_check(self, declaration) -> bool | None:
+        """Whether this answer already stood when the check was evaluated.
+
+        `updated_at`, not `created_at`: re-declaring a condition corrects the
+        row in place, so an answer created before the check and changed after
+        it is not the answer the check saw.
+
+        None when the check never recorded a start time, which is not something
+        to guess at - a client showing "yes" there would be asserting a
+        comparison nobody made.
+        """
+        check = self.context.get("compliance_check")
+        started = getattr(check, "started_at", None)
+        if started is None:
+            return None
+        return declaration.updated_at <= started
+
+
 class ComplianceEvaluationRequestSerializer(serializers.Serializer):
     """The JSON body of `POST /api/v1/compliance/`.
 
-    Two fields, and what is *absent* from them is the important part. There is
+    Three fields, and what is *absent* from them is the important part. There is
     no rule code, no check type, no severity, no engine name and no threshold.
     A caller cannot choose which rules run or how strictly - applicability is
     answered by `engine.applicable_rules` from the loaded rule set and the
@@ -189,6 +289,16 @@ class ComplianceEvaluationRequestSerializer(serializers.Serializer):
 
     That is not defensive coding for its own sake. A compliance verdict a
     client could steer by picking its own rules would be worth nothing.
+
+    `applicability_declarations` is not an exception to that, and the
+    distinction is the whole reason it is safe to accept. It does not say which
+    rules to run. It states **facts about the goods** - this package contains
+    bidi, this package is imported - which the Rules themselves make decisive
+    and which no photograph can establish. The engine still decides what those
+    facts mean, from conditions loaded out of the verified framework. A caller
+    who lies is making a false declaration about their own product, recorded
+    against it with its source, which is a different thing from steering the
+    rule set.
     """
 
     extraction_run_id = serializers.UUIDField(
@@ -209,6 +319,29 @@ class ComplianceEvaluationRequestSerializer(serializers.Serializer):
             "not ask to change. Omitting it is honest and supported: the "
             "result then says the category was unknown rather than assuming "
             "one."
+        ),
+    )
+
+    applicability_declarations = serializers.DictField(
+        required=False,
+        child=serializers.ChoiceField(
+            choices=ProductApplicabilityDeclaration.Answer.choices
+        ),
+        help_text=(
+            "Facts about the package that decide whether a clause applies to "
+            "it, as {condition_code: yes|no|unknown}. Condition codes are "
+            "`ApplicabilityCondition.code` values loaded from "
+            "rules/framework/applicability_conditions.json - for example "
+            "'imported-product', 'bidi', 'domestic-lpg-cylinder'. "
+            "Optional, and omitting it is the honest default: an unstated fact "
+            "stays unestablished, and a clause whose applicability turns on one "
+            "reaches REVIEW_REQUIRED rather than a verdict. Sending 'unknown' "
+            "is the same as not sending the code at all, and is accepted so a "
+            "form can record that somebody was asked. "
+            "Recorded against the product this reading belongs to, with source "
+            "'submitter', and visible on every finding the answer influenced. "
+            "Nothing here is read from the label: using an extracted value to "
+            "decide whether to check for it would be circular."
         ),
     )
 
@@ -244,6 +377,87 @@ class ComplianceEvaluationRequestSerializer(serializers.Serializer):
             )
         return value
 
+    def validate_applicability_declarations(self, value: dict) -> dict:
+        """Reject a code the framework does not define, or cannot use.
+
+        Two rejections, and the second is the one worth explaining.
+
+        An **unknown code** is rejected rather than dropped, for the reason a
+        typo'd category code is: silently ignoring it produces a result reading
+        "this could not be determined", which looks identical to not having sent
+        the fact at all and sends the user looking in the wrong place.
+
+        A code the framework marks **not determinable** is rejected too, even
+        though it is a real condition. `applicability.DeclarationSet.answer`
+        returns UNKNOWN for those whatever anyone states - the framework's
+        judgement that this system cannot establish a fact outranks a claim
+        about it, which is what stops a submitter switching off a check by
+        asserting a rule 33 relaxation nobody can confirm. Accepting the answer
+        and then ignoring it would let a caller believe they had declared
+        something. Saying so is the honest response.
+        """
+        if not value:
+            return {}
+
+        conditions = {
+            condition.code: condition
+            for condition in ApplicabilityCondition.objects.filter(
+                code__in=list(value), is_active=True
+            )
+        }
+        unknown = sorted(set(value) - set(conditions))
+        if unknown:
+            raise serializers.ValidationError(
+                f"No active applicability condition with code(s) "
+                f"{', '.join(repr(code) for code in unknown)}. Codes come from "
+                f"rules/framework/applicability_conditions.json; load them with "
+                f"`manage.py load_legal_framework`."
+            )
+
+        undeterminable = sorted(
+            code
+            for code, condition in conditions.items()
+            if not condition.is_determinable
+        )
+        if undeterminable:
+            raise serializers.ValidationError(
+                f"Condition(s) {', '.join(repr(c) for c in undeterminable)} are "
+                f"recorded in the legal framework as facts this system cannot "
+                f"establish, so an answer to them cannot affect any check and is "
+                f"not accepted. See ApplicabilityCondition.determination_note."
+            )
+
+        return value
+
+    def validate(self, attrs: dict) -> dict:
+        """Refuse declarations that would have nowhere to be recorded.
+
+        Declarations hang off `Product`, and a product is what carries the
+        commodity category. With neither an existing product on the run's image
+        nor a `category_code` to make one from, no rule applies to this
+        submission at all - the result is REVIEW_REQUIRED because the commodity
+        is unknown - and the declarations would be silently discarded. Saying so
+        is more useful than accepting them and returning a result they had no
+        part in.
+        """
+        declarations = attrs.get("applicability_declarations")
+        if not declarations:
+            return attrs
+        run = attrs["extraction_run_id"]
+        if run.image.product is None and not attrs.get("category_code"):
+            raise serializers.ValidationError(
+                {
+                    "applicability_declarations": (
+                        "Applicability declarations are recorded against the "
+                        "product this reading belongs to, and this reading's "
+                        "image has no product. Send 'category_code' as well, so "
+                        "the commodity is known - without it no rule applies and "
+                        "the declarations could not affect the result."
+                    )
+                }
+            )
+        return attrs
+
 
 class ComplianceCheckSerializer(serializers.ModelSerializer):
     """The full result: verdict, explanation, findings, and what was read.
@@ -256,6 +470,14 @@ class ComplianceCheckSerializer(serializers.ModelSerializer):
     of *why* this verdict was reached - including "no rules are loaded, so
     nothing was checked" - and a UI that shows the verdict without it can imply
     a determination the system did not make.
+
+    **Three kinds of evidence come back here and a client must keep them
+    apart.** `extraction` is what the pipeline read off the photograph;
+    `findings` are what the rules concluded from it; `applicability_declarations`
+    are facts a *person asserted* about the goods, which no photograph could
+    establish and which decide whether a clause governs the package at all.
+    Presenting the third as though it were the first would show a submitter's
+    claim as a measurement.
     """
 
     result_display = serializers.CharField(
@@ -266,6 +488,7 @@ class ComplianceCheckSerializer(serializers.ModelSerializer):
     extraction = ExtractionRunSerializer(source="extraction_run", read_only=True)
     image = ProductImageSerializer(source="extraction_run.image", read_only=True)
     product_category_code = serializers.SerializerMethodField()
+    applicability_declarations = serializers.SerializerMethodField()
 
     class Meta:
         model = ComplianceCheck
@@ -280,15 +503,39 @@ class ComplianceCheckSerializer(serializers.ModelSerializer):
             "rules_passed",
             "rules_failed",
             "rules_inconclusive",
+            "rules_not_applicable",
             "processing_ms",
             "completed_at",
             "product_category_code",
+            "applicability_declarations",
             "violations",
             "findings",
             "extraction",
             "image",
         ]
         read_only_fields = fields
+
+    def get_applicability_declarations(self, check: ComplianceCheck) -> list:
+        """The facts stated about this package, as evidence beside the findings.
+
+        Empty when the check has no product - a submission whose commodity was
+        never identified has nothing to hang a declaration on - and empty when
+        nobody declared anything, which is the ordinary case and is exactly
+        what a client should show: "no facts were stated, so the clauses that
+        turn on them could not be decided."
+        """
+        if check.product_id is None:
+            return []
+        declarations = (
+            ProductApplicabilityDeclaration.objects.filter(product_id=check.product_id)
+            .select_related("condition")
+            .order_by("condition__code")
+        )
+        return AppliedDeclarationSerializer(
+            declarations,
+            many=True,
+            context={**self.context, "compliance_check": check},
+        ).data
 
     def get_product_category_code(self, check: ComplianceCheck) -> str | None:
         """The category whose rules were considered, or null if none was known.

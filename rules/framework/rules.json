@@ -1,0 +1,1599 @@
+{
+  "_comment_1": "Rules 1-34 of the Legal Metrology (Packaged Commodities) Rules, 2011, with their clause-level requirements. Loaded by 'manage.py load_legal_framework'.",
+  "_comment_2": "RECORDING A REQUIREMENT HERE DOES NOT MEAN THE SYSTEM EVALUATES IT. Two of the requirements below are evaluated. The rest are inventoried precisely so that what this software cannot check is visible rather than absent. 'implementation_status' says which is which and 'detection_method' says why.",
+  "_comment_3": "Every 'verbatim_text' is quoted from the Department of Consumer Affairs consolidated publication recorded in rules/SOURCES.md, via the clause-by-clause record there and in rules/INVENTORY.md. Where a clause has not been transcribed, verbatim_text is EMPTY - it is never filled from paraphrase or memory.",
+  "_comment_4": "The amendment-chain gap in rules/SOURCES.md applies to every entry: amendments notified between 28 March 2022 and 2 December 2025 could not be retrieved. A named human reviewer must confirm that chain before anything here is relied on. Individual source_note entries repeat this rather than assume it is read.",
+  "rules": [
+    {
+      "rule_number": "1",
+      "title": "Short title and commencement",
+      "chapter": "Chapter I - Preliminary",
+      "description": "The rule that names the Rules and brings them into force.",
+      "automation_class": "manual_review",
+      "verification_status": "unverified",
+      "notes": "Recorded so that the framework covers rules 1-34 without a gap. NO REQUIREMENT IS ASSERTED FOR IT: the project's verified material (rules/SOURCES.md, rules/INVENTORY.md) does not transcribe rule 1, and the title above is the conventional heading of a commencement provision rather than a quotation. Nothing a package can comply with or breach turns on it. A named reviewer should transcribe it if a commencement date is ever needed as data rather than as the instrument-level effective_from already recorded on G.S.R. 202(E).",
+      "requirements": []
+    },
+    {
+      "rule_number": "2",
+      "title": "Definitions",
+      "chapter": "Chapter I - Preliminary",
+      "description": "Defines the terms the rest of the Rules use. Constrains how other rules are read; imposes no obligation of its own.",
+      "automation_class": "manual_review",
+      "verification_status": "verified",
+      "notes": "Only clause (m), 'retail sale price', is transcribed in the project's verified material. The definitions that other parts of this framework would need - multi-piece package, group package, combination package, wholesale package - are NOT transcribed, which is why the corresponding applicability conditions carry no requirement link.",
+      "requirements": [
+        {
+          "clause": "2(m)",
+          "title": "Definition of 'retail sale price'",
+          "requirement": "Definitional. 'Retail sale price' means the maximum price at which the commodity in packaged form may be sold to the consumer, inclusive of all taxes. It governs how the rule 6(1)(e) declaration is read; it is not itself an obligation on a package.",
+          "verbatim_text": "'retail sale price' means the maximum price at which the commodity in packaged form may be sold to the consumer inclusive of all taxes;",
+          "detection_method": "not_applicable",
+          "automation_class": "manual_review",
+          "implementation_status": "not_applicable_to_project_scope",
+          "severity": "info",
+          "source": "G.S.R. 629(E)",
+          "legal_reference": "Rule 2(m) of the Legal Metrology (Packaged Commodities) Rules, 2011",
+          "effective_from": "2018-01-01",
+          "verification_status": "verified",
+          "source_note": "Quoted verbatim in rules/SOURCES.md from the Department of Consumer Affairs consolidated publication (sha256 0ef948f9c6b89f5dfb20d384861901714fd0dc54fc67b5b86c772d2c3f983a4b), recorded there as substituted vide G.S.R. 629(E) dated 23 June 2017 w.e.f. 1 January 2018. Checked 2026-08-30 by Claude Code (automated legal-source check) for raghavrrrao. Recorded because LM-PC-0005's wording depends on it. HUMAN COUNTER-REVIEW BY A NAMED REVIEWER IS OUTSTANDING and the 2022-2025 amendment-chain gap in rules/SOURCES.md applies."
+        }
+      ]
+    },
+    {
+      "rule_number": "3",
+      "title": "Application of Chapter II",
+      "chapter": "Chapter II - Packages intended for retail sale",
+      "description": "Removes three classes of package from Chapter II entirely. Gates every requirement of rules 4 to 23.",
+      "automation_class": "manual_review",
+      "verification_status": "verified",
+      "notes": "Together with rule 26 this is the single widest correctness caveat in the project. None of the three gates is determinable, so every active rule is applied to some packages that Chapter II does not govern. No rule file can close this; it needs applicability inputs the system does not collect.",
+      "requirements": [
+        {
+          "clause": "3",
+          "title": "Chapter II does not apply to bulk packages, heavy bags, or industrial and institutional supply",
+          "requirement": "The declarations in Chapter II are not required at all for packages of more than 25 kg or 25 litre, for cement, fertilizer and agricultural farm produce sold in bags above 50 kg, or for packaged commodities meant for industrial or institutional consumers.",
+          "verbatim_text": "The provisions of this chapter shall not apply to- (a) packages of commodities containing quantity of more than 25 kilogram or 25 litre; (b) cement, fertilizer and agricultural farm produce sold in bags above 50 kilogram; and (c) packaged commodities meant for industrial consumers or institutional consumers.",
+          "detection_method": "user_input",
+          "automation_class": "partially_automatable",
+          "implementation_status": "blocked_by_missing_applicability_data",
+          "severity": "critical",
+          "source": "G.S.R. 629(E)",
+          "legal_reference": "Rule 3 of the Legal Metrology (Packaged Commodities) Rules, 2011",
+          "effective_from": "2018-01-01",
+          "verification_status": "verified",
+          "source_note": "Quoted verbatim in rules/SOURCES.md and rules/INVENTORY.md from the Department's consolidated publication (sha256 0ef948f9...f983a4b), recorded as substituted vide G.S.R. 629(E) w.e.f. 1 January 2018. Checked 2026-08-30 by Claude Code for raghavrrrao. THE GATE IS NOT ENFORCED BY THIS SYSTEM: net quantity is extracted as a label reading rather than trusted applicability data, and buyer type is never known. Severity is 'critical' to reflect that a wrong answer here invalidates every other finding on the package, not because the clause ranks above others. HUMAN COUNTER-REVIEW OUTSTANDING; 2022-2025 amendment-chain gap applies.",
+          "applicability": [
+            {
+              "condition": "quantity-above-25kg-25l",
+              "mode": "scope_gate",
+              "note": "Clause (a): more than 25 kilogram or 25 litre."
+            },
+            {
+              "condition": "bags-above-50kg",
+              "mode": "scope_gate",
+              "note": "Clause (b): cement, fertilizer and agricultural farm produce in bags above 50 kilogram."
+            },
+            {
+              "condition": "industrial-consumer",
+              "mode": "scope_gate",
+              "note": "Clause (c)."
+            },
+            {
+              "condition": "institutional-consumer",
+              "mode": "scope_gate",
+              "note": "Clause (c)."
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "rule_number": "4",
+      "title": "Declarations to be made on every package",
+      "chapter": "Chapter II - Packages intended for retail sale",
+      "description": "Places the duty to pre-pack only with the required declarations on the packer, and extends rule 6 to every package in a promotional group.",
+      "automation_class": "manual_review",
+      "verification_status": "verified",
+      "requirements": [
+        {
+          "clause": "4(1)",
+          "title": "No pre-packing without the required declarations",
+          "requirement": "A person must not pre-pack, or permit the pre-packing of, any commodity for sale, distribution or delivery unless the package bears the declarations the Rules require.",
+          "verbatim_text": "no person shall pre-pack or cause or permit to be pre-packed any commodity for sale, distribution or delivery unless the package in which the commodity is pre-packed bears thereon or on a label is securely affixed thereto, such declarations as are required to be made under these rules.",
+          "detection_method": "not_applicable",
+          "automation_class": "manual_review",
+          "implementation_status": "not_applicable_to_project_scope",
+          "legal_reference": "Rule 4(1) of the Legal Metrology (Packaged Commodities) Rules, 2011",
+          "verification_status": "verified",
+          "source_note": "Quoted verbatim in rules/INVENTORY.md from the Department's consolidated publication (sha256 0ef948f9...f983a4b). Checked 2026-08-30 by Claude Code for raghavrrrao. A duty on the packer, discharged by complying with rules 6 onward; it adds no declaration this system could check independently, so checking it IS checking rule 6. HUMAN COUNTER-REVIEW OUTSTANDING; 2022-2025 amendment-chain gap applies."
+        },
+        {
+          "clause": "4(2)",
+          "title": "Every package in a promotional group must comply with rule 6",
+          "requirement": "Where packages intended for retail sale are grouped together to be sold as one retail package on a promotional offer, every package in the group must comply with rule 6 - not merely the outer group.",
+          "verbatim_text": "When one or more packages intended for retail sale are grouped together for being sold as a retail package on promotional offer, every package of the group shall comply with provisions of rule 6.",
+          "detection_method": "user_input",
+          "automation_class": "partially_automatable",
+          "implementation_status": "blocked_by_missing_applicability_data",
+          "source": "G.S.R. 226(E)",
+          "legal_reference": "Rule 4(2) of the Legal Metrology (Packaged Commodities) Rules, 2011",
+          "effective_from": "2022-10-01",
+          "verification_status": "verified",
+          "source_note": "Quoted verbatim in rules/INVENTORY.md, recorded as substituted vide G.S.R. 779(E) with commencement deferred to 1 October 2022 by G.S.R. 226(E). Checked 2026-08-30 by Claude Code for raghavrrrao. Not evaluable: one ProductImage is one photograph, and nothing records that a submission is a promotional multipack or links the constituent packages. HUMAN COUNTER-REVIEW OUTSTANDING; 2022-2025 amendment-chain gap applies.",
+          "applicability": [
+            {
+              "condition": "promotional-group-package",
+              "mode": "requires",
+              "note": "Applies only where packages are grouped for sale on a promotional offer."
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "rule_number": "5",
+      "title": "Standard packages (omitted)",
+      "chapter": "Chapter II - Packages intended for retail sale",
+      "description": "Omitted, and no longer in force.",
+      "automation_class": "manual_review",
+      "verification_status": "verified",
+      "is_active": false,
+      "notes": "Kept on record, inactive, so that nobody re-derives a standard-package requirement from an older copy of the Rules and adds it back.",
+      "requirements": [
+        {
+          "clause": "5",
+          "title": "Standard packages - omitted",
+          "requirement": "Omitted. Rule 5 imposes no requirement; it was removed from the Rules and is recorded here only so that its absence is deliberate and documented.",
+          "verbatim_text": "Rule 5 omitted vide GSR 779(E) dated 2nd November, 2021 w.e.f. 1.4.2022 (now w.e.f 01.10.2022 vide GSR 226(E) dated 28.3.2022).",
+          "detection_method": "not_applicable",
+          "automation_class": "manual_review",
+          "implementation_status": "not_applicable_to_project_scope",
+          "severity": "info",
+          "source": "G.S.R. 226(E)",
+          "legal_reference": "Rule 5 of the Legal Metrology (Packaged Commodities) Rules, 2011 (omitted)",
+          "effective_to": "2022-09-30",
+          "is_active": false,
+          "verification_status": "verified",
+          "source_note": "The verbatim_text above is the omission annotation itself, as reproduced in rules/INVENTORY.md from the Department's consolidated publication - not the text of the omitted rule, which is deliberately not recorded. Checked 2026-08-30 by Claude Code for raghavrrrao. effective_to is set to 2022-09-30, the day before the deferred commencement date of 1 October 2022 that the annotation gives; that is arithmetic on a stated date, not an interpretation of one. HUMAN COUNTER-REVIEW OUTSTANDING."
+        }
+      ]
+    },
+    {
+      "rule_number": "6",
+      "title": "Declarations to be made on every package",
+      "chapter": "Chapter II - Packages intended for retail sale",
+      "description": "The core labelling rule. Lists the declarations every retail package must bear, the consumer-care details, the treatment of stickers and multi-component packages, the e-commerce obligations, and the unit sale price.",
+      "automation_class": "partially_automatable",
+      "verification_status": "verified",
+      "notes": "The rule this system evaluates most of, and still only in part. As of Step 3 the clauses with executable coverage are 6(1)(a) and 6(1)(aa) (presence), 6(1)(c) (presence), 6(1)(d) (presence, and whether a month and year can be established), 6(1)(e) (presence, and whether the price is declared exclusive of all taxes) and 6(2) (presence, and the telephone and e-mail elements). Every other clause remains blocked by applicability data, extraction capability, or the absence of a visual check type - and every clause listed here is covered only to the extent its rule file records.",
+      "requirements": [
+        {
+          "clause": "6(1)",
+          "title": "Declarations must be definite, plain and conspicuous",
+          "requirement": "Every package must bear, on it or on a label securely affixed to it, a definite, plain and conspicuous declaration of the matters listed in the clauses of rule 6(1).",
+          "verbatim_text": "Every package shall bear thereon or on label securely affixed thereto, a definite, plain and conspicuous declaration made in accordance with the provisions of this chapter as, to-",
+          "detection_method": "cv",
+          "automation_class": "partially_automatable",
+          "implementation_status": "implementable_with_new_check",
+          "legal_reference": "Rule 6(1) of the Legal Metrology (Packaged Commodities) Rules, 2011, opening words",
+          "effective_from": "2011-04-01",
+          "verification_status": "verified",
+          "source_note": "Quoted verbatim in rules/SOURCES.md and rules/INVENTORY.md from the Department's consolidated publication (sha256 0ef948f9...f983a4b). Checked 2026-08-30 by Claude Code for raghavrrrao. 'Definite, plain and conspicuous' is a presentation standard: CheckContext.image and ExtractedLabelField.bounding_box supply the inputs, but no visual_check is registered. ALSO A LEGAL-REVIEW ITEM - what counts as 'conspicuous' has no threshold in the Rules and none may be invented; rules/INVENTORY.md directs that it be approached through rules 7 and 8, which are measurable, rather than on its own. HUMAN COUNTER-REVIEW OUTSTANDING."
+        },
+        {
+          "clause": "6(1)(a)",
+          "title": "Name and address of the manufacturer, packer or importer",
+          "requirement": "The package must state the name and address of the manufacturer. Where the manufacturer is not the packer, it must state the name and address of both the manufacturer and the packer. For an imported package, it must state the name and address of the importer.",
+          "verbatim_text": "the name and address of the manufacturer, or where the manufacturer is not the packer, the name and address of the manufacturer and packer and for any imported package the name and address of the importer shall be mentioned.",
+          "detection_method": "ocr",
+          "automation_class": "partially_automatable",
+          "implementation_status": "implemented",
+          "source": "G.S.R. 629(E)",
+          "legal_reference": "Rule 6(1)(a) of the Legal Metrology (Packaged Commodities) Rules, 2011",
+          "effective_from": "2018-01-01",
+          "verification_status": "verified",
+          "source_note": "Quoted verbatim in rules/SOURCES.md from the Department's consolidated publication (sha256 0ef948f9...f983a4b). Explanation III, as substituted vide G.S.R. 629(E) dated 23 June 2017 w.e.f. 1 January 2018, reads verbatim: 'In respect of packages containing food articles, the provisions of this clause shall not apply, but the provisions of, and the requirements specified in the Food Safety and Standards Act, 2006 (34 of 2006) and the rules made thereunder shall apply;'. Checked 2026-08-30 by Claude Code for raghavrrrao. THE CLAUSE IS DISJUNCTIVE and no registered check can test a disjunction of field keys, which is why LM-PC-0001 ships is_active:false - a single-key check would report a lawfully labelled imported package as non-compliant. The address half is additionally blocked: manufacturer_address is in the extractor's UNSUPPORTED_KEYS, and rule 10(1) is the operative address provision. HUMAN COUNTER-REVIEW OUTSTANDING; 2022-2025 amendment-chain gap applies. STEP 2: this clause is now EVALUATED - see the rule file(s) named in compliance_rule_codes for exactly what is and is not tested. Applicability is resolved before the validator runs, so a package the clause excuses is recorded NOT_APPLICABLE and one whose exempting facts were never declared reaches REVIEW_REQUIRED.",
+          "applicability": [
+            {
+              "condition": "food-article",
+              "mode": "exempts",
+              "note": "Explanation III: this clause does not apply to packages containing food articles, for which the Food Safety and Standards Act, 2006 applies instead. Encoded on LM-PC-0001 by targeting packaged-non-food only."
+            },
+            {
+              "condition": "imported-product",
+              "mode": "requires",
+              "note": "For an imported package the clause requires the importer's name and address."
+            }
+          ],
+          "compliance_rule_codes": [
+            "LM-PC-0001"
+          ]
+        },
+        {
+          "clause": "6(1)(aa)",
+          "title": "Country of origin for imported products",
+          "requirement": "For imported products, the package must state the name of the country of origin, or of manufacture, or of assembly.",
+          "verbatim_text": "The name of the country of origin or manufacture or assembly in case of imported products shall be mentioned on the package;",
+          "detection_method": "ocr",
+          "automation_class": "image_automatable",
+          "implementation_status": "implemented",
+          "source": "G.S.R. 629(E)",
+          "legal_reference": "Rule 6(1)(aa) of the Legal Metrology (Packaged Commodities) Rules, 2011",
+          "effective_from": "2018-01-01",
+          "verification_status": "verified",
+          "source_note": "Quoted verbatim in rules/SOURCES.md from the Department's consolidated publication (sha256 0ef948f9...f983a4b), recorded as inserted vide G.S.R. 629(E) w.e.f. 1 January 2018. Checked 2026-08-30 by Claude Code for raghavrrrao. THE EVIDENCE IS AVAILABLE - country_of_origin is in the extractor's supported set - BUT THE TRIGGER IS NOT: import status is not a ProductCategory and is recorded nowhere. rules/INVENTORY.md calls this the closest requirement in the Rules to implementable: it needs one applicability input, not a new check type. Import status must NOT be inferred from the presence of importer_name, which would make the rule self-fulfilling. HUMAN COUNTER-REVIEW OUTSTANDING. STEP 2: this clause is now EVALUATED - see the rule file(s) named in compliance_rule_codes for exactly what is and is not tested. Applicability is resolved before the validator runs, so a package the clause excuses is recorded NOT_APPLICABLE and one whose exempting facts were never declared reaches REVIEW_REQUIRED.",
+          "applicability": [
+            {
+              "condition": "imported-product",
+              "mode": "requires",
+              "note": "Applies to imported products only."
+            }
+          ],
+          "compliance_rule_codes": [
+            "LM-PC-0007"
+          ]
+        },
+        {
+          "clause": "6(1)(b)",
+          "title": "Common or generic name of the commodity",
+          "requirement": "The package must state the common or generic name of the commodity it contains. Where the package holds more than one product, it must state the name and the number or quantity of each product.",
+          "verbatim_text": "The common or generic names of the commodity contained in the package and in case of packages with more than one product, the name and number or quantity of each product shall be mentioned on the package.",
+          "detection_method": "ocr_cv",
+          "automation_class": "partially_automatable",
+          "implementation_status": "blocked_by_missing_extraction_field",
+          "legal_reference": "Rule 6(1)(b) of the Legal Metrology (Packaged Commodities) Rules, 2011",
+          "effective_from": "2011-04-01",
+          "verification_status": "verified",
+          "source_note": "Quoted verbatim in rules/SOURCES.md from the Department's consolidated publication (sha256 0ef948f9...f983a4b), which records no proviso, explanation or exemption attaching to this clause. Checked 2026-08-30 by Claude Code for raghavrrrao. THE LEGAL REQUIREMENT IS NOT IN DOUBT; the extraction is. common_or_generic_name is in the extractor's UNSUPPORTED_KEYS, so its absence carries no information about the package, and LM-PC-0002 ships is_active:false as a containment measure after it was found to report a violation against every readable label. Detection is ocr_cv, not ocr, because the declaration is identified by layout - it is the largest text on the front panel - and the keyword anchor a pattern layer could use appears on 1 of 28 frozen evaluation panels. Reactivating needs measured extraction recall, not a legal decision. HUMAN COUNTER-REVIEW OUTSTANDING.",
+          "compliance_rule_codes": [
+            "LM-PC-0002"
+          ]
+        },
+        {
+          "clause": "6(1)(c)",
+          "title": "Net quantity",
+          "requirement": "The package must state the net quantity of the commodity in terms of the standard unit of weight or measure; or, where the commodity is packed or sold by number, the number of items in the package.",
+          "verbatim_text": "The net quantity, in terms of the standard unit of weight or measure, of the commodity contained in the package or where the commodity is packed or sold by number, the number of the commodity contained in the package shall be mentioned.",
+          "detection_method": "ocr",
+          "automation_class": "image_automatable",
+          "implementation_status": "implemented",
+          "legal_reference": "Rule 6(1)(c) of the Legal Metrology (Packaged Commodities) Rules, 2011",
+          "effective_from": "2011-04-01",
+          "verification_status": "verified",
+          "source_note": "Quoted verbatim in rules/SOURCES.md from the Department's consolidated publication (sha256 0ef948f9...f983a4b), which records no proviso, explanation or exemption attaching to this clause. Checked 2026-08-30 by Claude Code for raghavrrrao. EVALUATED by LM-PC-0003, and the ONLY part evaluated is PRESENCE: whether the quantity is correctly expressed is rules 11 to 13, and whether it is TRUE requires weighing the goods, which is rules 19-23 and outside this system entirely. The rule 3 and rule 26 scope gates still over-apply it. HUMAN COUNTER-REVIEW OUTSTANDING; 2022-2025 amendment-chain gap applies.",
+          "compliance_rule_codes": [
+            "LM-PC-0003"
+          ]
+        },
+        {
+          "clause": "6(1)(d)",
+          "title": "Month and year of manufacture",
+          "requirement": "The package must state the month and year in which the commodity was manufactured. The words 'or pre-packed or imported' were omitted from this clause, so the clause in force covers manufacture only.",
+          "verbatim_text": "The month and year in which the commodity is manufactured or pre-packed or imported shall be mentioned in the package:",
+          "detection_method": "ocr",
+          "automation_class": "partially_automatable",
+          "implementation_status": "implemented",
+          "source": "G.S.R. 226(E)",
+          "legal_reference": "Rule 6(1)(d) of the Legal Metrology (Packaged Commodities) Rules, 2011",
+          "effective_from": "2022-10-01",
+          "verification_status": "verified",
+          "source_note": "verbatim_text is the clause AS PRINTED in the Department's consolidated publication (sha256 0ef948f9...f983a4b), which carries the annotation: 'the words, - \"or pre-packed or imported\" shall be omitted vide GSR 779(E) dated 2nd November, 2021 w.e.f. 1.4.2022 (now w.e.f 01.10.2022 vide GSR 226(E) dated 28.3.2022).' The struck words are LEFT IN verbatim_text because that is what the source prints; the operative reading - manufacture only - is stated in 'requirement' instead of silently editing a quotation. STEP 3: LM-PC-0011 additionally checks that the declaration RESOLVES to a month and a year. NO PRINTED FORMAT IS ENFORCED - the clause prescribes none, and none is invented; a reading that cannot be resolved, such as an ambiguous 03/04/2025 where the year is settled but the month is not, is REVIEW_REQUIRED and never a violation. Checked 2026-08-30 by Claude Code for raghavrrrao. LM-PC-0004 shipped is_active:false because the food carve-out was expressible but cosmetics, seeds, bidi, incense sticks and LPG cylinders all sat inside packaged-non-food with no narrower category; that is superseded by the STEP 2 note below. HUMAN COUNTER-REVIEW OUTSTANDING; 2022-2025 amendment-chain gap applies. STEP 2: this clause is now EVALUATED - see the rule file(s) named in compliance_rule_codes for exactly what is and is not tested. Applicability is resolved before the validator runs, so a package the clause excuses is recorded NOT_APPLICABLE and one whose exempting facts were never declared reaches REVIEW_REQUIRED.",
+          "applicability": [
+            {
+              "condition": "food-article",
+              "mode": "exempts",
+              "note": "Food articles are governed by the Food Safety and Standards Act, 2006."
+            },
+            {
+              "condition": "seeds-certified",
+              "mode": "exempts",
+              "note": "Seeds labelled and certified under the Seeds Act, 1966 are excluded."
+            },
+            {
+              "condition": "cosmetics-and-toiletries",
+              "mode": "exempts",
+              "note": "Cosmetics products are governed by the Drugs and Cosmetics Rules, 1945."
+            },
+            {
+              "condition": "bidi",
+              "mode": "exempts",
+              "note": "Proviso (A)(i): no declaration as to month and year is required on any package containing bidi or incense sticks."
+            },
+            {
+              "condition": "incense-sticks",
+              "mode": "exempts",
+              "note": "Proviso (A)(i)."
+            },
+            {
+              "condition": "domestic-lpg-cylinder",
+              "mode": "exempts",
+              "note": "Proviso (A)(ii): any domestic liquefied petroleum gas cylinder of 14.2kg or 5kg, bottled and marketed by a public sector undertaking."
+            }
+          ],
+          "compliance_rule_codes": [
+            "LM-PC-0004",
+            "LM-PC-0011"
+          ]
+        },
+        {
+          "clause": "6(1)(da)",
+          "title": "Best before or use by date",
+          "requirement": "Where a package contains a commodity that may become unfit for human consumption after a period of time, the label must also state the 'best before or use by' date, month and year. The clause does not apply if another law makes provision in this regard.",
+          "verbatim_text": "If a package contains a commodity which may become unfit for human consumption after a period of time, the 'best before or use by the date, month and year' shall also be mentioned on the label: Provided that nothing in this clause shall apply if a provision in this regard is made in any other law.",
+          "detection_method": "ocr",
+          "automation_class": "partially_automatable",
+          "implementation_status": "blocked_by_missing_applicability_data",
+          "source": "G.S.R. 629(E)",
+          "legal_reference": "Rule 6(1)(da) of the Legal Metrology (Packaged Commodities) Rules, 2011",
+          "effective_from": "2018-01-01",
+          "verification_status": "verified",
+          "source_note": "Quoted verbatim in rules/SOURCES.md from the Department's consolidated publication (sha256 0ef948f9...f983a4b), recorded as substituted vide G.S.R. 629(E) w.e.f. 1 January 2018. Checked 2026-08-30 by Claude Code for raghavrrrao. best_before is extracted, but the TRIGGER is a property of the commodity - 'may become unfit for human consumption after a period of time' - that the system does not record. rules/INVENTORY.md warns that packaged-food is NOT a safe proxy: salt and sugar are food, and many non-foods perish. The second proviso, displacement by any other law, is a further legal-review question. HUMAN COUNTER-REVIEW OUTSTANDING.",
+          "applicability": [
+            {
+              "condition": "perishable-commodity",
+              "mode": "requires",
+              "note": "Triggered by the commodity being one that may become unfit for human consumption after a period of time."
+            }
+          ]
+        },
+        {
+          "clause": "6(1)(e)",
+          "title": "Retail sale price",
+          "requirement": "The package must state the retail sale price, clearly indicated as the maximum retail price inclusive of all taxes, in Indian currency.",
+          "verbatim_text": "the retail sale price of the package; ... shall clearly indicate that it is the maximum retail price inclusive of all taxes in Indian currency:",
+          "detection_method": "ocr",
+          "automation_class": "partially_automatable",
+          "implementation_status": "implemented",
+          "source": "G.S.R. 226(E)",
+          "legal_reference": "Rule 6(1)(e) of the Legal Metrology (Packaged Commodities) Rules, 2011",
+          "effective_from": "2022-10-01",
+          "verification_status": "verified",
+          "source_note": "Both fragments quoted verbatim in rules/SOURCES.md from the Department's consolidated publication (sha256 0ef948f9...f983a4b); the second was substituted vide G.S.R. 629(E) w.e.f. 1 January 2018 and further amended vide G.S.R. 779(E) / G.S.R. 226(E), giving the current wording w.e.f. 1 October 2022. The ellipsis marks the join between the clause and the substituted words as the source presents them, not an omission of qualifying text. Read with rule 2(m). Checked 2026-08-30 by Claude Code for raghavrrrao. LM-PC-0005 shipped is_active:false for two reasons - bidi, LPG and alcohol were not separable in the taxonomy, and 'clearly indicate ... inclusive of all taxes in Indian currency' is a FORMAT requirement field_presence cannot express; the first is superseded by the STEP 2 note below and the second is partly addressed by the STEP 3 note. STEP 3: LM-PC-0012 reports a price the label declares EXCLUSIVE of all taxes, which contradicts this clause read with rule 2(m). NOTHING WIDER IS DECIDED. The ABSENCE of an 'inclusive of all taxes' indication is recorded in the finding but is NOT treated as a violation, because whether printing 'MRP' alone already clearly indicates tax inclusion - rule 2(m) defines the term as inclusive - is a question of legal construction this system does not settle. 'In Indian currency' is not checked at all: the normaliser writes the currency as a fixed default rather than reading it off the label, so testing the clause against it would be testing our own default. HUMAN COUNTER-REVIEW OUTSTANDING; 2022-2025 amendment-chain gap applies. STEP 2: this clause is now EVALUATED - see the rule file(s) named in compliance_rule_codes for exactly what is and is not tested. Applicability is resolved before the validator runs, so a package the clause excuses is recorded NOT_APPLICABLE and one whose exempting facts were never declared reaches REVIEW_REQUIRED.",
+          "applicability": [
+            {
+              "condition": "bidi",
+              "mode": "exempts",
+              "note": "Proviso (C)(i): no declaration as to retail sale price is required on any package containing bidi."
+            },
+            {
+              "condition": "domestic-lpg-cylinder",
+              "mode": "exempts",
+              "note": "Proviso (C)(ii): any domestic LPG cylinder of which the price is covered under the Administrative Price Mechanism of the Government."
+            },
+            {
+              "condition": "alcoholic-beverage",
+              "mode": "exempts",
+              "note": "State Excise Laws apply within the State of manufacture; these Rules apply only where those laws do not provide for declaration of retail sale price."
+            }
+          ],
+          "compliance_rule_codes": [
+            "LM-PC-0005",
+            "LM-PC-0012"
+          ]
+        },
+        {
+          "clause": "6(1)(f)",
+          "title": "Dimensions where the sizes of the commodity are relevant",
+          "requirement": "Where the sizes of the commodity in the package are relevant, the package must state the dimensions of the commodity; and where the dimensions of different pieces differ, the dimensions of each such piece.",
+          "verbatim_text": "Where the sizes of the commodity contained in the package are relevant, the dimensions of the commodity contained in the package and if the dimensions of the different pieces are different, the dimensions of each such different piece shall be mentioned.",
+          "detection_method": "ocr",
+          "automation_class": "partially_automatable",
+          "implementation_status": "blocked_by_missing_applicability_data",
+          "legal_reference": "Rule 6(1)(f) of the Legal Metrology (Packaged Commodities) Rules, 2011",
+          "effective_from": "2011-04-01",
+          "verification_status": "verified",
+          "source_note": "Quoted verbatim in rules/SOURCES.md from the Department's consolidated publication (sha256 0ef948f9...f983a4b). Checked 2026-08-30 by Claude Code for raghavrrrao. BOTH the trigger and the evidence are missing: 'relevant' is undefined in the Rules and rules 14-17 specify where it bites, and there is no LabelFieldKey for dimensions. NOTE: the branch brief for this project once cited 6(1)(f) for consumer-care details. That is wrong - 6(1)(f) is this dimensions clause and consumer care is rule 6(2). HUMAN COUNTER-REVIEW OUTSTANDING.",
+          "applicability": [
+            {
+              "condition": "sizes-relevant",
+              "mode": "requires",
+              "note": "Applies only where the sizes of the commodity are relevant."
+            }
+          ]
+        },
+        {
+          "clause": "6(1)(g)",
+          "title": "Such other matter as is specified in these rules",
+          "requirement": "A pointer to the other declarations the Rules specify. It creates no declaration of its own; its content is the other rules in this framework.",
+          "verbatim_text": "such other matter as are specified in these rules:",
+          "detection_method": "not_applicable",
+          "automation_class": "manual_review",
+          "implementation_status": "not_applicable_to_project_scope",
+          "severity": "info",
+          "legal_reference": "Rule 6(1)(g) of the Legal Metrology (Packaged Commodities) Rules, 2011",
+          "effective_from": "2011-04-01",
+          "verification_status": "verified",
+          "source_note": "Quoted verbatim in rules/SOURCES.md from the Department's consolidated publication (sha256 0ef948f9...f983a4b). Checked 2026-08-30 by Claude Code for raghavrrrao. Recorded so the clause list of rule 6(1) is complete and (g) is not mistaken for a missing entry. HUMAN COUNTER-REVIEW OUTSTANDING."
+        },
+        {
+          "clause": "6(1)-proviso-B",
+          "title": "Carry-over of pre-printed packaging material into the next month",
+          "requirement": "Packaging material pre-printed with a month, not exhausted during that month, may be used for pre-packing the commodity produced in the next succeeding month and no later. A proviso excludes food products whose 'best before' or 'use before' period is ninety days or less.",
+          "verbatim_text": "where any packaging material bearing thereon the month in which any commodity was expected to have been pre-packed is not exhausted during that month, such packaging material may be used for pre-packing the concerned commodity produced or manufactured during the next succeeding month and not there after...",
+          "detection_method": "not_applicable",
+          "automation_class": "manual_review",
+          "implementation_status": "not_applicable_to_project_scope",
+          "severity": "info",
+          "legal_reference": "Proviso (B) to rule 6(1) of the Legal Metrology (Packaged Commodities) Rules, 2011",
+          "verification_status": "verified",
+          "source_note": "Quoted as far as reproduced in rules/INVENTORY.md from the Department's consolidated publication (sha256 0ef948f9...f983a4b); the trailing ellipsis is INVENTORY's own, marking text not transcribed there, and the remainder has not been read. Checked 2026-08-30 by Claude Code for raghavrrrao. A permission about manufacturing practice over time, not a declaration on a package, and unverifiable from one photograph. HUMAN COUNTER-REVIEW OUTSTANDING."
+        },
+        {
+          "clause": "6(2)",
+          "title": "Consumer care details",
+          "requirement": "Every package must bear the name, address, telephone number and e-mail address of the person, or of the office, that can be contacted in case of consumer complaints.",
+          "verbatim_text": "Every package shall bear the name, address, telephone number, e-mail address of the person who can be or the office which can be contacted, in case of consumer complaints.",
+          "detection_method": "ocr",
+          "automation_class": "partially_automatable",
+          "implementation_status": "implemented",
+          "source": "G.S.R. 385(E)",
+          "legal_reference": "Rule 6(2) of the Legal Metrology (Packaged Commodities) Rules, 2011",
+          "effective_from": "2016-01-01",
+          "verification_status": "verified",
+          "source_note": "Quoted verbatim in rules/SOURCES.md from the Department's consolidated publication (sha256 0ef948f9...f983a4b), recorded as substituted vide G.S.R. 385(E) dated 14 May 2015, effective 1 January 2016 (the source records 'dispensed upto 30.6.2016'). Checked 2026-08-30 by Claude Code for raghavrrrao. EVALUATED by LM-PC-0006 (presence) and, since STEP 3, by LM-PC-0010 (elements). LM-PC-0010 checks TWO of the four elements the clause names - the TELEPHONE NUMBER and the E-MAIL ADDRESS - and reports precisely which is missing. THE NAME AND THE ADDRESS OF THE PERSON OR OFFICE TO BE CONTACTED REMAIN UNCHECKED: the extractor reads no consumer-care name, and it does not read addresses at all, rule 10(1) being the operative address provision. So the clause is now partly, not wholly, evaluated, and every finding says so. THIS IS RULE 6(2), NOT RULE 6(1)(f): the branch brief cited 6(1)(f), which is the dimensions clause. HUMAN COUNTER-REVIEW OUTSTANDING; 2022-2025 amendment-chain gap applies.",
+          "compliance_rule_codes": [
+            "LM-PC-0006",
+            "LM-PC-0010"
+          ]
+        },
+        {
+          "clause": "6(3)",
+          "title": "Stickers may not alter a required declaration",
+          "requirement": "Individual stickers must not be affixed to a package to alter or make a declaration required by the Rules. A sticker showing a revised LOWER maximum retail price inclusive of all taxes is permitted, and must not cover the MRP declared by the manufacturer or packer.",
+          "verbatim_text": "It shall not be permissible to affix individual stickers on the package for altering or making declaration required under these rules: Provided that for reducing the Maximum Retail Price (MRP), a sticker with the revised lower MRP (inclusive of all taxes) may be affixed and the same shall not cover the MRP declaration made by the manufacturer or the packer...",
+          "detection_method": "cv",
+          "automation_class": "partially_automatable",
+          "implementation_status": "implementable_with_new_check",
+          "legal_reference": "Rule 6(3) of the Legal Metrology (Packaged Commodities) Rules, 2011",
+          "verification_status": "verified",
+          "source_note": "Quoted as far as reproduced in rules/INVENTORY.md from the Department's consolidated publication (sha256 0ef948f9...f983a4b); the trailing ellipsis is INVENTORY's own. Checked 2026-08-30 by Claude Code for raghavrrrao. Recorded because it is a real and commonly contravened obligation, but detecting an overlaid sticker from a photograph is a RESEARCH PROBLEM, not a check-type gap - the honest classification is partially_automatable at best, and it must not be attempted with a presence check. HUMAN COUNTER-REVIEW OUTSTANDING."
+        },
+        {
+          "clause": "6(4A)",
+          "title": "Permitted additional declarations",
+          "requirement": "Permissive. A manufacturer, packer or importer may declare a barcode, GTIN or QR code, an e-code, and logos of Government schemes in addition to the mandatory declarations.",
+          "verbatim_text": "Nothing in this rule shall preclude a manufacturer or packer or importer to declare the following on the package, in addition to the mandatory declarations- (a) Barcode or GTIN or QR Code; (b) 'e-code' ... (c) logos of Government schemes...",
+          "detection_method": "not_applicable",
+          "automation_class": "manual_review",
+          "implementation_status": "not_applicable_to_project_scope",
+          "severity": "info",
+          "legal_reference": "Rules 6(4) and 6(4A) of the Legal Metrology (Packaged Commodities) Rules, 2011",
+          "verification_status": "verified",
+          "source_note": "Quoted as reproduced in rules/INVENTORY.md from the Department's consolidated publication (sha256 0ef948f9...f983a4b); the ellipses are INVENTORY's own. Checked 2026-08-30 by Claude Code for raghavrrrao. PERMISSIVE - there is nothing here a package can fail. Recorded so that the presence of a QR code or a scheme logo is never mistaken for a contravention. Rule 6(4) is covered by this entry; its text is not separately transcribed in the project's material. HUMAN COUNTER-REVIEW OUTSTANDING."
+        },
+        {
+          "clause": "6(5)",
+          "title": "Multi-component packages",
+          "requirement": "Where a commodity consists of several components packed in two or more units for sale as a single commodity, the rule 6(1) declarations must appear on the main package, which must also carry information about the accompanying packages.",
+          "verbatim_text": "Where a commodity consists of a number of components and these components are packed in two or more units, for sale as a single commodity, the declaration required to be made under sub-rule (1) shall appear on the main package and such package shall also carry information about the other accompanying packages...",
+          "detection_method": "user_input",
+          "automation_class": "partially_automatable",
+          "implementation_status": "blocked_by_missing_applicability_data",
+          "legal_reference": "Rule 6(5) of the Legal Metrology (Packaged Commodities) Rules, 2011",
+          "verification_status": "verified",
+          "source_note": "Quoted as far as reproduced in rules/INVENTORY.md from the Department's consolidated publication (sha256 0ef948f9...f983a4b); the trailing ellipsis is INVENTORY's own. Checked 2026-08-30 by Claude Code for raghavrrrao. Requires knowing that a submission is a multi-unit commodity AND which photograph is the main package. Neither is modelled. HUMAN COUNTER-REVIEW OUTSTANDING.",
+          "applicability": [
+            {
+              "condition": "multi-component-package",
+              "mode": "requires",
+              "note": "Applies where a commodity's components are packed in two or more units for sale as a single commodity."
+            }
+          ]
+        },
+        {
+          "clause": "6(6)",
+          "title": "Exhaustion of old wrappers (spent)",
+          "requirement": "A transitional permission that expired. It imposes no present obligation.",
+          "detection_method": "not_applicable",
+          "automation_class": "manual_review",
+          "implementation_status": "not_applicable_to_project_scope",
+          "severity": "info",
+          "legal_reference": "Rule 6(6) of the Legal Metrology (Packaged Commodities) Rules, 2011",
+          "effective_to": "2012-03-31",
+          "is_active": false,
+          "verification_status": "verified",
+          "source_note": "rules/INVENTORY.md records this as 'a transitional permission expiring \"upto 31st March 2012\". Long spent.' verbatim_text IS DELIBERATELY EMPTY: the clause itself is not transcribed in the project's material, only its effect and expiry, and a quotation must never be reconstructed from a summary. effective_to is the expiry date the source states. Checked 2026-08-30 by Claude Code for raghavrrrao. HUMAN COUNTER-REVIEW OUTSTANDING."
+        },
+        {
+          "clause": "6(7)",
+          "title": "'GM' declaration on genetically modified food",
+          "requirement": "Every package containing genetically modified food must bear the words 'GM' at the top of its principal display panel.",
+          "verbatim_text": "Every package containing the genetically modified food shall bear at the top of its principle display panel the words 'GM'.",
+          "detection_method": "ocr_cv",
+          "automation_class": "partially_automatable",
+          "implementation_status": "blocked_by_missing_applicability_data",
+          "source": "G.S.R. 427(E)",
+          "legal_reference": "Rule 6(7) of the Legal Metrology (Packaged Commodities) Rules, 2011",
+          "effective_from": "2013-01-01",
+          "verification_status": "verified",
+          "source_note": "Quoted verbatim in rules/INVENTORY.md from the Department's consolidated publication (sha256 0ef948f9...f983a4b), including the source's own spelling 'principle display panel', reproduced as printed. Recorded as inserted vide G.S.R. 427(E) w.e.f. 1 January 2013. Checked 2026-08-30 by Claude Code for raghavrrrao. Blocked twice over: whether a food is genetically modified is not knowable from a photograph, and 'at the top of the principal display panel' needs PDP geometry. HUMAN COUNTER-REVIEW OUTSTANDING.",
+          "applicability": [
+            {
+              "condition": "genetically-modified-food",
+              "mode": "requires",
+              "note": "Applies to packages containing genetically modified food."
+            }
+          ]
+        },
+        {
+          "clause": "6(8)",
+          "title": "Vegetarian / non-vegetarian mark on cosmetics and toiletries",
+          "requirement": "Every package containing soaps, shampoos, toothpastes and other cosmetics and toiletries must bear at the top of its principal display panel a red or brown dot for products of non-vegetarian origin, and a green dot for products of vegetarian origin.",
+          "verbatim_text": "Every package containing soaps, shampoos, tooth pastes and other cosmetics and toiletries shall bear at the top of its principal display panel a red or, as the case may be, brown dot for products of non-vegetarian origin and a green dot for products of vegetarian origin.",
+          "detection_method": "cv",
+          "automation_class": "partially_automatable",
+          "implementation_status": "blocked_by_missing_applicability_data",
+          "source": "G.S.R. 137",
+          "legal_reference": "Rule 6(8) of the Legal Metrology (Packaged Commodities) Rules, 2011",
+          "effective_from": "2014-07-01",
+          "verification_status": "verified",
+          "source_note": "Quoted verbatim in rules/INVENTORY.md from the Department's consolidated publication (sha256 0ef948f9...f983a4b), recorded as inserted vide G.S.R. 137 dated 15 June 2014 w.e.f. 1 July 2014. Checked 2026-08-30 by Claude Code for raghavrrrao. Needs a cosmetics/toiletries category, colour detection and PDP geometry. rules/INVENTORY.md notes it as a requirement a visual check could GENUINELY reach once the category exists - the colour test is objective, unlike 'conspicuous'. Whether the product is of vegetarian origin is a separate fact the mark asserts and this system cannot verify. HUMAN COUNTER-REVIEW OUTSTANDING.",
+          "applicability": [
+            {
+              "condition": "cosmetics-and-toiletries",
+              "mode": "requires",
+              "note": "Applies to soaps, shampoos, toothpastes and other cosmetics and toiletries."
+            }
+          ]
+        },
+        {
+          "clause": "6(9)",
+          "title": "Labels permitted on imported packages",
+          "requirement": "Permissive. It is permissible to affix a label on an imported package to make the declarations the Rules require.",
+          "verbatim_text": "it shall be permissible to affix a label on imported packages for making the declarations required under these rules.",
+          "detection_method": "not_applicable",
+          "automation_class": "manual_review",
+          "implementation_status": "not_applicable_to_project_scope",
+          "severity": "info",
+          "legal_reference": "Rule 6(9) of the Legal Metrology (Packaged Commodities) Rules, 2011",
+          "verification_status": "verified",
+          "source_note": "Quoted verbatim in rules/INVENTORY.md from the Department's consolidated publication (sha256 0ef948f9...f983a4b). Checked 2026-08-30 by Claude Code for raghavrrrao. PERMISSIVE - nothing to fail. Recorded so that a declaration appearing on an affixed label rather than printed on an imported package is never treated as a defect. HUMAN COUNTER-REVIEW OUTSTANDING.",
+          "applicability": [
+            {
+              "condition": "imported-product",
+              "mode": "requires",
+              "note": "Concerns imported packages."
+            }
+          ]
+        },
+        {
+          "clause": "6(10)",
+          "title": "Mandatory declarations on e-commerce listings",
+          "requirement": "An e-commerce entity must ensure that the mandatory declarations - except the month and year of manufacture or packing - are displayed on the digital and electronic network used for the e-commerce transaction.",
+          "verbatim_text": "An E-Commerce entity shall ensure that the mandatory declarations ... except the month and year in which the commodity is manufactured or packed, shall be displayed on the digital and electronic network used for e-commerce transactions",
+          "detection_method": "digital_ecommerce",
+          "automation_class": "digital_ecommerce",
+          "implementation_status": "not_applicable_to_project_scope",
+          "legal_reference": "Rule 6(10) of the Legal Metrology (Packaged Commodities) Rules, 2011",
+          "verification_status": "verified",
+          "source_note": "Quoted as reproduced in rules/INVENTORY.md from the Department's consolidated publication (sha256 0ef948f9...f983a4b); the internal ellipsis is INVENTORY's own. Checked 2026-08-30 by Claude Code for raghavrrrao. AN OBLIGATION ON A LISTING, NOT ON A PACKAGE. This system analyses photographs of physical packages, so evaluating it would need the listing page as an input - a different pipeline, not a different check type. Recorded rather than omitted because a reader will look for it. HUMAN COUNTER-REVIEW OUTSTANDING.",
+          "applicability": [
+            {
+              "condition": "ecommerce-listing",
+              "mode": "requires",
+              "note": "Binds an e-commerce entity in respect of its listing."
+            }
+          ]
+        },
+        {
+          "_comment": "THE VERSIONED CLAUSE. Two versions of 6(10A) coexist: inserted by G.S.R. 128(E) w.e.f. 1 July 2026, then substituted by G.S.R. 312(E) w.e.f. 1 July 2027. Both notifications were retrieved and read in full. The TRANSITION between them is flagged requires_review and effective_to on version 1 is left NULL - see its source_note.",
+          "clause": "6(10A)",
+          "version": 1,
+          "title": "Country-of-origin filter on e-commerce listings (as inserted, 2026)",
+          "requirement": "An e-commerce entity offering an imported product for sale must provide a country-of-origin filter on the product listing. THE EXACT WORDING OF THIS VERSION HAS NOT BEEN TRANSCRIBED - see source_note.",
+          "verbatim_text": "",
+          "detection_method": "digital_ecommerce",
+          "automation_class": "digital_ecommerce",
+          "implementation_status": "not_applicable_to_project_scope",
+          "source": "G.S.R. 128(E)",
+          "legal_reference": "Rule 6(10A) of the Legal Metrology (Packaged Commodities) Rules, 2011, as inserted by G.S.R. 128(E)",
+          "effective_from": "2026-07-01",
+          "effective_to": null,
+          "verification_status": "requires_review",
+          "source_note": "G.S.R. 128(E) dated 13 February 2026 was RETRIEVED DIRECTLY AND READ IN FULL on 2026-08-30 by Claude Code (automated legal-source check) for raghavrrrao (see rules/SOURCES.md). It is recorded there as inserting rule 6(10A) only - a country-of-origin filter on e-commerce listings - in force 1 July 2026, and as NOT amending rule 6(1)(a)-(g) or rule 6(2). TWO THINGS ARE DELIBERATELY NOT ASSERTED. First, verbatim_text is EMPTY: rules/SOURCES.md records the EFFECT of this notification but does not transcribe the inserted clause, and a quotation must not be reconstructed from a description. The 'requirement' text above is therefore a summary of that recorded effect, not a reading of the clause. Second, effective_to is NULL: G.S.R. 312(E) substitutes this clause with effect from 1 July 2027, but neither notification states in terms when THIS version ceases to apply, and the natural inference - that it runs to 30 June 2027 - is an interpretation the sources do not establish. Setting that date would be inventing a transition. CONSEQUENCE: on and after 1 July 2027 BOTH versions of 6(10A) satisfy is_in_force_on(), which is the correct representation of an unresolved transition and is why this row is flagged requires_review rather than verified. A NAMED HUMAN REVIEWER MUST RESOLVE THE TRANSITION AND TRANSCRIBE THE CLAUSE.",
+          "applicability": [
+            {
+              "condition": "ecommerce-listing",
+              "mode": "requires",
+              "note": "Binds an e-commerce entity in respect of its listing."
+            },
+            {
+              "condition": "imported-product",
+              "mode": "requires",
+              "note": "Applies in respect of imported products offered for sale."
+            }
+          ]
+        },
+        {
+          "clause": "6(10A)",
+          "version": 2,
+          "supersedes_version": 1,
+          "title": "Country-of-origin filter on e-commerce listings (as substituted, 2027)",
+          "requirement": "Every e-commerce entity offering any imported product for sale must ensure, with effect from 1 July 2027, that the product listing contains a searchable and sortable filter specifying the country of origin.",
+          "verbatim_text": "Every e-commerce entity offering for sale any imported product shall, with effect from the 1st day of July, 2027, ensure that the product listing of such imported product contains a searchable and sortable filter specifying the country of origin.",
+          "detection_method": "digital_ecommerce",
+          "automation_class": "digital_ecommerce",
+          "implementation_status": "not_applicable_to_project_scope",
+          "source": "G.S.R. 312(E)",
+          "legal_reference": "Rule 6(10A) of the Legal Metrology (Packaged Commodities) Rules, 2011, as substituted by G.S.R. 312(E)",
+          "effective_from": "2027-07-01",
+          "verification_status": "requires_review",
+          "source_note": "G.S.R. 312(E) dated 27 April 2026 was RETRIEVED DIRECTLY AND READ IN FULL on 2026-08-30 by Claude Code (automated legal-source check) for raghavrrrao (see rules/SOURCES.md). In force 1 July 2027; substitutes rule 6(10A) only; confirmed NOT to amend rule 6(1)(a)-(g) or rule 6(2). The verbatim_text above is quoted in rules/INVENTORY.md. THE CLAUSE TEXT IS VERIFIED; THE STATUS IS requires_review BECAUSE OF THE TRANSITION, not the wording: version 1 has no stated end date, so the two versions overlap from 1 July 2027 in this framework's representation. That overlap is deliberate and honest - see version 1's source_note. A named human reviewer must resolve it. Note also the fourteen months between notification (27 April 2026) and commencement (1 July 2027): a caller asking what rule 6(10A) requires MUST pass the date it cares about.",
+          "applicability": [
+            {
+              "condition": "ecommerce-listing",
+              "mode": "requires",
+              "note": "Binds an e-commerce entity in respect of its listing."
+            },
+            {
+              "condition": "imported-product",
+              "mode": "requires",
+              "note": "Applies to any imported product offered for sale."
+            }
+          ]
+        },
+        {
+          "clause": "6(11)",
+          "title": "Unit sale price",
+          "requirement": "The unit sale price must be declared in the prescribed form, which depends on the net-quantity band of the commodity. It is not required where the retail sale price equals the unit sale price.",
+          "verbatim_text": "The unit sale price shall be declared as- (i) 'Rs. _ per g' for pre-packaged commodities with net quantity of commodity ... Provided further that declaration of unit sale price is not required for the pre-packaged commodities in which retail sale price is equal to the unit sale price.",
+          "detection_method": "ocr",
+          "automation_class": "partially_automatable",
+          "implementation_status": "blocked_by_missing_extraction_field",
+          "legal_reference": "Rule 6(11) of the Legal Metrology (Packaged Commodities) Rules, 2011",
+          "verification_status": "verified",
+          "source_note": "Quoted as reproduced in rules/INVENTORY.md from the Department's consolidated publication (sha256 0ef948f9...f983a4b); the internal ellipsis is INVENTORY's own, standing for the per-band table not transcribed there. Checked 2026-08-30 by Claude Code for raghavrrrao. NOTE IT IS RULE 6(11), NOT A CLAUSE OF RULE 6(1) - a common mis-citation. The extractor now ATTEMPTS unit_sale_price, but attempted is not reliable: the key postdates the frozen evaluation set, so NO precision or recall figure exists for it. The requirement remains unevaluable regardless, because deciding the required FORM needs the net-quantity band and the exemption is an arithmetic comparison, and neither format_check nor numeric_check is registered. The status line is the rules owner's to re-decide, and was not re-decided by extraction work. HUMAN COUNTER-REVIEW OUTSTANDING."
+        }
+      ]
+    },
+    {
+      "rule_number": "7",
+      "title": "Principal display panel - area, and size of numerals and letters",
+      "chapter": "Chapter II - Packages intended for retail sale",
+      "description": "Fixes the minimum height of numerals and letters against bands of principal-display-panel area, and the minimum width as a proportion of height.",
+      "automation_class": "partially_automatable",
+      "verification_status": "verified",
+      "notes": "rules/INVENTORY.md calls this the most tractable of the visual requirements: Table-I is objective and numeric, and bounding boxes plus the source image supply the geometry. What it still lacks is PDP area - rule 7(4) gives a formula per package shape, which needs the shape - and a real millimetre scale, which a photograph does not carry.",
+      "requirements": [
+        {
+          "clause": "7",
+          "title": "Minimum height and width of numerals and letters on the principal display panel",
+          "requirement": "The height of numerals and letters in a declaration must meet the minimum in Table-I for the area band of the principal display panel, and the width of a letter or numeral must be at least one third of its height, except for the numeral '1' and the letters (i), (I) and ().",
+          "verbatim_text": "The width of the letter or numeral shall not be less than one third of its height, except in the case of numeral '1' and letters (i), ( I) and ( );",
+          "detection_method": "ocr_cv",
+          "automation_class": "partially_automatable",
+          "implementation_status": "implementable_with_new_check",
+          "source": "G.S.R. 629(E)",
+          "legal_reference": "Rule 7 of the Legal Metrology (Packaged Commodities) Rules, 2011",
+          "effective_from": "2018-01-01",
+          "verification_status": "verified",
+          "source_note": "The quotation is rule 7(3), verbatim in rules/INVENTORY.md from the Department's consolidated publication (sha256 0ef948f9...f983a4b); Table-I itself, which fixes minimum heights against PDP area bands, is NOT transcribed and must be read from the source before any threshold is coded. Recorded as substituted vide G.S.R. 629(E) w.e.f. 1 January 2018, with Table-I corrected by G.S.R. 1373(E) dated 7 November 2017. Checked 2026-08-30 by Claude Code for raghavrrrao. THE ONE-THIRD RATIO IS SCALE-FREE and therefore computable from bounding boxes alone; the Table-I heights are NOT, because they are absolute measurements and a photograph carries no millimetre scale. The Legal Metrology (Packaged Commodities) Amendment Rules, 2025 additionally make the Medical Devices Rules, 2017 prevail for medical devices - and that instrument is known only from a PIB release, so its effect here is unverified. HUMAN COUNTER-REVIEW OUTSTANDING.",
+          "applicability": [
+            {
+              "condition": "medical-device",
+              "mode": "exempts",
+              "note": "Per the PIB release for the Legal Metrology (Packaged Commodities) Amendment Rules, 2025, the Medical Devices Rules, 2017 prevail for the height and width of numerals and letters for medical devices. RECORDED FROM A PRESS RELEASE, NOT THE GAZETTE - see that instrument's verification_note."
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "rule_number": "8",
+      "title": "Declarations to appear on the principal display panel",
+      "chapter": "Chapter II - Packages intended for retail sale",
+      "description": "Requires every declaration to appear on the principal display panel, and fixes a clear space around the quantity declaration in multiples of the numeral height.",
+      "automation_class": "partially_automatable",
+      "verification_status": "verified",
+      "requirements": [
+        {
+          "clause": "8(1)",
+          "title": "Declarations on the principal display panel, with clear space around the quantity",
+          "requirement": "Every declaration required by the Rules must appear on the principal display panel. The area around the quantity declaration must be free of printed information: above and below by at least the height of the numeral, and to the left and right by at least twice that height.",
+          "verbatim_text": "Every declaration required to be made under these rules shall appear on the principal display panel. Provided that the area surrounding the quantity declaration shall be free from printed information. (a) above and below by a space equal to at least the height of the numeral in the declaration, and (b) to the left and right by a space at least twice the height of numeral in the declaration.",
+          "detection_method": "ocr_cv",
+          "automation_class": "partially_automatable",
+          "implementation_status": "implementable_with_new_check",
+          "legal_reference": "Rule 8(1) of the Legal Metrology (Packaged Commodities) Rules, 2011",
+          "verification_status": "verified",
+          "source_note": "Quoted verbatim in rules/INVENTORY.md from the Department's consolidated publication (sha256 0ef948f9...f983a4b). Checked 2026-08-30 by Claude Code for raghavrrrao. THE CLEAR-SPACE PROVISO IS EXPRESSED PURELY IN MULTIPLES OF THE NUMERAL HEIGHT, so it is computable from bounding boxes with no millimetre scale - INVENTORY calls it arguably the single most implementable visual requirement in the Rules. What remains open is identifying WHICH face is the principal display panel, which no current input settles. HUMAN COUNTER-REVIEW OUTSTANDING."
+        }
+      ]
+    },
+    {
+      "rule_number": "9",
+      "title": "Manner in which declarations are to be made",
+      "chapter": "Chapter II - Packages intended for retail sale",
+      "description": "How declarations must be presented: legible and prominent, in a contrasting colour, not read through a liquid, repeated on an outer wrapper, and in Hindi or English.",
+      "automation_class": "partially_automatable",
+      "verification_status": "verified",
+      "requirements": [
+        {
+          "clause": "9(1)(a)",
+          "title": "Declarations must be legible and prominent",
+          "requirement": "Every declaration required on a package must be legible and prominent.",
+          "verbatim_text": "Every declaration which is required to be made on a package under these rules shall be -- (a) legible and prominent;",
+          "detection_method": "manual_review",
+          "automation_class": "manual_review",
+          "implementation_status": "legal_review_required",
+          "legal_reference": "Rule 9(1)(a) of the Legal Metrology (Packaged Commodities) Rules, 2011",
+          "verification_status": "verified",
+          "source_note": "Quoted verbatim in rules/SOURCES.md and rules/INVENTORY.md from the Department's consolidated publication (sha256 0ef948f9...f983a4b). Checked 2026-08-30 by Claude Code for raghavrrrao. DETECTION IS RECORDED AS manual_review DELIBERATELY, although the raw inputs exist: the Rules set NO numeric threshold for 'legible and prominent', so implementing it directly would mean INVENTING a threshold, which is precisely what this project forbids. rules/INVENTORY.md directs that it be approached through rules 7 and 8, which supply measurable proxies, and never on its own. Implementing this clause with a presence check would silently answer a different question. HUMAN COUNTER-REVIEW OUTSTANDING."
+        },
+        {
+          "clause": "9(1)(b)",
+          "title": "Price and quantity numerals in a contrasting colour",
+          "requirement": "The numerals of the retail sale price and the net quantity declaration must be printed, painted or inscribed in a colour that contrasts conspicuously with the background of the label, subject to provisos for blown, formed or moulded information and for hand-written declarations.",
+          "verbatim_text": "numerals of the retail sale price and net quantity declaration shall be printed, painted or inscribed on the package in a colour that contrasts conspicuously with the background of the label",
+          "detection_method": "cv",
+          "automation_class": "partially_automatable",
+          "implementation_status": "implementable_with_new_check",
+          "legal_reference": "Rule 9(1)(b) of the Legal Metrology (Packaged Commodities) Rules, 2011",
+          "verification_status": "verified",
+          "source_note": "Quoted verbatim in rules/INVENTORY.md from the Department's consolidated publication (sha256 0ef948f9...f983a4b); the provisos for blown/formed/moulded information and for hand-written declarations are recorded there but not transcribed. Checked 2026-08-30 by Claude Code for raghavrrrao. Contrast IS measurable from pixels within a bounding box - but 'contrasts conspicuously' has NO numeric threshold in the Rules, so this is also a legal-review item and no contrast figure may be adopted without one. HUMAN COUNTER-REVIEW OUTSTANDING."
+        },
+        {
+          "clause": "9(2)",
+          "title": "A declaration must not have to be read through a liquid",
+          "requirement": "No declaration may be made so as to require it to be read through any liquid commodity contained in the package.",
+          "verbatim_text": "No declaration shall be made so as to require it to be read through any liquid commodity contained in the package.",
+          "detection_method": "cv",
+          "automation_class": "partially_automatable",
+          "implementation_status": "implementable_with_new_check",
+          "legal_reference": "Rule 9(2) of the Legal Metrology (Packaged Commodities) Rules, 2011",
+          "verification_status": "verified",
+          "source_note": "Quoted verbatim in rules/INVENTORY.md from the Department's consolidated publication (sha256 0ef948f9...f983a4b). Checked 2026-08-30 by Claude Code for raghavrrrao. Would require inferring package construction from an image. Recorded for completeness; also a legal-review item. HUMAN COUNTER-REVIEW OUTSTANDING."
+        },
+        {
+          "clause": "9(3)",
+          "title": "Declarations on an outer container or wrapper",
+          "requirement": "Where a package has an outer container or wrapper, that container or wrapper must also carry all the declarations required on the package - unless it is transparent and the declarations on the package are easily readable through it. No declaration is required on the inner package if the outer package carries all of them.",
+          "verbatim_text": "Where a package is provided with an outside container or wrapper such container or wrapper shall also contain all the declarations which are required to appear on the package except where such container or wrapper itself is transparent and the declarations on the package itself are easily readable through such outside wrapper. Provided that no such declarations on the inner package is required, if the outer package contains all declarations required under these rules.",
+          "detection_method": "user_input",
+          "automation_class": "partially_automatable",
+          "implementation_status": "blocked_by_missing_applicability_data",
+          "legal_reference": "Rule 9(3) of the Legal Metrology (Packaged Commodities) Rules, 2011",
+          "verification_status": "verified",
+          "source_note": "Quoted verbatim in rules/INVENTORY.md from the Department's consolidated publication (sha256 0ef948f9...f983a4b). Checked 2026-08-30 by Claude Code for raghavrrrao. Needs to know whether the photographed item is an inner or an outer package. Not modelled. HUMAN COUNTER-REVIEW OUTSTANDING.",
+          "applicability": [
+            {
+              "condition": "outer-container-or-wrapper",
+              "mode": "requires",
+              "note": "Applies where a package is provided with an outside container or wrapper."
+            }
+          ]
+        },
+        {
+          "clause": "9(4)",
+          "title": "Language of the declarations",
+          "requirement": "The particulars of the declarations must be either in Hindi in Devanagari script or in English. Any other language may be used in addition.",
+          "verbatim_text": "The particulars of the declarations required to be specified under this rule on a package shall either be in Hindi in Devnagri script or in English: Provided that nothing contained in this sub-rule shall prevent the use of any other language in addition to Hindi or English language.",
+          "detection_method": "ocr",
+          "automation_class": "partially_automatable",
+          "implementation_status": "implementable_with_new_check",
+          "legal_reference": "Rule 9(4) of the Legal Metrology (Packaged Commodities) Rules, 2011",
+          "verification_status": "verified",
+          "source_note": "Quoted verbatim in rules/INVENTORY.md from the Department's consolidated publication (sha256 0ef948f9...f983a4b), including the source's spelling 'Devnagri'. Checked 2026-08-30 by Claude Code for raghavrrrao. Script detection is tractable, BUT THE OCR IS ENGLISH-ONLY: a wholly Hindi label would currently read as UNREADABLE rather than as compliant, and reporting that as a violation would be exactly backwards. MUST NOT BE ATTEMPTED before the extractor handles Devanagari. HUMAN COUNTER-REVIEW OUTSTANDING."
+        }
+      ]
+    },
+    {
+      "rule_number": "10",
+      "title": "Name and address of the manufacturer, packer or importer",
+      "chapter": "Chapter II - Packages intended for retail sale",
+      "description": "The operative provision for the completeness of the address, and for the name being the actual corporate name.",
+      "automation_class": "partially_automatable",
+      "verification_status": "verified",
+      "requirements": [
+        {
+          "clause": "10(1)",
+          "title": "Name and complete address, conspicuously",
+          "requirement": "Every package must bear conspicuously the name and complete address of the manufacturer; where the manufacturer is not the packer, of the manufacturer and the packer; and for imported packages, of the importer. A proviso applies to packages of 10 cubic centimetres or less, and Explanation 1 defines 'complete address'.",
+          "verbatim_text": "Subject to the provisions of rule 6, every package ... shall bear conspicuously on it, the name and complete address of the manufacturer, or where the manufacturer is not the packer, the name and address of the manufacturer and the packer and in case of imported packages, the name and address of the importer",
+          "detection_method": "ocr",
+          "automation_class": "partially_automatable",
+          "implementation_status": "blocked_by_missing_extraction_field",
+          "source": "G.S.R. 629(E)",
+          "legal_reference": "Rule 10(1) of the Legal Metrology (Packaged Commodities) Rules, 2011",
+          "effective_from": "2018-01-01",
+          "verification_status": "verified",
+          "source_note": "Quoted as reproduced in rules/INVENTORY.md from the Department's consolidated publication (sha256 0ef948f9...f983a4b); the internal ellipsis is INVENTORY's own, and neither the 10-cubic-centimetre proviso nor Explanation 1's definition of 'complete address' is transcribed there. Recorded as substituted vide G.S.R. 629(E) w.e.f. 1 January 2018. Checked 2026-08-30 by Claude Code for raghavrrrao. THIS IS THE OPERATIVE ADDRESS PROVISION that rule 6(1)(a) refers to, and manufacturer_address is in the extractor's UNSUPPORTED_KEYS - the extractor explicitly does not read addresses. The 10-cubic-centimetre proviso additionally needs package capacity, which is not recorded. HUMAN COUNTER-REVIEW OUTSTANDING.",
+          "applicability": [
+            {
+              "condition": "imported-product",
+              "mode": "requires",
+              "note": "For imported packages the clause requires the importer's name and address."
+            }
+          ]
+        },
+        {
+          "clause": "10(2)",
+          "title": "The name must be the actual corporate name",
+          "requirement": "The name of the manufacturer, packer or importer must be the actual corporate name, or - if not incorporated - the name under which the business is conducted in India.",
+          "verbatim_text": "The name of the manufacturer or packer or importer shall be the actual corporate name, or if not incorporated, the name under which the business is conducted by such manufacturer or packer or importer in India.",
+          "detection_method": "database",
+          "automation_class": "administrative",
+          "implementation_status": "not_applicable_to_project_scope",
+          "legal_reference": "Rule 10(2) of the Legal Metrology (Packaged Commodities) Rules, 2011",
+          "verification_status": "verified",
+          "source_note": "Quoted verbatim in rules/INVENTORY.md from the Department's consolidated publication (sha256 0ef948f9...f983a4b). Checked 2026-08-30 by Claude Code for raghavrrrao. Verifying that a printed name IS the actual corporate name requires a companies register, not a photograph. Detection is recorded as 'database' rather than 'not_applicable' because the fact does exist in a register somewhere - it is simply not reachable from here. HUMAN COUNTER-REVIEW OUTSTANDING."
+        }
+      ]
+    },
+    {
+      "rule_number": "11",
+      "title": "General provisions relating to the declaration of quantity",
+      "chapter": "Chapter II - Packages intended for retail sale",
+      "description": "Excludes wrappers from the net quantity, and prohibits qualifying the declaration with words such as 'when packed' except for Third Schedule commodities.",
+      "automation_class": "partially_automatable",
+      "verification_status": "verified",
+      "requirements": [
+        {
+          "clause": "11(1)",
+          "title": "Wrappers and other materials excluded from the net quantity",
+          "requirement": "In declaring the net quantity, the weight of wrappers and of materials other than the commodity must be excluded.",
+          "verbatim_text": "In declaring the net quantity of the commodity contained in a package, the weight of wrappers and materials other than the commodity shall be excluded.",
+          "detection_method": "physical_inspection",
+          "automation_class": "physical_measurement",
+          "implementation_status": "not_applicable_to_project_scope",
+          "legal_reference": "Rule 11(1) of the Legal Metrology (Packaged Commodities) Rules, 2011",
+          "verification_status": "verified",
+          "source_note": "Quoted verbatim in rules/INVENTORY.md from the Department's consolidated publication (sha256 0ef948f9...f983a4b). Checked 2026-08-30 by Claude Code for raghavrrrao. REQUIRES WEIGHING THE GOODS AND THE WRAPPER SEPARATELY. No image establishes it, and no confidence score changes that. This is a clear case for REVIEW_REQUIRED rather than any verdict. HUMAN COUNTER-REVIEW OUTSTANDING."
+        },
+        {
+          "clause": "11(2)-(4)",
+          "title": "Quantity must not be qualified by 'when packed' or the like",
+          "requirement": "The declaration of quantity must not be qualified by the words 'when packed' or the like, except for commodities specified in the Third Schedule, which may be so qualified.",
+          "verbatim_text": "",
+          "detection_method": "ocr",
+          "automation_class": "partially_automatable",
+          "implementation_status": "implementable_with_new_check",
+          "legal_reference": "Rules 11(2), 11(3) and 11(4) of the Legal Metrology (Packaged Commodities) Rules, 2011",
+          "verification_status": "verified",
+          "source_note": "rules/INVENTORY.md records these sub-rules together, stating that the declaration 'shall not be qualified by the words \"when packed\" or the like' and that 11(4) permits Third Schedule commodities to be so qualified. verbatim_text IS EMPTY: INVENTORY summarises 11(2)/(3)/(4) rather than quoting them in full, and a quotation must not be assembled from a summary - the phrase in quotation marks above appears in the summary and is reproduced only inside this note. Checked 2026-08-30 by Claude Code for raghavrrrao. Detecting the qualifier in a net-quantity string is a straightforward text check once format_check exists, but knowing whether the commodity is in the Third Schedule is missing applicability data, so the exception cannot be honoured. A NAMED REVIEWER SHOULD TRANSCRIBE 11(2)-(4) BEFORE THIS IS IMPLEMENTED.",
+          "applicability": [
+            {
+              "condition": "third-schedule-commodity",
+              "mode": "exempts",
+              "note": "Rule 11(4): commodities in the Third Schedule may qualify the declaration."
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "rule_number": "12",
+      "title": "Manner in which the quantity is to be declared",
+      "chapter": "Chapter II - Packages intended for retail sale",
+      "description": "Prescribes the unit of declaration by the physical state of the commodity, prohibits misleading expressions of quantity, and allows a tag or card for very small packages.",
+      "automation_class": "partially_automatable",
+      "verification_status": "verified",
+      "requirements": [
+        {
+          "clause": "12(2)",
+          "title": "Unit of declaration follows the physical state of the commodity",
+          "requirement": "Quantity must be declared in units of mass for solid, semi-solid and viscous commodities; of length; of area; of volume; or by number, according to the nature of the commodity.",
+          "verbatim_text": "the declaration of quantity shall be in terms of the unit of - (a) mass, if the commodity is solid, semi-solid, viscous ...; (b) length ...; (c) area ...; (d) volume ...; or (e) number ...",
+          "detection_method": "user_input",
+          "automation_class": "partially_automatable",
+          "implementation_status": "blocked_by_missing_applicability_data",
+          "legal_reference": "Rule 12(2) of the Legal Metrology (Packaged Commodities) Rules, 2011",
+          "verification_status": "verified",
+          "source_note": "Quoted as reproduced in rules/INVENTORY.md from the Department's consolidated publication (sha256 0ef948f9...f983a4b); the ellipses are INVENTORY's own and the clause bodies are not transcribed in full. Checked 2026-08-30 by Claude Code for raghavrrrao. Requires knowing whether the commodity is solid, liquid, or sold by number - a fact about the CONTENTS, not the label, and not recorded. HUMAN COUNTER-REVIEW OUTSTANDING.",
+          "applicability": [
+            {
+              "condition": "solid-liquid-or-by-number",
+              "mode": "requires",
+              "note": "Which unit is required depends on the physical state of the commodity."
+            }
+          ]
+        },
+        {
+          "clause": "12(6)",
+          "title": "No misleading or exaggerated expression of quantity",
+          "requirement": "The declaration of quantity must not contain any word or expression that creates, or is likely to create, an exaggerated, misleading or inadequate impression as to the quantity.",
+          "verbatim_text": "shall not contain any word or expression ... which tends to create or is likely to create an exaggerated, misleading or inadequate expression as to the quantity",
+          "detection_method": "ocr",
+          "automation_class": "image_automatable",
+          "implementation_status": "implementable_with_new_check",
+          "legal_reference": "Rule 12(6) of the Legal Metrology (Packaged Commodities) Rules, 2011",
+          "verification_status": "verified",
+          "source_note": "Quoted as reproduced in rules/INVENTORY.md from the Department's consolidated publication (sha256 0ef948f9...f983a4b); the internal ellipsis is INVENTORY's own. Checked 2026-08-30 by Claude Code for raghavrrrao. rules/INVENTORY.md calls this THE MOST IMPLEMENTABLE NON-PRESENCE REQUIREMENT IN THE RULES that needs no new applicability input, noting that a prohibited-word list is objective and appears verbatim in the pre-2011 text: 'minimum', 'not less than', 'average', 'about', 'approximately'. THAT WORD LIST IS FROM THE PRE-2011 TEXT AND IS NOT REPRODUCED AS A REQUIREMENT HERE - a named reviewer must confirm it against the 2011 Rules before any list is coded, or the check would enforce a repealed instrument. HUMAN COUNTER-REVIEW OUTSTANDING."
+        },
+        {
+          "clause": "12(7)",
+          "title": "Very small packages may declare on a tag or card",
+          "requirement": "Packages of ten cubic centimetres or less may carry the declaration on a tag or card attached to the package rather than on the package itself.",
+          "verbatim_text": "",
+          "detection_method": "user_input",
+          "automation_class": "partially_automatable",
+          "implementation_status": "blocked_by_missing_applicability_data",
+          "severity": "minor",
+          "legal_reference": "Rule 12(7) of the Legal Metrology (Packaged Commodities) Rules, 2011",
+          "verification_status": "verified",
+          "source_note": "rules/INVENTORY.md records the effect of 12(7) - 'packages of ten cubic cm or less may declare on a tag or card' - without quoting it, so verbatim_text is EMPTY. Checked 2026-08-30 by Claude Code for raghavrrrao. Recorded because it is a RELAXATION: treating a tag-borne declaration as absent would create a false violation on exactly the packages this clause protects. Package capacity is not recorded, so the relaxation cannot be applied. HUMAN COUNTER-REVIEW OUTSTANDING."
+        }
+      ]
+    },
+    {
+      "rule_number": "13",
+      "title": "Units of weight, measure or number to be used",
+      "chapter": "Chapter II - Packages intended for retail sale",
+      "description": "Requires SI units, bars traditional counting units such as the dozen, and prescribes which unit to use above and below one kilogram, metre or litre.",
+      "automation_class": "image_automatable",
+      "verification_status": "verified",
+      "notes": "rules/INVENTORY.md names this THE STRONGEST CANDIDATE for the next real rule once a format_check exists: 13(2)-(5) are objective, purely textual, need no applicability input beyond the declared value itself, and net_quantity is already extracted.",
+      "requirements": [
+        {
+          "clause": "13(2)-(3)",
+          "title": "Which unit to use above and below one kilogram, metre or litre",
+          "requirement": "Prescribes which unit the net quantity is to be expressed in, depending on whether it falls above or below one kilogram, one metre or one litre.",
+          "verbatim_text": "",
+          "detection_method": "ocr",
+          "automation_class": "image_automatable",
+          "implementation_status": "implementable_with_new_check",
+          "legal_reference": "Rules 13(2) and 13(3) of the Legal Metrology (Packaged Commodities) Rules, 2011",
+          "verification_status": "verified",
+          "source_note": "rules/INVENTORY.md records these sub-rules by effect - 'which unit to use below and above one kilogram, metre, litre etc.' - and does NOT quote them, so verbatim_text is EMPTY and the 'requirement' text above is a restatement of that summary, not of the clause. Checked 2026-08-30 by Claude Code for raghavrrrao. A NAMED REVIEWER MUST TRANSCRIBE 13(2) AND 13(3) FROM THE SOURCE before a format_check is written against them: the exact thresholds and the required unit at each band are the whole content of the requirement, and they are not recorded in this project. HUMAN COUNTER-REVIEW OUTSTANDING."
+        },
+        {
+          "clause": "13(4)",
+          "title": "No dozen, score, gross or great gross",
+          "requirement": "No number called the dozen, score, gross, great gross or the like may be specified or indicated on any package.",
+          "verbatim_text": "No number called the dozen, score, gross, great gross or the like shall be specified or indicated on any package.",
+          "detection_method": "ocr",
+          "automation_class": "image_automatable",
+          "implementation_status": "implemented",
+          "legal_reference": "Rule 13(4) of the Legal Metrology (Packaged Commodities) Rules, 2011",
+          "verification_status": "verified",
+          "source_note": "Quoted verbatim in rules/INVENTORY.md from the Department's consolidated publication (sha256 0ef948f9...f983a4b). Checked 2026-08-30 by Claude Code for raghavrrrao. Objective and purely textual: detecting 'dozen' in the net-quantity string requires no judgement and no applicability input. Needs only a registered format_check. Note the clause bars the words 'or the like' too, which is an open-ended term a word list cannot fully capture - a check should therefore under-claim rather than assert compliance. HUMAN COUNTER-REVIEW OUTSTANDING. STEP 2: this clause is now EVALUATED - see the rule file(s) named in compliance_rule_codes for exactly what is and is not tested. Applicability is resolved before the validator runs, so a package the clause excuses is recorded NOT_APPLICABLE and one whose exempting facts were never declared reaches REVIEW_REQUIRED.",
+          "compliance_rule_codes": [
+            "LM-PC-0009"
+          ]
+        },
+        {
+          "clause": "13(5)",
+          "title": "SI units only, and the unit for items sold by number",
+          "requirement": "No system of units other than the International System of Units may be used in furnishing the net quantity. For items sold by number, the number, unit, piece, pair, set or other word representing the quantity must be mentioned.",
+          "verbatim_text": "No system of units other than the International System of Units shall be used in furnishing the net quantity of the packages ... for items sold by number, the number or unit or piece or pair or set or such other word which represents the quantity in the package shall be mentioned.",
+          "detection_method": "ocr",
+          "automation_class": "image_automatable",
+          "implementation_status": "implemented",
+          "source": "G.S.R. 226(E)",
+          "legal_reference": "Rules 13(5)(i) and 13(5)(ii) of the Legal Metrology (Packaged Commodities) Rules, 2011",
+          "effective_from": "2022-10-01",
+          "verification_status": "verified",
+          "source_note": "Both limbs quoted verbatim in rules/INVENTORY.md from the Department's consolidated publication (sha256 0ef948f9...f983a4b); the ellipsis marks the join between clause (i) and clause (ii), which are separate provisions recorded here as one requirement. Clause (ii) is recorded as substituted w.e.f. 1 October 2022, hence the effective_from and the G.S.R. 226(E) source; CLAUSE (i) IS OLDER AND ITS OWN COMMENCEMENT IS NOT SEPARATELY RECORDED, so dating this row from the later substitution understates how long clause (i) has been in force. A named reviewer splitting these into two requirements would fix that. Checked 2026-08-30 by Claude Code for raghavrrrao. Detecting a non-SI unit such as 'oz' in the net-quantity string needs no judgement. HUMAN COUNTER-REVIEW OUTSTANDING. STEP 2: this clause is now EVALUATED - see the rule file(s) named in compliance_rule_codes for exactly what is and is not tested. Applicability is resolved before the validator runs, so a package the clause excuses is recorded NOT_APPLICABLE and one whose exempting facts were never declared reaches REVIEW_REQUIRED.",
+          "compliance_rule_codes": [
+            "LM-PC-0008"
+          ]
+        },
+        {
+          "clause": "13(6)",
+          "title": "Supplementary declaration for multiple like packages",
+          "requirement": "Provides for a supplementary declaration of quantity where a package contains a number of like packages.",
+          "verbatim_text": "",
+          "detection_method": "ocr",
+          "automation_class": "partially_automatable",
+          "implementation_status": "blocked_by_missing_applicability_data",
+          "legal_reference": "Rule 13(6) of the Legal Metrology (Packaged Commodities) Rules, 2011",
+          "verification_status": "requires_review",
+          "source_note": "rules/INVENTORY.md mentions 13(6) only as 'supplementary declaration for multiple like packages', with no quotation and no detail. verbatim_text is EMPTY and the 'requirement' text is a restatement of that one phrase - IT IS NOT A READING OF THE CLAUSE. Flagged requires_review rather than verified for that reason: what the sub-rule actually prescribes is not established by anything this project has read. A NAMED REVIEWER MUST TRANSCRIBE IT. Recorded rather than omitted so the gap in rule 13 is visible."
+        }
+      ]
+    },
+    {
+      "rule_number": "14",
+      "title": "Declaration of dimensions for textile and similar commodities",
+      "chapter": "Chapter II - Packages intended for retail sale",
+      "description": "Requires the number and finished dimensions of bed-sheets, hemmed fabrics, dhoties, sarees, napkins, pillow-covers, towels, table cloths and similar commodities.",
+      "automation_class": "partially_automatable",
+      "verification_status": "verified",
+      "requirements": [
+        {
+          "clause": "14",
+          "title": "Number and finished dimensions of textile commodities",
+          "requirement": "Where a package contains commodities such as bed-sheets, hemmed fabric materials, dhoties, sarees, napkins, pillow-covers, towels or table cloths, the number and the finished-size dimensions of those commodities must also be declared.",
+          "verbatim_text": "Where a package contains commodities like bed-sheets, hemmed fabric materials, dhoties, sarees, napkins, pillow-covers, towels, table cloths or similar other commodities, the number and the dimensions of finished size of such commodities shall also be declared...",
+          "detection_method": "ocr",
+          "automation_class": "partially_automatable",
+          "implementation_status": "blocked_by_missing_applicability_data",
+          "legal_reference": "Rule 14 of the Legal Metrology (Packaged Commodities) Rules, 2011",
+          "verification_status": "verified",
+          "source_note": "Quoted as far as reproduced in rules/INVENTORY.md from the Department's consolidated publication (sha256 0ef948f9...f983a4b); the trailing ellipsis is INVENTORY's own. Checked 2026-08-30 by Claude Code for raghavrrrao. One of the operative provisions behind rule 6(1)(f). Blocked twice: the commodity class is not in the taxonomy, and there is no LabelFieldKey for dimensions. 'OR SIMILAR OTHER COMMODITIES' IS ADDITIONALLY A LEGAL-REVIEW ITEM - an open-ended class no list can settle. HUMAN COUNTER-REVIEW OUTSTANDING.",
+          "applicability": [
+            {
+              "condition": "sizes-relevant",
+              "mode": "requires",
+              "note": "One of the specific commodity classes for which rule 6(1)(f) dimensions are relevant."
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "rule_number": "15",
+      "title": "Declaration of dimensions where they bear on the price",
+      "chapter": "Chapter II - Packages intended for retail sale",
+      "description": "Requires dimensions to be declared where they have a relationship to the price of the commodity.",
+      "automation_class": "partially_automatable",
+      "verification_status": "verified",
+      "requirements": [
+        {
+          "clause": "15",
+          "title": "Dimensions where they have a relationship to the price",
+          "requirement": "Dimensions must be declared where they have a relationship to the price of the commodity in the package.",
+          "verbatim_text": "",
+          "detection_method": "ocr",
+          "automation_class": "partially_automatable",
+          "implementation_status": "blocked_by_missing_applicability_data",
+          "legal_reference": "Rule 15 of the Legal Metrology (Packaged Commodities) Rules, 2011",
+          "verification_status": "verified",
+          "source_note": "rules/INVENTORY.md records rule 15 by effect - 'dimensions where they have \"a relationship to the price\"' - without a full quotation, so verbatim_text is EMPTY and the phrase in quotation marks is reproduced only inside this note. Checked 2026-08-30 by Claude Code for raghavrrrao. Blocked on both the trigger and the evidence: no LabelFieldKey for dimensions, and whether dimensions bear on price is not recorded. A named reviewer should transcribe the clause. HUMAN COUNTER-REVIEW OUTSTANDING.",
+          "applicability": [
+            {
+              "condition": "sizes-relevant",
+              "mode": "requires",
+              "note": "Applies where dimensions have a relationship to the price."
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "rule_number": "16",
+      "title": "Declaration of usable sheets and their dimensions",
+      "chapter": "Chapter II - Packages intended for retail sale",
+      "description": "Requires the number of usable sheets and the dimensions of each for aluminium foil, facial tissues, waxed paper and toilet paper.",
+      "automation_class": "partially_automatable",
+      "verification_status": "verified",
+      "requirements": [
+        {
+          "clause": "16",
+          "title": "Number of usable sheets and the dimensions of each",
+          "requirement": "For aluminium foil, facial tissues, waxed paper and toilet paper, the number of usable sheets and the dimensions of each sheet must be declared.",
+          "verbatim_text": "the number of usable sheets ... and the dimensions of each such sheet",
+          "detection_method": "ocr",
+          "automation_class": "partially_automatable",
+          "implementation_status": "blocked_by_missing_applicability_data",
+          "legal_reference": "Rule 16 of the Legal Metrology (Packaged Commodities) Rules, 2011",
+          "verification_status": "verified",
+          "source_note": "Quoted as far as reproduced in rules/INVENTORY.md from the Department's consolidated publication (sha256 0ef948f9...f983a4b); the internal ellipsis is INVENTORY's own and the clause is not transcribed in full there. Checked 2026-08-30 by Claude Code for raghavrrrao. The commodity class is not in the taxonomy and neither sheet count nor dimensions is an extracted field. HUMAN COUNTER-REVIEW OUTSTANDING.",
+          "applicability": [
+            {
+              "condition": "sizes-relevant",
+              "mode": "requires",
+              "note": "One of the specific commodity classes behind rule 6(1)(f)."
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "rule_number": "17",
+      "title": "Declaration for container-type commodities",
+      "chapter": "Chapter II - Packages intended for retail sale",
+      "description": "Prescribes the form of declaration for bag-, box-, cup- and pan-type container commodities.",
+      "automation_class": "partially_automatable",
+      "verification_status": "verified",
+      "requirements": [
+        {
+          "clause": "17",
+          "title": "Form of declaration for bag-, box-, cup- and pan-type containers",
+          "requirement": "Prescribes how quantity is to be declared for commodities supplied in bag-, box-, cup- and pan-type containers.",
+          "verbatim_text": "",
+          "detection_method": "ocr",
+          "automation_class": "partially_automatable",
+          "implementation_status": "blocked_by_missing_applicability_data",
+          "legal_reference": "Rule 17 of the Legal Metrology (Packaged Commodities) Rules, 2011",
+          "verification_status": "verified",
+          "source_note": "rules/INVENTORY.md records rule 17 by effect - 'declaration form for bag-, box-, cup- and pan-type container commodities' - without a quotation, so verbatim_text is EMPTY and the 'requirement' text restates that summary rather than the clause. Checked 2026-08-30 by Claude Code for raghavrrrao. The container type is not recorded and the declaration form is not transcribed; a named reviewer must supply the clause before any check is written. HUMAN COUNTER-REVIEW OUTSTANDING.",
+          "applicability": [
+            {
+              "condition": "sizes-relevant",
+              "mode": "requires",
+              "note": "One of the specific commodity classes behind rule 6(1)(f)."
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "rule_number": "18",
+      "title": "Duties of wholesale and retail dealers",
+      "chapter": "Chapter II - Packages intended for retail sale",
+      "description": "Bars sale above the retail sale price, and bars different maximum retail prices on an identical pre-packaged commodity through restrictive or unfair trade practices.",
+      "automation_class": "manual_review",
+      "verification_status": "verified",
+      "requirements": [
+        {
+          "clause": "18(2)",
+          "title": "No sale above the retail sale price",
+          "requirement": "No retail dealer or other person - including a manufacturer, packer, importer or wholesale dealer - may sell any commodity in packed form at a price exceeding its retail sale price.",
+          "verbatim_text": "No retail dealer or other person including manufacturer, packer, importer and wholesale dealer shall make any sale of any commodity in packed form at a price exceeding the retail sale price thereof.",
+          "detection_method": "not_applicable",
+          "automation_class": "manual_review",
+          "implementation_status": "not_applicable_to_project_scope",
+          "legal_reference": "Rule 18(2) of the Legal Metrology (Packaged Commodities) Rules, 2011",
+          "verification_status": "verified",
+          "source_note": "Quoted verbatim in rules/INVENTORY.md from the Department's consolidated publication (sha256 0ef948f9...f983a4b). Checked 2026-08-30 by Claude Code for raghavrrrao. A conduct obligation about the price ACTUALLY CHARGED, which is not visible on a package photograph. The label states the MRP; what a dealer charged is a transaction fact this system never sees. HUMAN COUNTER-REVIEW OUTSTANDING."
+        },
+        {
+          "clause": "18(2A)",
+          "title": "No differing maximum retail prices on identical pre-packaged commodities",
+          "requirement": "Different maximum retail prices must not be declared on an identical pre-packaged commodity by means of restrictive or unfair trade practices.",
+          "verbatim_text": "",
+          "detection_method": "database",
+          "automation_class": "manual_review",
+          "implementation_status": "not_applicable_to_project_scope",
+          "legal_reference": "Rule 18(2A) of the Legal Metrology (Packaged Commodities) Rules, 2011",
+          "verification_status": "verified",
+          "source_note": "rules/INVENTORY.md records the effect - 'no different MRPs on an identical pre-packaged commodity by restrictive or unfair trade practices' - without a quotation, so verbatim_text is EMPTY. Checked 2026-08-30 by Claude Code for raghavrrrao. Would need CROSS-PRODUCT COMPARISON across submissions, which the system does not do, plus a judgement about restrictive or unfair trade practice, which is not a mechanical test. Recorded because it is the one clause here a database-backed system could in principle approach. HUMAN COUNTER-REVIEW OUTSTANDING."
+        }
+      ]
+    },
+    {
+      "rule_number": "19",
+      "title": "Inspection at the premises of a manufacturer or packer",
+      "chapter": "Chapter II - Packages intended for retail sale",
+      "description": "Procedure for inspection and sampling by Legal Metrology officers at the premises of a manufacturer or packer.",
+      "automation_class": "physical_measurement",
+      "verification_status": "unverified",
+      "notes": "rules/INVENTORY.md treats rules 19-23 as one group and does not transcribe them individually. What is recorded is their subject and that none of it is assessable from a photograph.",
+      "requirements": [
+        {
+          "clause": "19",
+          "title": "Inspection and sampling at manufacturer or packer premises",
+          "requirement": "Enforcement procedure for Legal Metrology officers. It requires physical sampling and weighing at premises and imposes no declaration a package could bear.",
+          "verbatim_text": "",
+          "detection_method": "physical_inspection",
+          "automation_class": "physical_measurement",
+          "implementation_status": "not_applicable_to_project_scope",
+          "severity": "info",
+          "legal_reference": "Rule 19 of the Legal Metrology (Packaged Commodities) Rules, 2011",
+          "verification_status": "unverified",
+          "source_note": "NOT INDIVIDUALLY TRANSCRIBED. rules/INVENTORY.md records rules 19-23 as a group: 'Procedures for inspection at manufacturer, packer, wholesale and retail premises; maximum permissible error; deceptive packages', assessable only by physical sampling and weighing per the First, Fifth and Sixth Schedules. verbatim_text is EMPTY and verification_status is 'unverified' because the individual clause has not been read. Recorded so the framework covers rules 1-34 without a gap and so that asking about rule 19 returns a sourced answer rather than silence. This software is not an enforcement instrument."
+        }
+      ]
+    },
+    {
+      "rule_number": "20",
+      "title": "Inspection at the premises of a wholesale dealer",
+      "chapter": "Chapter II - Packages intended for retail sale",
+      "description": "Procedure for inspection and sampling at the premises of a wholesale dealer.",
+      "automation_class": "physical_measurement",
+      "verification_status": "unverified",
+      "requirements": [
+        {
+          "clause": "20",
+          "title": "Inspection and sampling at wholesale dealer premises",
+          "requirement": "Enforcement procedure requiring physical sampling. It imposes no declaration a package could bear.",
+          "verbatim_text": "",
+          "detection_method": "physical_inspection",
+          "automation_class": "physical_measurement",
+          "implementation_status": "not_applicable_to_project_scope",
+          "severity": "info",
+          "legal_reference": "Rule 20 of the Legal Metrology (Packaged Commodities) Rules, 2011",
+          "verification_status": "unverified",
+          "source_note": "NOT INDIVIDUALLY TRANSCRIBED - see rule 19's requirement for the group record in rules/INVENTORY.md covering rules 19-23."
+        }
+      ]
+    },
+    {
+      "rule_number": "21",
+      "title": "Inspection at the premises of a retail dealer",
+      "chapter": "Chapter II - Packages intended for retail sale",
+      "description": "Procedure for inspection and sampling at the premises of a retail dealer.",
+      "automation_class": "physical_measurement",
+      "verification_status": "unverified",
+      "requirements": [
+        {
+          "clause": "21",
+          "title": "Inspection and sampling at retail dealer premises",
+          "requirement": "Enforcement procedure requiring physical sampling. It imposes no declaration a package could bear.",
+          "verbatim_text": "",
+          "detection_method": "physical_inspection",
+          "automation_class": "physical_measurement",
+          "implementation_status": "not_applicable_to_project_scope",
+          "severity": "info",
+          "legal_reference": "Rule 21 of the Legal Metrology (Packaged Commodities) Rules, 2011",
+          "verification_status": "unverified",
+          "source_note": "NOT INDIVIDUALLY TRANSCRIBED - see rule 19's requirement for the group record in rules/INVENTORY.md covering rules 19-23."
+        }
+      ]
+    },
+    {
+      "rule_number": "22",
+      "title": "Maximum permissible error on a package",
+      "chapter": "Chapter II - Packages intended for retail sale",
+      "description": "The tolerance permitted between the declared and the actual net quantity, per the Schedules.",
+      "automation_class": "physical_measurement",
+      "verification_status": "unverified",
+      "notes": "THE CLEAREST EXAMPLE IN THE RULES OF SOMETHING AN IMAGE CANNOT DECIDE. Maximum permissible error is a comparison between a declaration and a WEIGHED quantity. No photograph, and no confidence score, establishes the second term.",
+      "requirements": [
+        {
+          "clause": "22",
+          "title": "Maximum permissible error between declared and actual quantity",
+          "requirement": "Prescribes the maximum permissible error between the declared net quantity and the actual quantity, determined per the First, Fifth and Sixth Schedules.",
+          "verbatim_text": "",
+          "detection_method": "physical_inspection",
+          "automation_class": "physical_measurement",
+          "implementation_status": "not_applicable_to_project_scope",
+          "severity": "info",
+          "legal_reference": "Rule 22 of the Legal Metrology (Packaged Commodities) Rules, 2011",
+          "verification_status": "unverified",
+          "source_note": "NOT INDIVIDUALLY TRANSCRIBED - see rule 19's requirement for the group record in rules/INVENTORY.md covering rules 19-23, which names maximum permissible error among their subjects and states that assessment requires physical sampling and weighing per the First, Fifth and Sixth Schedules. RECORDED PROMINENTLY BECAUSE IT IS THE REQUIREMENT MOST LIKELY TO BE WRONGLY AUTOMATED: a system that read '500 g' off a label and reported the package compliant with rule 22 would be asserting a weighing it never performed."
+        }
+      ]
+    },
+    {
+      "rule_number": "23",
+      "title": "Deceptive packages",
+      "chapter": "Chapter II - Packages intended for retail sale",
+      "description": "Concerns packages whose construction or filling is deceptive as to the quantity they contain.",
+      "automation_class": "physical_measurement",
+      "verification_status": "unverified",
+      "requirements": [
+        {
+          "clause": "23",
+          "title": "Packages must not be deceptive as to quantity",
+          "requirement": "Concerns packages that are deceptive as to the quantity contained. Assessment requires physical examination of the package and its contents.",
+          "verbatim_text": "",
+          "detection_method": "physical_inspection",
+          "automation_class": "physical_measurement",
+          "implementation_status": "not_applicable_to_project_scope",
+          "severity": "info",
+          "legal_reference": "Rule 23 of the Legal Metrology (Packaged Commodities) Rules, 2011",
+          "verification_status": "unverified",
+          "source_note": "NOT INDIVIDUALLY TRANSCRIBED - see rule 19's requirement for the group record in rules/INVENTORY.md covering rules 19-23, which names deceptive packages among their subjects. Assessing whether a package is deceptively constructed or filled needs the physical article, not a photograph of one face of it."
+        }
+      ]
+    },
+    {
+      "rule_number": "24",
+      "title": "Declarations on wholesale packages",
+      "chapter": "Chapter III - Wholesale packages",
+      "description": "The declaration set for wholesale packages, which is smaller than the Chapter II set and applies instead of it.",
+      "automation_class": "partially_automatable",
+      "verification_status": "verified",
+      "notes": "A SMALLER AND MORE TRACTABLE DECLARATION SET THAN RULE 6 - but the system cannot tell a wholesale package from a retail one, and the two sets are mutually exclusive. Applying rule 6 to a wholesale package, which this system currently would, is an active false-positive source.",
+      "requirements": [
+        {
+          "clause": "24",
+          "title": "Name and address, identity of the commodity, and number or net quantity",
+          "requirement": "Every wholesale package must bear a legible, definite, plain and conspicuous declaration of: the name and address of the manufacturer or importer, or of the packer where they are not the packer; the identity of the commodity; and the total number of retail packages it contains, or the net quantity in standard units.",
+          "verbatim_text": "Every wholesale package shall bear thereon a legible, definite, plain and conspicuous declaration as to - (a) The name and address of the manufacturer or importer or where the manufacturer or importer is not the packer, of the packer; (b) the identity of the commodity contained in the package; and (c) the total number of retail package contained in such wholesale package or the net quantity in terms of standard units of weights, measures or number...",
+          "detection_method": "ocr",
+          "automation_class": "partially_automatable",
+          "implementation_status": "blocked_by_missing_applicability_data",
+          "legal_reference": "Rule 24 of the Legal Metrology (Packaged Commodities) Rules, 2011",
+          "verification_status": "verified",
+          "source_note": "Quoted as far as reproduced in rules/INVENTORY.md from the Department's consolidated publication (sha256 0ef948f9...f983a4b); the trailing ellipsis is INVENTORY's own, and a proviso applying where another law requires a similar declaration is recorded there but not transcribed. Checked 2026-08-30 by Claude Code for raghavrrrao. Blocked on the retail/wholesale applicability input. Clause (b), the identity of the commodity, is additionally near common_or_generic_name, which is in the extractor's UNSUPPORTED_KEYS. HUMAN COUNTER-REVIEW OUTSTANDING.",
+          "applicability": [
+            {
+              "condition": "wholesale-package",
+              "mode": "requires",
+              "note": "Chapter III applies to wholesale packages, in place of the Chapter II declarations."
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "rule_number": "25",
+      "title": "Export packages",
+      "chapter": "Chapter IV - Export packages",
+      "description": "Bars the sale in India of an export package unless it has been re-packed or relabelled in accordance with Chapter II.",
+      "automation_class": "manual_review",
+      "verification_status": "verified",
+      "requirements": [
+        {
+          "clause": "25",
+          "title": "An export package may not be sold in India without re-packing or relabelling",
+          "requirement": "An export package must not be sold in India unless the manufacturer or packer has re-packed or relabelled the commodity in accordance with Chapter II.",
+          "verbatim_text": "An export package shall not be sold in India unless the manufacturer or packer has re-packed or relabeled the commodity in accordance with the provisions contained in Chapter II...",
+          "detection_method": "user_input",
+          "automation_class": "partially_automatable",
+          "implementation_status": "blocked_by_missing_applicability_data",
+          "legal_reference": "Rule 25 of the Legal Metrology (Packaged Commodities) Rules, 2011",
+          "verification_status": "verified",
+          "source_note": "Quoted as far as reproduced in rules/INVENTORY.md from the Department's consolidated publication (sha256 0ef948f9...f983a4b); the trailing ellipsis is INVENTORY's own. Checked 2026-08-30 by Claude Code for raghavrrrao. Requires knowing BOTH that the package is an export package AND that it is offered for sale in India. Neither is recorded. HUMAN COUNTER-REVIEW OUTSTANDING.",
+          "applicability": [
+            {
+              "condition": "export-package",
+              "mode": "requires",
+              "note": "Applies to export packages offered for sale in India."
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "rule_number": "26",
+      "title": "Exemption in respect of certain packages",
+      "chapter": "Chapter V - Exemptions",
+      "description": "Takes several classes of package outside the Rules altogether: very small packages, restaurant fast food, DPCO formulations, and thread sold in coil to handloom weavers.",
+      "automation_class": "manual_review",
+      "verification_status": "verified",
+      "notes": "Like rule 3, a scope gate no rule file can encode - but wider, because it removes a package from the RULES, not merely from Chapter II. A 10 g sachet, a restaurant takeaway box and a DPCO-covered medicine are all outside the Rules and all three would currently be evaluated against the active rules.",
+      "requirements": [
+        {
+          "clause": "26",
+          "title": "Packages the Rules do not apply to at all",
+          "requirement": "The Rules do not apply to a package if the net weight or measure is ten gram or ten millilitre or less where sold by weight or measure (except for tobacco and tobacco products); to fast food items packed by a restaurant or hotel and the like; to scheduled and non-scheduled formulations under the Drugs (Price Control) Order, 2013, save that no exemption applies to medical devices declared as drugs; or to thread sold in coil to handloom weavers.",
+          "verbatim_text": "Nothing contained in these rules shall apply to any package containing a commodity if-- (a) the net weight or measure of the commodity is ten gram or ten millilitre or less, if sold by weight or measure; ... (b) any package containing fast food items packed by restaurant or hotel and the like; (c) it contains scheduled formulations and non-scheduled formulations covered under the Drugs (Price Control) Order, 2013 ... Provided that no exemption shall be applicable to medical devices declared as drugs;",
+          "detection_method": "user_input",
+          "automation_class": "partially_automatable",
+          "implementation_status": "blocked_by_missing_applicability_data",
+          "severity": "critical",
+          "source": "G.S.R. 629(E)",
+          "legal_reference": "Rule 26 of the Legal Metrology (Packaged Commodities) Rules, 2011",
+          "effective_from": "2018-01-01",
+          "verification_status": "verified",
+          "source_note": "Quoted as reproduced in rules/SOURCES.md and rules/INVENTORY.md from the Department's consolidated publication (sha256 0ef948f9...f983a4b); the ellipses are those sources' own. Clause (c) is recorded as substituted and clause (d) omitted vide G.S.R. 629(E) w.e.f. 1 January 2018, hence the effective_from - NOTE THAT CLAUSES (a) AND (b) ARE OLDER and dating the whole rule from the 2018 substitution understates their currency; a reviewer splitting the clauses into separate requirements would fix that. The proviso excluding tobacco and tobacco products from clause (a) was inserted vide G.S.R. 385(E) dated 14 May 2015 w.e.f. 1 July 2016. Checked 2026-08-30 by Claude Code for raghavrrrao. Severity is 'critical' because a wrong answer invalidates every finding on the package, not because the clause outranks others. HUMAN COUNTER-REVIEW OUTSTANDING.",
+          "applicability": [
+            {
+              "condition": "quantity-10g-10ml-or-less",
+              "mode": "scope_gate",
+              "note": "Clause (a), if sold by weight or measure."
+            },
+            {
+              "condition": "tobacco-product",
+              "mode": "withholds_exemption",
+              "note": "The proviso inserted vide G.S.R. 385(E) w.e.f. 1 July 2016 DISAPPLIES clause (a) to tobacco and tobacco products - i.e. the exemption is withheld, so the Rules continue to apply."
+            },
+            {
+              "condition": "fast-food-restaurant-packed",
+              "mode": "scope_gate",
+              "note": "Clause (b)."
+            },
+            {
+              "condition": "dpco-formulation",
+              "mode": "scope_gate",
+              "note": "Clause (c)."
+            },
+            {
+              "condition": "medical-device",
+              "mode": "withholds_exemption",
+              "note": "The proviso to clause (c): no exemption applies to medical devices declared as drugs, so the Rules continue to apply to them."
+            },
+            {
+              "condition": "thread-coil-handloom",
+              "mode": "scope_gate",
+              "note": "Thread sold in coil to handloom weavers."
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "rule_number": "27",
+      "title": "Application for registration of manufacturers, packers and importers",
+      "chapter": "Chapter VI - Registration",
+      "description": "Application for registration with the Director or the Controller.",
+      "automation_class": "administrative",
+      "verification_status": "unverified",
+      "notes": "rules/INVENTORY.md treats rules 27-30 as one group: 'Application for registration with the Director or Controller, fees, shorter address, compilation and circulation of lists.' None is individually transcribed.",
+      "requirements": [
+        {
+          "clause": "27",
+          "title": "Registration with the Director or Controller",
+          "requirement": "Administrative registration of manufacturers, packers and importers with the Director or the Controller. Nothing on a package evidences it.",
+          "verbatim_text": "",
+          "detection_method": "administrative",
+          "automation_class": "administrative",
+          "implementation_status": "not_applicable_to_project_scope",
+          "severity": "info",
+          "legal_reference": "Rule 27 of the Legal Metrology (Packaged Commodities) Rules, 2011",
+          "verification_status": "unverified",
+          "source_note": "NOT INDIVIDUALLY TRANSCRIBED. rules/INVENTORY.md records rules 27-30 as a group covering application for registration with the Director or Controller, fees, shorter address, and the compilation and circulation of lists, and states that nothing on the package evidences registration. verbatim_text is EMPTY and the status is 'unverified' because the clause has not been read. A REGISTRATION STATUS CAN NEVER BE ESTABLISHED FROM A LABEL PHOTOGRAPH - the honest output is REVIEW_REQUIRED, and it would remain so even with a perfect OCR engine.",
+          "applicability": [
+            {
+              "condition": "registered-manufacturer-packer-importer",
+              "mode": "requires",
+              "note": "The obligation is to hold the registration; the fact lives in the regulator's register."
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "rule_number": "28",
+      "title": "Registration fees",
+      "chapter": "Chapter VI - Registration",
+      "description": "Fees payable on registration.",
+      "automation_class": "administrative",
+      "verification_status": "unverified",
+      "requirements": [
+        {
+          "clause": "28",
+          "title": "Fees payable on registration",
+          "requirement": "Administrative. Fees payable on registration; nothing on a package evidences it.",
+          "verbatim_text": "",
+          "detection_method": "administrative",
+          "automation_class": "administrative",
+          "implementation_status": "not_applicable_to_project_scope",
+          "severity": "info",
+          "legal_reference": "Rule 28 of the Legal Metrology (Packaged Commodities) Rules, 2011",
+          "verification_status": "unverified",
+          "source_note": "NOT INDIVIDUALLY TRANSCRIBED - see rule 27's requirement for the group record in rules/INVENTORY.md covering rules 27-30."
+        }
+      ]
+    },
+    {
+      "rule_number": "29",
+      "title": "Shorter address on the package",
+      "chapter": "Chapter VI - Registration",
+      "description": "Provision for a shorter address where a registration has been obtained.",
+      "automation_class": "administrative",
+      "verification_status": "unverified",
+      "requirements": [
+        {
+          "clause": "29",
+          "title": "Shorter address permitted on registration",
+          "requirement": "Administrative provision concerning a shorter address. Recorded because it bears on rule 10(1)'s 'complete address' requirement, which is itself not evaluable here.",
+          "verbatim_text": "",
+          "detection_method": "administrative",
+          "automation_class": "administrative",
+          "implementation_status": "not_applicable_to_project_scope",
+          "severity": "info",
+          "legal_reference": "Rule 29 of the Legal Metrology (Packaged Commodities) Rules, 2011",
+          "verification_status": "unverified",
+          "source_note": "NOT INDIVIDUALLY TRANSCRIBED - see rule 27's requirement for the group record in rules/INVENTORY.md covering rules 27-30, which names 'shorter address' among their subjects. FLAGGED FOR A REVIEWER: if this rule permits a shortened address for a registered person, then any future check on the completeness of an address under rule 10(1) must account for it, or it would report a lawfully shortened address as a defect. The clause has NOT been read and that reading of it is NOT asserted."
+        }
+      ]
+    },
+    {
+      "rule_number": "30",
+      "title": "Compilation and circulation of lists of registered persons",
+      "chapter": "Chapter VI - Registration",
+      "description": "Compilation and circulation of the lists of registered manufacturers, packers and importers.",
+      "automation_class": "administrative",
+      "verification_status": "unverified",
+      "requirements": [
+        {
+          "clause": "30",
+          "title": "Lists of registered persons",
+          "requirement": "Administrative. Compilation and circulation of lists of registered persons; nothing on a package evidences it.",
+          "verbatim_text": "",
+          "detection_method": "administrative",
+          "automation_class": "administrative",
+          "implementation_status": "not_applicable_to_project_scope",
+          "severity": "info",
+          "legal_reference": "Rule 30 of the Legal Metrology (Packaged Commodities) Rules, 2011",
+          "verification_status": "unverified",
+          "source_note": "NOT INDIVIDUALLY TRANSCRIBED - see rule 27's requirement for the group record in rules/INVENTORY.md covering rules 27-30. Noted for a reviewer: if such a list is published, it is the reference dataset that would make the 'registered-manufacturer-packer-importer' condition determinable."
+        }
+      ]
+    },
+    {
+      "rule_number": "31",
+      "title": "Advertisements mentioning the retail sale price",
+      "chapter": "Chapter VII - General",
+      "description": "Requires an advertisement that mentions the retail sale price to also declare the net quantity, at the same font size.",
+      "automation_class": "manual_review",
+      "verification_status": "verified",
+      "requirements": [
+        {
+          "clause": "31(1)",
+          "title": "An advertisement mentioning price must declare the net quantity",
+          "requirement": "Any advertisement mentioning the retail sale price of a pre-packaged commodity must contain a declaration of the net quantity or number of the commodity in the package.",
+          "verbatim_text": "Any advertisement mentioning the retail sale price of the pre-packaged commodity shall contain a declaration as to the net quantity or number of the commodity contained in the package.",
+          "detection_method": "not_applicable",
+          "automation_class": "manual_review",
+          "implementation_status": "not_applicable_to_project_scope",
+          "legal_reference": "Rule 31(1) of the Legal Metrology (Packaged Commodities) Rules, 2011",
+          "verification_status": "verified",
+          "source_note": "Quoted verbatim in rules/INVENTORY.md from the Department's consolidated publication (sha256 0ef948f9...f983a4b). Checked 2026-08-30 by Claude Code for raghavrrrao. GOVERNS ADVERTISEMENTS, NOT PACKAGES. This system analyses package photographs; an advertisement is a different artefact and is not among the inputs. HUMAN COUNTER-REVIEW OUTSTANDING."
+        },
+        {
+          "clause": "31(2)",
+          "title": "Net quantity at the same font size as the price in an advertisement",
+          "requirement": "In such an advertisement, the font size of the net quantity must be the same as that of the retail sale price.",
+          "verbatim_text": "The font size of the net quantity in the advertisement shall be same as that of retail sale price.",
+          "detection_method": "not_applicable",
+          "automation_class": "manual_review",
+          "implementation_status": "not_applicable_to_project_scope",
+          "legal_reference": "Rule 31(2) of the Legal Metrology (Packaged Commodities) Rules, 2011",
+          "verification_status": "verified",
+          "source_note": "Quoted verbatim in rules/INVENTORY.md from the Department's consolidated publication (sha256 0ef948f9...f983a4b). Checked 2026-08-30 by Claude Code for raghavrrrao. Note that this is a font-size comparison, which the geometry work behind rules 7 and 8 could in principle perform - but on an ADVERTISEMENT, which this system does not ingest. Detection is recorded as not_applicable for that reason, not because the measurement is impossible. HUMAN COUNTER-REVIEW OUTSTANDING."
+        }
+      ]
+    },
+    {
+      "rule_number": "32",
+      "title": "Penalties and compounding",
+      "chapter": "Chapter VII - General",
+      "description": "Sanctions for contravention, and compounding of offences.",
+      "automation_class": "manual_review",
+      "verification_status": "verified",
+      "notes": "THIS SYSTEM DOES NOT AND MUST NOT COMPUTE PENALTIES. The project's stated position is that it assists a human reviewer and makes no legal determination; attaching a rupee figure to a finding would contradict that directly.",
+      "requirements": [
+        {
+          "clause": "32",
+          "title": "Penalties and compounding of offences",
+          "requirement": "Prescribes sanctions for contravention of the Rules and provides for compounding. It imposes no declaration on a package and is not something this system evaluates or quantifies.",
+          "verbatim_text": "",
+          "detection_method": "manual_review",
+          "automation_class": "manual_review",
+          "implementation_status": "not_applicable_to_project_scope",
+          "severity": "info",
+          "legal_reference": "Rule 32 of the Legal Metrology (Packaged Commodities) Rules, 2011",
+          "verification_status": "verified",
+          "source_note": "rules/INVENTORY.md records rule 32 as 'Sanctions' and states the project's position: 'This system does not and must not compute penalties: the project's stated position is that it assists a human reviewer and makes no legal determination. Attaching a rupee figure to a finding would contradict that directly.' verbatim_text is EMPTY - the penalty provisions are not transcribed, deliberately, since transcribing a schedule of fines invites exactly the use this project refuses. Checked 2026-08-30 by Claude Code for raghavrrrao. Recorded so that a question about rule 32 returns this answer rather than nothing."
+        }
+      ]
+    },
+    {
+      "rule_number": "32A",
+      "title": "Rule 32-A - content not established by the project's verified sources",
+      "chapter": "Chapter VII - General",
+      "description": "PLACEHOLDER. The Step 1 brief asks that rule 32-A be represented 'where applicable'. NO PROVISION NUMBERED 32-A APPEARS IN THE PROJECT'S VERIFIED MATERIAL - neither rules/SOURCES.md's clause-by-clause record nor rules/INVENTORY.md's chapter-by-chapter inventory mentions one, and rules/INVENTORY.md moves directly from rule 32 to rule 33. NOTHING ABOUT ITS CONTENT IS ASSERTED HERE.",
+      "automation_class": "manual_review",
+      "verification_status": "requires_review",
+      "is_active": false,
+      "notes": "Recorded, inactive, as an OPEN QUESTION FOR A NAMED REVIEWER, not as a rule. Either (a) rule 32-A does not exist, in which case this row should be deleted; or (b) it was inserted by an amendment in the unretrieved 2022-2025 chain recorded in rules/SOURCES.md - most plausibly G.S.R. 881(E) dated 2 December 2025, whose text could not be obtained - in which case its content must be transcribed from the Gazette before anything is written against it. Creating this row rather than omitting it makes the question visible; it is is_active:false and carries NO requirement, so nothing can be evaluated against it.",
+      "requirements": []
+    },
+    {
+      "rule_number": "33",
+      "title": "Power to relax",
+      "chapter": "Chapter VII - General",
+      "description": "Empowers the Central Government to relax one or more provisions of the Rules for a reasonable period, with specified corrective measures.",
+      "automation_class": "manual_review",
+      "verification_status": "verified",
+      "notes": "THE MOST IMPORTANT RULE IN THIS FRAMEWORK FOR INTERPRETING ANY OUTPUT. A relaxation granted under rule 33 makes an otherwise-correct finding wrong, and this system has no way to know one exists. Every finding it produces is conditional on no relaxation applying.",
+      "requirements": [
+        {
+          "clause": "33",
+          "title": "Central Government may relax provisions of the Rules",
+          "requirement": "The Central Government may permit a manufacturer or packer to pack for sale for a reasonable period by relaxing one or more provisions of the Rules, with such corrective measures as may be specified.",
+          "verbatim_text": "The Central Government may ... permit a manufacturer or packer to pack for sale the packages for a reasonable period by relaxing one or more provision of these Rules with such corrective measures as may be specified.",
+          "detection_method": "manual_review",
+          "automation_class": "manual_review",
+          "implementation_status": "legal_review_required",
+          "severity": "critical",
+          "legal_reference": "Rule 33 of the Legal Metrology (Packaged Commodities) Rules, 2011",
+          "verification_status": "verified",
+          "source_note": "Quoted as reproduced in rules/INVENTORY.md from the Department's consolidated publication (sha256 0ef948f9...f983a4b); the internal ellipsis is INVENTORY's own. Checked 2026-08-30 by Claude Code for raghavrrrao. INVENTORY states the consequence directly: 'A relaxation granted under rule 33 makes an otherwise-correct finding wrong. The system has no way to know one exists. Every finding it produces is therefore conditional on no relaxation applying - a caveat that belongs in the user-facing output, not only here.' Severity is 'critical' for that reason: it qualifies every other finding. The Legal Metrology (Packaged Commodities) Amendment Rules, 2025 further provide that rule 33 relaxations do not apply where the Medical Devices Rules, 2017 apply - known only from a PIB release, not the Gazette. HUMAN COUNTER-REVIEW OUTSTANDING.",
+          "applicability": [
+            {
+              "condition": "rule-33-relaxation-granted",
+              "mode": "scope_gate",
+              "note": "Where a relaxation has been granted, the relaxed provision does not bind the package for the permitted period. There is no register of relaxations available to this system."
+            },
+            {
+              "condition": "medical-device",
+              "mode": "exempts",
+              "note": "Per the PIB release for the Legal Metrology (Packaged Commodities) Amendment Rules, 2025, rule 33 relaxations do not apply where the Medical Devices Rules, 2017 apply. RECORDED FROM A PRESS RELEASE, NOT THE GAZETTE."
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "rule_number": "34",
+      "title": "Repeal and savings",
+      "chapter": "Chapter VII - General",
+      "description": "Repeals the Standards of Weights and Measures (Packaged Commodities) Rules, 1977.",
+      "automation_class": "manual_review",
+      "verification_status": "verified",
+      "requirements": [
+        {
+          "clause": "34",
+          "title": "Repeal of the Standards of Weights and Measures (Packaged Commodities) Rules, 1977",
+          "requirement": "Repeals the Standards of Weights and Measures (Packaged Commodities) Rules, 1977, with savings. It imposes no obligation on a package.",
+          "verbatim_text": "",
+          "detection_method": "not_applicable",
+          "automation_class": "manual_review",
+          "implementation_status": "not_applicable_to_project_scope",
+          "severity": "info",
+          "legal_reference": "Rule 34 of the Legal Metrology (Packaged Commodities) Rules, 2011",
+          "verification_status": "verified",
+          "source_note": "rules/INVENTORY.md records rule 34 as 'Repeals the Standards of Weights and Measures (Packaged Commodities) Rules, 1977', without quoting it, so verbatim_text is EMPTY. Checked 2026-08-30 by Claude Code for raghavrrrao. RECORDED WITH PRACTICAL CONSEQUENCE: the 1977 Rules are repealed, so no requirement may be sourced from them. That matters concretely for rule 12(6), where the only prohibited-word list this project has seen ('minimum', 'not less than', 'average', 'about', 'approximately') is described as appearing in the PRE-2011 text - i.e. in a repealed instrument. HUMAN COUNTER-REVIEW OUTSTANDING."
+        }
+      ]
+    }
+  ]
+}

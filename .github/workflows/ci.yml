@@ -3,10 +3,11 @@
 # Runs the same commands the README tells a developer to run locally. If CI
 # ever needs a command that is not in the README, one of the two is wrong.
 #
-# Deliberately minimal: three jobs, no matrix across Python/Node versions, no
-# caching beyond what setup-python and setup-node provide for free, no
-# deployment. A six-person hackathon team needs "did I break main?" answered in
-# under three minutes, not a build system to maintain.
+# Deliberately minimal: four jobs, no matrix across Python/Node versions, no
+# caching beyond what setup-python and setup-node provide for free, and no
+# deployment - this workflow proves the image is deployable and stops there.
+# A six-person hackathon team needs "did I break main?" answered in a few
+# minutes, not a build system to maintain.
 
 name: CI
 
@@ -100,6 +101,44 @@ jobs:
       - name: Rule loader runs
         run: python backend/manage.py load_rules --dry-run
 
+      # The other half of the setup, and it is not optional. Without the legal
+      # framework a database has executable rules but no clauses, no source
+      # citations and no applicability conditions - and the verdicts differ,
+      # because a clause gated on an undeclared fact has no gate to check and
+      # records a violation instead of asking for review. Runs for real rather
+      # than --dry-run so the shipped framework files are actually written
+      # against a clean database, which is what the README tells a developer to
+      # do. Order is pinned by apps/rules/tests/test_setup_sequence.py.
+      - name: Legal framework loader runs
+        run: python backend/manage.py load_legal_framework
+
+      # The single command a deployment runs. It re-runs all four of the steps
+      # above, which is the point: it must be idempotent, because it runs on
+      # every deploy and not only the first. It also verifies the resulting
+      # state and exits non-zero if anything is empty - so if the framework
+      # loader above ever silently stopped loading, this fails here rather than
+      # producing different verdicts in a deployment.
+      - name: Deployment setup command is idempotent
+        run: python backend/manage.py deploy_setup
+
+      # Static files are collected before the tests rather than after, because
+      # WhiteNoise warns on every request when STATIC_ROOT does not exist and
+      # 170 warnings is where a real one goes to hide. It also verifies that
+      # collectstatic works under the production storage backend, which the
+      # container build depends on.
+      - name: Collect static files
+        env:
+          DJANGO_DEBUG: "False"
+        run: python backend/manage.py collectstatic --noinput --clear
+
+      # Django's own deployment audit: DEBUG, secret key, cookie flags, HSTS,
+      # SSL redirect, allowed hosts. Runs with DEBUG=False because half of
+      # these checks are no-ops otherwise.
+      - name: Deployment checks
+        env:
+          DJANGO_DEBUG: "False"
+        run: python backend/manage.py check --deploy
+
       - name: Backend tests
         working-directory: backend
         run: pytest -q
@@ -175,3 +214,68 @@ jobs:
 
       - name: Production build
         run: npm run build
+
+  container:
+    name: Production image (Docker + Tesseract)
+    runs-on: ubuntu-latest
+
+    # This job exists for one thing the other three cannot check: that the
+    # deployed image actually contains the Tesseract binary. `pip` cannot
+    # install it, so a green `backend` job proves nothing about it - that suite
+    # passes with the placeholder engine on a machine with no OCR stack at all.
+    # An image without the binary builds fine, starts fine, reports itself as
+    # running a real (non-placeholder) engine, and fails every single upload.
+    #
+    # No database and no running server here. Everything below is answerable
+    # from the image itself, which keeps the job fast and leaves out the
+    # container networking that would be the flakiest part of it.
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Build the production image
+        run: docker build --tag legalmetrology-backend:ci .
+
+      # The reason the Dockerfile exists at all.
+      - name: Tesseract is installed in the image
+        run: docker run --rm legalmetrology-backend:ci tesseract --version
+
+      # collectstatic runs at build time, and CompressedManifestStaticFilesStorage
+      # raises at request time when its manifest is absent - so an image missing
+      # this fails on its first admin page rather than during the build.
+      - name: Static files were collected into the image
+        run: >-
+          docker run --rm legalmetrology-backend:ci
+          test -f /app/backend/staticfiles/staticfiles.json
+
+      # The rule and framework files are read from disk by deploy_setup. An
+      # image without them builds and starts, then fails initialisation.
+      - name: Rule and framework files are present in the image
+        run: >-
+          docker run --rm legalmetrology-backend:ci
+          test -f /app/rules/framework/applicability_conditions.json
+
+      # The statement this job is really making: with the real OCR pipeline
+      # selected, the image reports a pipeline that is NOT a placeholder AND is
+      # available. Either half alone is not that claim - which is exactly the
+      # distinction the health endpoint now reports.
+      #
+      # Touches no database. `default_pipeline_status` resolves the pipeline and
+      # warms the engine, nothing more, so the throwaway values below are never
+      # used to connect to anything; they exist because settings.py reads them
+      # at import time and has no defaults for them.
+      - name: The image can run the real OCR pipeline
+        run: |
+          docker run --rm \
+            --env DJANGO_SECRET_KEY=ci-only-key-not-used-outside-this-runner \
+            --env DJANGO_DEBUG=False \
+            --env DATABASE_URL=postgres://ci:ci@127.0.0.1:5432/ci \
+            --env DEFAULT_EXTRACTION_ENGINE_NAME=tesseract \
+            --env DEFAULT_EXTRACTION_ENGINE_VERSION=0.3.0 \
+            legalmetrology-backend:ci \
+            python /app/backend/manage.py shell -c '
+          from apps.extraction.services import extraction_service
+          status = extraction_service.default_pipeline_status()
+          print(status)
+          assert status.is_available, "engine unavailable: " + status.detail
+          assert status.is_placeholder is False, "a placeholder is configured"
+          '

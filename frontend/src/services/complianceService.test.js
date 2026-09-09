@@ -114,6 +114,16 @@ describe('evaluateExtractionRun', () => {
     expect(findings[0]).toEqual({
       id: 1,
       ruleCode: 'LM-PC-0001',
+      // The four that come from the legal framework rather than from the
+      // executable rule. Dropping any of them silently strips a finding of the
+      // context that makes it auditable, and nothing in the browser complains.
+      clause: '6(1)(c)',
+      legalSourceCitation: 'G.S.R. 202(E)',
+      detectionMethod: 'ocr',
+      // Compared against the fixture rather than restated: the note is a
+      // multi-paragraph string and a second copy of it here would be testing
+      // that two literals match, not that the mapper carried it through.
+      applicabilityNote: findingBody().applicability_note,
       title: 'Net quantity declaration',
       requirement: 'The package must declare its net quantity.',
       legalReference: 'Rule 6(1)(e), LMPC Rules 2011',
@@ -122,6 +132,9 @@ describe('evaluateExtractionRun', () => {
       status: 'passed',
       downgradedFromFailed: false,
       fieldKey: 'net_quantity',
+      // Both survive, and neither stands in for the other.
+      extractedRawValue: 'Net Qty: 500 g',
+      extractedNormalizedValue: { quantity: 500, unit: 'g', uncertain: false },
       extractedConfidence: 0.91,
       message: 'The declaration was found in the text read from this image.',
       evidenceExcerpt: 'Net Qty: 500 g',

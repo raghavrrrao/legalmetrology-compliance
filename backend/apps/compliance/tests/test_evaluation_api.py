@@ -292,6 +292,222 @@ def test_a_category_code_is_used_when_the_image_has_no_product(
     assert body["findings"][0]["rule_code"] == "T-CATEGORY"
 
 
+# --- applicability declarations ----------------------------------------------
+#
+# The Step 3 addition to this endpoint, and the reason it is not a way to steer
+# the rule set: a declaration states a FACT ABOUT THE GOODS - this package
+# contains bidi, this package is imported - which the Rules themselves make
+# decisive and which no photograph can establish. What the fact means is still
+# decided by `apps.compliance.services.applicability` from conditions loaded out
+# of the verified framework.
+
+
+@pytest.fixture
+def framework(settings, category):
+    """The real taxonomy, rules and framework, as they are deployed.
+
+    Applicability conditions come from `rules/framework/`, so an endpoint test
+    about declaring them has to load the real vocabulary rather than invent
+    codes that would pass whatever the framework says.
+    """
+    from apps.catalog.models import ProductCategory
+    from apps.rules.framework_loader import load_framework
+    from apps.rules.loader import load_rules
+
+    root = ProductCategory.objects.create(
+        code="packaged-commodity", name="Packaged commodity"
+    )
+    category.parent = root
+    category.save()
+    ProductCategory.objects.create(
+        code="packaged-non-food", name="Packaged non-food", parent=root
+    )
+    assert load_rules(settings.RULES_DEFINITIONS_DIR).ok
+    assert load_framework(settings.RULES_FRAMEWORK_DIR).ok
+
+
+def test_declaring_import_status_moves_a_clause_out_of_review(
+    client, framework, completed_run, make_extracted_field
+):
+    """Rule 6(1)(aa) binds imported packages only, and nothing else says so.
+
+    Without the declaration the clause reaches REVIEW_REQUIRED, which is
+    correct and is also as far as Step 2 could get. Declaring the fact is what
+    lets the system answer.
+    """
+    make_extracted_field(completed_run, LabelFieldKey.NET_QUANTITY.value)
+
+    undeclared = _evaluate(client, completed_run).json()
+    declared = _evaluate(
+        client,
+        completed_run,
+        applicability_declarations={"imported-product": "no"},
+    ).json()
+
+    def status_of(body, code):
+        return next(f["status"] for f in body["findings"] if f["rule_code"] == code)
+
+    assert status_of(undeclared, "LM-PC-0007") == (
+        ComplianceFinding.Status.INCONCLUSIVE
+    )
+    assert status_of(declared, "LM-PC-0007") == (
+        ComplianceFinding.Status.NOT_APPLICABLE
+    )
+
+
+def test_a_declaration_is_recorded_against_the_product_with_its_source(
+    client, framework, completed_run
+):
+    """A stated fact is evidence about who said what, not an anonymous flag."""
+    from apps.catalog.models import ProductApplicabilityDeclaration
+
+    _evaluate(
+        client,
+        completed_run,
+        applicability_declarations={"imported-product": "yes"},
+    )
+
+    declaration = ProductApplicabilityDeclaration.objects.get(
+        product=completed_run.image.product, condition__code="imported-product"
+    )
+    assert declaration.answer == ProductApplicabilityDeclaration.Answer.YES
+    assert declaration.source == ProductApplicabilityDeclaration.Source.SUBMITTER
+
+
+def test_re_declaring_corrects_the_answer_rather_than_adding_a_second(
+    client, framework, completed_run
+):
+    """Two rows saying opposite things would leave the resolver picking one."""
+    from apps.catalog.models import ProductApplicabilityDeclaration
+
+    _evaluate(
+        client, completed_run, applicability_declarations={"bidi": "yes"}
+    )
+    _evaluate(
+        client, completed_run, applicability_declarations={"bidi": "no"}
+    )
+
+    rows = ProductApplicabilityDeclaration.objects.filter(
+        product=completed_run.image.product, condition__code="bidi"
+    )
+    assert rows.count() == 1
+    assert rows.get().answer == ProductApplicabilityDeclaration.Answer.NO
+
+
+def test_an_unknown_condition_code_is_rejected_rather_than_ignored(
+    client, framework, completed_run
+):
+    """Silently dropping it looks identical to not having sent the fact."""
+    response = _evaluate(
+        client,
+        completed_run,
+        applicability_declarations={"no-such-condition": "yes"},
+    )
+
+    assert response.status_code == 400
+    assert "applicability_declarations" in response.json()["error"]["details"]
+    assert not ComplianceCheck.objects.exists()
+
+
+def test_a_condition_the_system_cannot_establish_is_rejected(
+    client, framework, completed_run
+):
+    """A rule 33 relaxation cannot be switched on by asserting it.
+
+    The framework records the condition as not determinable, and the resolver
+    answers UNKNOWN for it whatever anyone states. Accepting the answer and
+    then ignoring it would let a caller believe they had declared something.
+    """
+    response = _evaluate(
+        client,
+        completed_run,
+        applicability_declarations={"rule-33-relaxation-granted": "yes"},
+    )
+
+    assert response.status_code == 400
+    details = response.json()["error"]["details"]["applicability_declarations"]
+    assert "cannot establish" in " ".join(details)
+
+
+def test_an_invalid_answer_is_rejected(client, framework, completed_run):
+    response = _evaluate(
+        client,
+        completed_run,
+        applicability_declarations={"imported-product": "probably"},
+    )
+
+    assert response.status_code == 400
+
+
+def test_declarations_with_no_product_and_no_category_are_refused(
+    client, framework, product_image
+):
+    """They would have nowhere to be recorded and no rule to affect."""
+    product_image.product = None
+    product_image.save()
+    run = ExtractionRun.objects.create(
+        image=product_image,
+        engine_name="stub",
+        engine_version="0.0.0",
+        status=ExtractionRun.Status.COMPLETED,
+        recognised_text="Some text read from the package",
+    )
+
+    response = _evaluate(
+        client, run, applicability_declarations={"imported-product": "no"}
+    )
+
+    assert response.status_code == 400
+    assert "category_code" in " ".join(
+        response.json()["error"]["details"]["applicability_declarations"]
+    )
+
+
+def test_omitting_declarations_changes_nothing(
+    client, framework, completed_run, make_extracted_field
+):
+    """Backward compatibility: the field is optional and absent means silent.
+
+    An unstated fact stays unestablished, which is the Step 2 behaviour every
+    existing caller relies on.
+    """
+    from apps.catalog.models import ProductApplicabilityDeclaration
+
+    make_extracted_field(completed_run, LabelFieldKey.NET_QUANTITY.value)
+
+    response = _evaluate(client, completed_run)
+
+    assert response.status_code == 201
+    assert not ProductApplicabilityDeclaration.objects.exists()
+
+
+def test_a_declaration_cannot_choose_which_rules_run(
+    client, framework, completed_run, make_extracted_field
+):
+    """The boundary the endpoint's docstring claims, asserted.
+
+    Declaring every fact answerable still evaluates the same rule set: the
+    facts change which clauses GOVERN the package, never which rules the engine
+    considers.
+    """
+    make_extracted_field(completed_run, LabelFieldKey.NET_QUANTITY.value)
+
+    plain = _evaluate(client, completed_run).json()
+    declared = _evaluate(
+        client,
+        completed_run,
+        applicability_declarations={
+            "imported-product": "no",
+            "bidi": "no",
+            "domestic-lpg-cylinder": "no",
+        },
+    ).json()
+
+    assert {f["rule_code"] for f in plain["findings"]} == (
+        {f["rule_code"] for f in declared["findings"]}
+    )
+
+
 # --- the ML layer decides nothing --------------------------------------------
 
 

@@ -157,9 +157,30 @@ def _accept_any_parameters(parameters: dict) -> None:
 
 
 def _register_builtin_checks() -> None:
+    from apps.rules.checks.consumer_care import (
+        check_consumer_care_elements,
+        validate_no_parameters as validate_no_consumer_care_parameters,
+    )
+    from apps.rules.checks.declaration_dates import (
+        check_month_year_declaration,
+        validate_month_year_parameters,
+    )
     from apps.rules.checks.field_presence import (
         check_field_presence,
         validate_field_presence_parameters,
+    )
+    from apps.rules.checks.field_presence_any_of import (
+        check_field_presence_any_of,
+        validate_field_presence_any_of_parameters,
+    )
+    from apps.rules.checks.quantity_units import (
+        check_prohibited_counting_unit,
+        check_si_unit,
+        validate_no_parameters,
+    )
+    from apps.rules.checks.retail_price import (
+        check_retail_price_tax_declaration,
+        validate_no_parameters as validate_no_retail_price_parameters,
     )
 
     register_check(
@@ -167,6 +188,60 @@ def _register_builtin_checks() -> None:
         check_field_presence,
         parameter_validator=validate_field_presence_parameters,
         description="Was this declaration found in the extracted label data?",
+    )
+    register_check(
+        "field_presence_any_of",
+        check_field_presence_any_of,
+        parameter_validator=validate_field_presence_any_of_parameters,
+        description=(
+            "Was at least one of these alternative declarations found? For a "
+            "disjunctive clause such as rule 6(1)(a)."
+        ),
+    )
+    register_check(
+        "si_unit",
+        check_si_unit,
+        parameter_validator=validate_no_parameters,
+        description=(
+            "Is the net quantity expressed in SI units, or by number? "
+            "Rule 13(5)."
+        ),
+    )
+    register_check(
+        "prohibited_counting_unit",
+        check_prohibited_counting_unit,
+        parameter_validator=validate_no_parameters,
+        description=(
+            "Does the net quantity use dozen, score, gross or great gross? "
+            "Rule 13(4)."
+        ),
+    )
+    register_check(
+        "consumer_care_elements",
+        check_consumer_care_elements,
+        parameter_validator=validate_no_consumer_care_parameters,
+        description=(
+            "Which elements of the consumer-care declaration were read - "
+            "telephone number and e-mail address only. Rule 6(2)."
+        ),
+    )
+    register_check(
+        "month_year_declaration",
+        check_month_year_declaration,
+        parameter_validator=validate_month_year_parameters,
+        description=(
+            "Does a date declaration establish a month and a year? Rule "
+            "6(1)(d). Checks no printed format - the Rules prescribe none."
+        ),
+    )
+    register_check(
+        "retail_price_tax_declaration",
+        check_retail_price_tax_declaration,
+        parameter_validator=validate_no_retail_price_parameters,
+        description=(
+            "Is the retail sale price declared EXCLUSIVE of all taxes, "
+            "contradicting rule 6(1)(e)? Nothing wider is decided."
+        ),
     )
 
 

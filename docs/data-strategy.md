@@ -43,13 +43,14 @@ and the engine cannot use it to mark a product non-compliant — only to flag it
 for review. That is what lets rule drafting proceed in parallel with legal
 verification without risking a wrong legal claim.
 
-**This repository ships six rules, of which three are evaluated.** All six are
-`verified` against the Department of Consumer Affairs' consolidated text; the
-other three are inactive because the present check type and category taxonomy
-cannot express their exemptions safely. What ships, what is deliberately not
-modelled, and the two open legal-review items are recorded in
-`rules/README.md` and `rules/SOURCES.md`. The shipped set and the active/
-inactive split are both asserted by tests.
+**This repository ships twelve rules, of which eleven are evaluated.** All
+twelve are `verified` against the Department of Consumer Affairs' consolidated
+text; the one inactive rule, `LM-PC-0002`, is inactive because the extractor
+does not read the declaration it names, which is a technical blocker and not a
+legal one. Each of the eleven tests less than its clause requires. What ships,
+what is deliberately not modelled, and the two open legal-review items are
+recorded in `rules/README.md` and `rules/SOURCES.md`. The shipped set and the
+active/inactive split are both asserted by tests.
 
 ## 2. Training data
 
