@@ -7,9 +7,31 @@ before promising anything to anyone.
 Target: the Django/DRF backend on **Railway** with **Railway PostgreSQL**. The
 React frontend is a static bundle hosted separately.
 
-**Status: ready to deploy, not deployed.** Every file below exists and every
-check listed has been run locally. No Railway project has been created from
-this repository and no deployment has happened.
+**Status: verified ready to deploy. Not deployed.** No Railway project has been
+created from this repository, nothing has been pushed to one, and no public
+HTTPS endpoint exists. Nothing below may be described as live.
+
+Last verification pass: **2026-09-09**, on the `feature/railway-deployment`
+branch. What was actually executed, and what was not:
+
+| | Result |
+| --- | --- |
+| Backend suite (`pytest`, PostgreSQL) | 819 passed |
+| ML suite (`pytest`) | 575 passed |
+| Frontend `npm run lint` / `npm run build` / `npm test` | pass / pass / 202 passed |
+| `manage.py check --deploy` (`DJANGO_DEBUG=False`) | 0 issues, 0 silenced |
+| `manage.py makemigrations --check` | no changes detected |
+| `deploy_setup` run twice against PostgreSQL | identical counts, exit 0 - idempotent |
+| Health probe simulated as Railway sends it | 200, payload correct |
+| `railway.json` against the official Railway schema | validates |
+| **Docker image build** | **NOT RUN - no Docker on the verifying machine** |
+| **Deployment to Railway** | **NOT RUN** |
+
+The image is built and exercised by the `container` job in
+`.github/workflows/ci.yml` on every push to `main` and every PR, including the
+check that the Tesseract binary is really in it. That job - not a laptop - is
+the standing evidence that the image is sound. If you need local proof before
+deploying, run the commands in [Building the image locally](#building-the-image-locally).
 
 ---
 
@@ -124,28 +146,202 @@ python -c "from django.core.management.utils import get_random_secret_key as k; 
 `CSRF_TRUSTED_ORIGINS` is **not** a separate variable — it is derived from
 `CORS_ALLOWED_ORIGINS` in `config/settings.py`.
 
+#### The complete variable list
+
+All 32 variables the code reads, checked against `config/settings.py` and
+`gunicorn.conf.py` on 2026-09-09. `.env.example` documents every one of them and
+documents nothing that is not read. **Required** means the deployment is wrong
+without it — either it will not start, or it will start and be quietly useless.
+
+**Required**
+
+| Variable | Why it is required |
+| --- | --- |
+| `DJANGO_SECRET_KEY` | No default. The process refuses to start without it, deliberately. |
+| `DATABASE_URL` | Set it to `${{Postgres.DATABASE_URL}}`. Wins over the discrete `DATABASE_*` variables whenever it is set. |
+| `DJANGO_DEBUG` | `False`. Already the default, set explicitly so it is visible in the dashboard. Also switches cookies to HTTPS-only. |
+| `CORS_ALLOWED_ORIGINS` | Defaults to `localhost:5173`. Left alone, the deployed frontend is blocked by CORS and cannot call the API at all. |
+| `DEFAULT_EXTRACTION_ENGINE_NAME` | `tesseract`. Left alone, the deployment runs `null-engine` and reads nothing off any label while looking healthy. |
+| `DEFAULT_EXTRACTION_ENGINE_VERSION` | `0.3.0`. The pipeline's version, not the binary's. |
+
+Alternative to `DATABASE_URL`, and only if you are not using a managed
+database: `DATABASE_NAME`, `DATABASE_USER`, `DATABASE_PASSWORD` (no defaults),
+`DATABASE_HOST`, `DATABASE_PORT`. Do not set both forms.
+
+**Decisions with safe defaults — set them when you mean to**
+
+| Variable | Default | Set it when |
+| --- | --- | --- |
+| `DJANGO_ALLOWED_HOSTS` | `localhost,127.0.0.1` | You have a custom domain. The two Railway hostnames are appended automatically — see below. |
+| `DEMO_PUBLIC_ANALYSIS_API` | `False` | You are deliberately running a public demonstration. Read [Demonstration mode](#demonstration-mode) first. |
+| `DJANGO_SECURE_HSTS_SECONDS` | `31536000` | Set `0` for the first deploy. Browsers cache HSTS hard and a wrong value is painful to undo. |
+| `DJANGO_MEDIA_ROOT` | `backend/media` | You mounted a volume. See [Media storage](#media-storage--read-this-before-storing-anything-real). |
+
+**Optional — defaults are correct for this deployment**
+
+| Variable | Default | |
+| --- | --- | --- |
+| `DJANGO_SECURE_SSL_REDIRECT` | `True` | Read only when `DEBUG=False`. |
+| `DJANGO_LOG_LEVEL` | `INFO` | Application loggers. |
+| `DATABASE_CONN_MAX_AGE` | `60` | Set `0` behind an external pooler. |
+| `DATABASE_CONN_HEALTH_CHECKS` | `True` | Leave on behind a managed proxy. |
+| `API_THROTTLE_ANON` | `30/min` | Also the ceiling on a public demo. |
+| `API_THROTTLE_USER` | `120/min` | |
+| `MAX_IMAGE_UPLOAD_SIZE_MB` | `10` | |
+| `MAX_IMAGE_PIXELS` | `50000000` | Decompression-bomb guard. |
+| `RULES_DEFINITIONS_DIR` | `<root>/rules/definitions` | The image puts these at `/app/rules`. |
+| `RULES_FRAMEWORK_DIR` | `<root>/rules/framework` | |
+| `WEB_CONCURRENCY` | `1` | **Read [Workers and throttling](#workers-throttling-and-why-there-is-one-worker) before raising this.** |
+| `GUNICORN_THREADS` | `4` | |
+| `GUNICORN_TIMEOUT` | `120` | Sized against measured OCR latency. |
+| `GUNICORN_LOG_LEVEL` | `info` | |
+
+**Supplied by the platform — never set these yourself**
+
+`PORT`, `RAILWAY_ENVIRONMENT_NAME`, `RAILWAY_PUBLIC_DOMAIN`. Defining your own
+`PORT` stops Railway routing to the right one.
+
+**No secret belongs in `docs/`, in `.env.example`, or in any `VITE_` variable.**
+Generate `DJANGO_SECRET_KEY` per environment and paste it into the Railway
+dashboard only.
+
 ### 3. Deploy
 
 Railway builds the image, runs `deploy_setup` as the pre-deploy command, starts
 gunicorn, and probes `/api/v1/health/` until it answers 200.
 
-### 4. Verify
+### 4. Production smoke test
+
+Run all five. The deployment is not verified until each one passes, and a green
+build is not a substitute for any of them — a container that built perfectly
+still fails every upload if the pre-deploy command did not run.
+
+**1. Health, and what the two OCR flags mean**
 
 ```bash
-curl https://<your-service>.up.railway.app/api/v1/health/
+curl -sS https://<your-service>.up.railway.app/api/v1/health/
 ```
 
-The deployment is genuinely doing OCR only when the response contains **both**:
+Required in the response:
 
-```json
-"is_placeholder": false,
-"available": true
-```
+| Field | Required value | What a wrong value means |
+| --- | --- | --- |
+| `status` | `"ok"` | Anything else and a dependency is down; the two `dependencies` entries say which. |
+| `dependencies.database` | `"ok"` | PostgreSQL is unreachable — check the `DATABASE_URL` reference. |
+| `extraction_engine.is_placeholder` | `false` | You are running `null-engine`. Nothing is read off any label. Set `DEFAULT_EXTRACTION_ENGINE_NAME`. |
+| `extraction_engine.available` | `true` | A real pipeline is configured but the Tesseract binary did not answer. The image is wrong, not the config. |
+| `compliance_rules.applicability_conditions` | not `0` | `load_legal_framework` did not run. **Verdicts will be wrong, not absent** — see the initialisation section. |
+| `compliance_rules.active_total` | `11` | Fewer means `load_rules` loaded a partial set. |
 
 `is_placeholder: false` alone means a real pipeline is *configured*. `available:
-true` is what says the Tesseract binary answered. Also check that
-`compliance_rules.applicability_conditions` is not `0` — if it is, the framework
-did not load and verdicts will be wrong.
+true` is what says the binary answered. **Both**, or you are not doing OCR.
+
+**2. HTTPS and the redirect are working**
+
+```bash
+curl -sS -o /dev/null -w '%{http_code}
+' http://<your-service>.up.railway.app/api/v1/products/
+```
+
+Expect `301`. Every path except `/api/v1/health/` redirects to HTTPS; the health
+path is exempt so the platform's plain-HTTP probe can reach it.
+
+**3. An unknown Host is refused**
+
+```bash
+curl -sS -o /dev/null -w '%{http_code}
+' -H 'Host: not-your-domain.example'   https://<your-service>.up.railway.app/api/v1/health/
+```
+
+Expect `400`. A `200` means `DJANGO_ALLOWED_HOSTS` is too wide.
+
+**4. The API denies by default**
+
+```bash
+curl -sS -o /dev/null -w '%{http_code}
+' https://<your-service>.up.railway.app/api/v1/compliance/history/
+```
+
+Expect `403` with `DEMO_PUBLIC_ANALYSIS_API=False`. A `200` from an
+unauthenticated request means the demo switch is on — deliberate or not,
+[know which](#demonstration-mode).
+
+**5. Uploaded media is not served**
+
+```bash
+curl -sS -o /dev/null -w '%{http_code}
+' https://<your-service>.up.railway.app/media/
+```
+
+Expect `404`. Django serves `MEDIA_URL` only when `DEBUG=True`, and WhiteNoise
+serves `STATIC_ROOT` only. A `200` here means `DJANGO_DEBUG` is not `False`.
+
+Finally, read the pre-deploy log. `deploy_setup` prints its five counts and the
+line `A loaded requirement is not an evaluated one`. If you cannot find that
+output, the command did not run and the database is not initialised.
+
+---
+
+## Rollback and redeploy
+
+Railway keeps previous deployments and can promote one back. What matters here
+is which parts of a rollback are actually reversible.
+
+**Redeploying** the same commit re-runs the build, then `deploy_setup`, then
+starts gunicorn. `deploy_setup` is idempotent — verified by running it twice
+against PostgreSQL and getting identical counts — so redeploying is safe at any
+time and is the first thing to try after fixing an environment variable. A
+changed variable alone does **not** take effect until a redeploy.
+
+**Rolling back the application** is a dashboard action: pick the previous
+deployment and promote it. The image is immutable and pinned, so the code and
+the Tesseract binary go back exactly.
+
+**What does not roll back:**
+
+- **Applied migrations.** Promoting an older image does not un-apply them.
+  Django will run against a schema newer than the code expects. If the rollback
+  crosses a destructive migration (a dropped or renamed column), the old code
+  breaks and the fix is forward, not backward. Check `git log` on
+  `backend/apps/*/migrations/` before assuming a rollback is clean.
+- **Uploaded images.** They are on an ephemeral filesystem, so a redeploy
+  discards them whether or not it is a rollback. See the media section.
+- **Rules and framework rows.** Both loaders are upserts, not replacements. A
+  rollback re-runs the older files over the newer rows; a rule *removed* between
+  the two versions stays in the database rather than disappearing.
+
+**If the deploy never goes live**, it failed in one of three places and the log
+says which:
+
+| Symptom | Cause |
+| --- | --- |
+| Build fails | Dockerfile or dependencies. Nothing was promoted; the old deployment is still serving. |
+| Pre-deploy exits non-zero | `deploy_setup` refused. **This is working as designed** — a half-initialised database stops the deploy instead of silently changing verdicts. Read the step it names. |
+| Health check never passes | The container started but `/api/v1/health/` did not answer 200 within `healthcheckTimeout` (300s). Usually a `400 DisallowedHost`, or `available: false` because the OCR pipeline is configured but the binary is missing. |
+
+In all three the previous deployment keeps serving. A failed deploy is not an
+outage.
+
+---
+
+## Building the image locally
+
+Optional, and not possible everywhere — the machine that last verified this
+branch had no Docker installed, which is why the CI `container` job is the
+standing evidence rather than a local build.
+
+```bash
+docker build --tag legalmetrology-backend:local .
+docker run --rm legalmetrology-backend:local tesseract --version
+docker run --rm legalmetrology-backend:local test -f /app/backend/staticfiles/staticfiles.json
+docker run --rm legalmetrology-backend:local test -f /app/rules/framework/applicability_conditions.json
+```
+
+These four are exactly what `.github/workflows/ci.yml` runs, plus one more there
+that resolves the real OCR pipeline inside the image. Do not report an image as
+verified on the strength of a successful `docker build` alone: an image missing
+the Tesseract binary builds, starts, reports a non-placeholder engine, and fails
+every upload.
 
 ---
 
@@ -194,8 +390,20 @@ Three options, in the order they should be considered:
 | | What it gives you | What it costs |
 | --- | --- | --- |
 | **Nothing (default)** | Uploads work; the image is analysed and the result stored. The photograph is gone after the next deploy. | Acceptable for a demonstration where results are produced and read in one session. Not acceptable if anyone will come back to the evidence later. |
-| **A Railway volume** | Mount one at `/app/backend/media` and set `DJANGO_MEDIA_ROOT=/app/backend/media`. Photographs survive deploys. | A volume binds the service to a single replica. That is already the case here for throttling reasons, so it costs nothing extra today. |
+| **A Railway volume** | Mount one at `/app/backend/media` and set `DJANGO_MEDIA_ROOT=/app/backend/media`. Photographs survive deploys. | A volume binds the service to a single replica. That is already the case here for throttling reasons, so it costs nothing extra today. **Check write permissions on the first upload** — see below. |
 | **Object storage (S3 or similar)** | Durable and shareable across replicas. | **Not currently possible without a code change.** `build_image_ref` requires a local path; a remote storage backend raises `NotImplementedError` for `.path` and every extraction would fail as `invalid_image`. Adopting it means changing the extraction service to stream bytes rather than open a path. |
+
+**If you mount a volume, verify one upload before trusting it.** The container
+runs as `appuser` (uid 10001), not root — see the Dockerfile. The image creates
+and chowns `/app/backend/media` at build time, but a volume mounted at that path
+covers that directory with the volume's own root, whose ownership is the
+platform's to decide and not something this repository can set. If it lands
+root-owned, the directory is unwritable by the runtime user and the first upload
+fails on a permission error rather than on anything to do with validation. This
+has not been observed here — no volume has been mounted, because nothing has
+been deployed — so treat it as the first thing to check rather than as a known
+defect. If it does happen, mounting the volume at a different path and pointing
+`DJANGO_MEDIA_ROOT` at it is the smaller change.
 
 No object-storage provider has been configured or added as a dependency,
 deliberately. It is written down here as a known requirement rather than
@@ -316,6 +524,58 @@ locally), then `python backend/manage.py runserver`.
 **Gunicorn does not run on Windows** — it needs POSIX `fcntl`. On Windows, use
 the Docker image or `runserver` with the settings above; the WSGI callable is
 the same either way.
+
+---
+
+## Security notes for a deployment
+
+`docs/security.md` is the full account. This section is only the part that is
+decided by *how it is deployed*, and what was checked on 2026-09-09.
+
+Verified on this branch:
+
+- `manage.py check --deploy` with `DJANGO_DEBUG=False` reports **0 issues**.
+  That covers `DEBUG`, the secret key, `SECURE_SSL_REDIRECT`, HSTS, the cookie
+  flags and `ALLOWED_HOSTS`.
+- `DJANGO_SECRET_KEY` has **no default**. A deployment missing it fails at
+  startup rather than signing with a value shared by every clone.
+- No secret is committed. No `.env` has ever been committed — checked across
+  the whole history, not just the working tree. `.env` and `.env.*` are ignored
+  by Git, and `.dockerignore` now excludes both **at any depth**, so a `.env` or
+  a `*.key` under `backend/` cannot be baked into an image layer either.
+- A request with an unrecognised `Host` gets `400`, including on the health
+  path. Only `DJANGO_ALLOWED_HOSTS` plus the two Railway hostnames are accepted,
+  and those two only when `RAILWAY_ENVIRONMENT_NAME` is present.
+- `CORS_ALLOW_ALL_ORIGINS` is never enabled, in any environment. Origins are
+  exact strings and `CSRF_TRUSTED_ORIGINS` is derived from them.
+- The API **denies by default** (`IsAuthenticated`). Public endpoints opt in one
+  at a time.
+- Uploads are validated by decoding, not by trusting the extension: extension,
+  content type, byte size, pixel count (decompression-bomb guard) and a real
+  `Image.verify()`. Oversized bodies are rejected before buffering.
+- Throttling is on by default for anonymous and authenticated callers, and the
+  single-worker default is what keeps those limits globally true.
+- Result ownership is enforced in the queryset, not just the permission class.
+  Another user's result is `404`, never `403` — a `403` would confirm the id
+  exists.
+- The health endpoint returns dependency status only: no paths, no versions, no
+  environment values, no database error text, no traceback.
+- Uploaded images are never served by the application in a deployment.
+
+Decisions the deployer owns:
+
+- **`DEMO_PUBLIC_ANALYSIS_API`.** Default `False` and it should stay there
+  unless the deployment is deliberately a public demonstration. Turning it on
+  makes anonymous results a shared pool — everyone using the demo can read every
+  anonymously created result. Authenticated users' results stay private
+  regardless. Nothing about upload validation is relaxed.
+- **`WEB_CONCURRENCY`.** Raising it above 1 multiplies the effective rate limit
+  by the worker count until `CACHES` points at a shared backend.
+- **HSTS.** Start at `0`, raise once HTTPS is confirmed.
+
+Not solved by deploying, and not claimed to be: there is no authentication UI,
+so a public demonstration is unauthenticated by construction. If real
+submissions will be stored, add authentication before opening the demo switch.
 
 ---
 

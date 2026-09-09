@@ -13,13 +13,25 @@
 # ---------------------------------------------------------------------------
 # Secrets and local environment - the reason this file exists
 # ---------------------------------------------------------------------------
-.env
-.env.*
+# Every pattern here is `**/`-prefixed, and that prefix is the whole point.
+#
+# .dockerignore is NOT .gitignore. Git matches a bare `__pycache__` at any
+# depth; Docker matches it against the path from the context root and nowhere
+# else, so a bare `.env` excludes `./.env` and leaves `backend/.env`,
+# `backend/config/.env` and `ml/.env` in the context - and `COPY backend
+# ./backend` then bakes them into a layer. The same is true of every key and
+# certificate pattern below.
+#
+# Nothing puts a .env under backend/ today. This is not a fix for an observed
+# leak; it is the difference between a rule that holds and one that happens to
+# hold because nobody has yet created the file it was written to stop.
+**/.env
+**/.env.*
 !.env.example
-*.pem
-*.key
-*.p12
-*.pfx
+**/*.pem
+**/*.key
+**/*.p12
+**/*.pfx
 
 # ---------------------------------------------------------------------------
 # Version control and CI
@@ -33,19 +45,25 @@
 # ---------------------------------------------------------------------------
 # A host virtualenv holds platform-specific binaries. Copying one into a Linux
 # image ships megabytes of Windows or macOS wheels that cannot run there.
-.venv
-venv
-ENV
-__pycache__
-*.py[cod]
-*.egg-info
-.pytest_cache
-.mypy_cache
-.ruff_cache
-.coverage
-.coverage.*
-htmlcov
-coverage.xml
+#
+# `**/` again, for the reason given in the secrets section: without it these
+# match only at the context root. A developer who has run the test suite has
+# ~220 `__pycache__` entries under backend/ and ml/, all of which were entering
+# the image - and, because their mtimes change on every local run, busting the
+# cache on the `COPY backend ./backend` layer on every single build.
+**/.venv
+**/venv
+**/ENV
+**/__pycache__
+**/*.py[cod]
+**/*.egg-info
+**/.pytest_cache
+**/.mypy_cache
+**/.ruff_cache
+**/.coverage
+**/.coverage.*
+**/htmlcov
+**/coverage.xml
 
 # ---------------------------------------------------------------------------
 # The frontend
