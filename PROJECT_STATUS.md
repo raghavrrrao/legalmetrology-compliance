@@ -65,16 +65,18 @@ trusting the claim. Compliance results are now scoped to the caller. Throttling
 30/min anonymous, 120/min authenticated. `manage.py check --deploy` reports zero
 issues with `DJANGO_DEBUG=False`.
 
-**Testing:** 800 backend, 575 ML, 202 frontend — all passing. Lint clean,
+**Testing:** 819 backend, 575 ML, 202 frontend — all passing. Lint clean,
 production build succeeds. Counts are stated so drift is noticeable, not as a
 quality claim: a passing suite bounds what is checked, not what is correct.
 
 **Documentation:** Checked against the code in Step 5. Where a document and the
 code disagreed, the document was corrected rather than the claim softened.
 
-**Deployment:** **Not deployable as it stands.** There is no deployment
-configuration in the repository — no Procfile, Dockerfile, WSGI server or static
-file handling. See *Deployment status* below for the exact list.
+**Deployment:** **Ready to deploy, not deployed.** `Dockerfile` (with the
+Tesseract binary), `railway.json`, `gunicorn.conf.py` and the `deploy_setup`
+initialisation command all exist and were re-verified on 2026-09-09. No Railway
+project has been created from this repository and there is no URL. See
+*Deployment status* below for what was checked and what was not.
 
 ---
 
@@ -92,7 +94,7 @@ file handling. See *Deployment status* below for the exact list.
 | Frontend | Working. Scan, result, permalink and history screens against the real API. | `frontend/src/` |
 | Mobile client | **Not built.** The API is client-agnostic and intended to serve one. | — |
 | Authentication UI | **Not built.** Session auth and deny-by-default permissions exist; there is no login screen, so a demonstration switch (`DEMO_PUBLIC_ANALYSIS_API`, default off) opens the analysis endpoints. | — |
-| Deployment | **Not built.** No configuration of any kind. | — |
+| Deployment | Configured and verified, **not deployed**. Container image, Railway config, gunicorn, one-command initialisation. No Railway project exists. | `Dockerfile`, `railway.json`, `backend/gunicorn.conf.py` |
 
 ---
 
