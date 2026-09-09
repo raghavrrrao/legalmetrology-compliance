@@ -29,10 +29,14 @@ the inheritance in `ProductCategory.ancestry_codes()`.
 **These three codes are now part of a reviewed data contract.** Every shipped
 rule file names one of them, so renaming or removing one invalidates rule files
 and `load_rules` will reject them rather than silently widen a rule to every
-commodity. Adding a narrower category is safe and is in fact what three of the
-shipped rules are waiting on: `LM-PC-0004` and `LM-PC-0005` stay inactive
-because exemptions for cosmetics, seeds, bidi, incense sticks, LPG cylinders
-and alcoholic beverages cannot be expressed against a taxonomy this coarse.
+commodity. Adding a narrower category is safe, though no shipped rule is now
+inactive for want of one: `LM-PC-0004` and `LM-PC-0005` are active. The
+exemptions for cosmetics, seeds, bidi, incense sticks, LPG cylinders and
+alcoholic beverages still cannot be expressed against a taxonomy this coarse,
+but they are now carried as applicability conditions on those rules'
+`RuleRequirement` rows in `rules/framework/rules.json` and resolved from the
+facts declared for a submission, so the categories are no longer the only
+lever.
 
 Idempotent. Safe to re-run; it never renames or deletes an existing category,
 because `rules/README.md` notes that renaming a code invalidates rule files
