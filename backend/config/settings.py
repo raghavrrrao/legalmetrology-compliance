@@ -419,11 +419,23 @@ DEFAULT_EXTRACTION_ENGINE_VERSION = env(
 # apps.images.validators in full.
 #
 # Default False, deliberately: the API denies by default (see REST_FRAMEWORK
-# above), there is no login screen yet, and a demonstration needs these two
+# above), there is no login screen yet, and a demonstration needs the analysis
 # endpoints reachable without one. Keeping the default closed means a clone, a
 # CI run and any deployment stay locked down, and the permissive value has to
-# be set on purpose in a git-ignored .env - the same reasoning as
-# CORS_ALLOW_ALL_ORIGINS never being enabled above.
+# be set on purpose in a git-ignored .env or a platform variable - the same
+# reasoning as CORS_ALLOW_ALL_ORIGINS never being enabled above.
+#
+# On, it opens five routes - six operations - to anonymous callers, and
+# nothing else:
+#
+#     POST /api/v1/images/                                upload and analyse
+#     POST /api/v1/extraction/                            upload and read
+#     POST /api/v1/compliance/                            evaluate a reading
+#     GET  /api/v1/compliance/ and /api/v1/compliance/<uuid>/
+#     GET  /api/v1/compliance/applicability-conditions/
+#
+# That set is asserted by apps/core/tests/test_demo_mode_scope.py, so it cannot
+# widen without a test naming this comment failing first.
 #
 # Enforced by apps.compliance.api.permissions.IsAuthenticatedOrDemoPublic.
 DEMO_PUBLIC_ANALYSIS_API = env.bool("DEMO_PUBLIC_ANALYSIS_API", default=False)
