@@ -1,30 +1,34 @@
 /**
- * The Figma "Configuration" sidebar: what to check, and against what.
+ * Step two: what the photo shows, and what kind of product it is.
  *
- * Three of the design's controls survive; two do not, and the difference is
- * whether the backend has the data behind them.
+ * Two controls survive from the original design's sidebar and one does not, and
+ * the difference is whether the backend has the data behind it.
  *
- * - **Product category** is a text field, not the design's dropdown. It selects
- *   which rules apply, and the categories live in `ProductCategory` rows - but
- *   no endpoint lists them (`GET /api/v1/products/` is documented as planned).
- *   A dropdown would mean hardcoding backend rows into JavaScript, which drifts
+ * - **Product category** is a text field, not a dropdown. It selects which
+ *   rules apply, and the categories live in `ProductCategory` rows — but no
+ *   endpoint lists them (`GET /api/v1/products/` is documented as planned). A
+ *   dropdown would mean hardcoding backend rows into JavaScript, which drifts
  *   silently the moment a category is added or deactivated. The backend
  *   validates the code and rejects an unknown one with a message this screen
- *   renders, so a typo is caught where the answer actually is.
- * - **Jurisdiction & ruleset** is read-only. There is one ruleset and the
- *   client cannot choose it - and it must not be able to. Applicability is
- *   answered by the engine from the loaded rule set and the commodity's
- *   category; a verdict a client could steer by picking its own rules would be
- *   worth nothing. What is shown instead is what is actually loaded, read from
- *   `/health/`.
+ *   renders, so a typo is caught where the answer actually is. A datalist
+ *   offers no suggestions for the same reason.
+ * - **Which part of the package** is a real `ProductImage.ViewType` the API
+ *   accepts, and it genuinely changes how a result should be read. Its
+ *   explanation is the most load-bearing sentence on this screen: a declaration
+ *   that is not in the photograph has not been shown to be missing from the
+ *   package, and a user who does not understand that will read an honest
+ *   "requires review" as a failure.
  * - **Inspection scope** is gone. The design's "Mandatory Declarations Only"
- *   has no counterpart in the API - the request body has no scope, rule,
- *   check-type or severity parameter, deliberately. The panel slot is used for
- *   the view type instead, which is a real `ProductImage.ViewType` the API
- *   accepts and which genuinely changes how a result should be read.
+ *   has no counterpart in the API — the request body has no scope, rule,
+ *   check-type or severity parameter, deliberately.
  *
- * The design's "Findings Requirements Preview" - a list of Product Name, Net
- * Quantity, MRP and so on - is deliberately not reproduced. Those are legal
+ * The jurisdiction is shown, not chosen. There is one ruleset and the client
+ * must not be able to pick it: a verdict you can steer by choosing your own
+ * rules is worth nothing. It sits under a disclosure because it is the same
+ * answer on every check and it is not what a submitter is here to decide.
+ *
+ * The design's "Findings Requirements Preview" — a list of Product Name, Net
+ * Quantity, MRP and so on — is deliberately not reproduced. Those are legal
  * requirements. Listing them in JSX would be hardcoding the law into the
  * browser, and it would go stale against the loaded rules without anything
  * failing. What was actually required is shown after evaluation, in each
@@ -46,39 +50,48 @@ export function ConfigurationPanel({
   viewType,
   onViewTypeChange,
   health,
-  canSubmit,
   isBusy,
-  busyLabel,
-  onReset,
 }) {
   return (
     <div className="card">
       <div className="card__header">
-        <h2 className="card__title">Configuration</h2>
+        <h2 className="card__title">Package details</h2>
       </div>
 
       <div className="card__body">
+        <p className="lede-text">
+          These details help us work out which requirements may apply.
+        </p>
+
         <div className="field">
-          <label htmlFor="scan-category">Product category</label>
+          <label htmlFor="scan-category">What kind of product is this?</label>
+          <p className="hint" id="scan-category-help">
+            Leave it blank if you are not sure — the result will say the product
+            type was not known rather than assume one.
+          </p>
           <input
             id="scan-category"
             type="text"
             value={categoryCode}
             placeholder="e.g. packaged-food"
+            aria-describedby="scan-category-help"
             disabled={isBusy}
             onChange={(event) => onCategoryCodeChange(event.target.value)}
           />
-          <p className="hint">
-            Determines which rules apply. Leave blank if unknown — the result
-            will say the category was not known rather than assume one.
-          </p>
         </div>
 
         <div className="field">
-          <label htmlFor="scan-view-type">Which panel is this?</label>
+          <label htmlFor="scan-view-type">
+            Which part of the package does your photo show?
+          </label>
+          <p className="hint" id="scan-view-type-help">
+            This matters because a declaration that is not visible in this photo
+            cannot automatically be treated as missing from the package.
+          </p>
           <select
             id="scan-view-type"
             value={viewType}
+            aria-describedby="scan-view-type-help"
             disabled={isBusy}
             onChange={(event) => onViewTypeChange(event.target.value)}
           >
@@ -88,19 +101,15 @@ export function ConfigurationPanel({
               </option>
             ))}
           </select>
-          <p className="hint">
-            An absent declaration on a photograph of the front panel is not
-            evidence the package lacks one.
-          </p>
         </div>
 
-        <div className="field">
+        <details className="technical-details">
+          <summary>Which rules are being used?</summary>
           {/*
             Not a <label>: there is no control to label. This value is not
             selectable, because the client does not get to choose which rules
             apply to it.
           */}
-          <span className="field__label">Jurisdiction &amp; ruleset</span>
           <p className="field--readonly">
             Legal Metrology (Packaged Commodities) Rules, 2011
           </p>
@@ -109,37 +118,11 @@ export function ConfigurationPanel({
               ? `${health.complianceRules.verified} verified and ${health.complianceRules.unverified} unverified rule(s) are loaded. Only a verified rule can report a package as non-compliant.`
               : 'The loaded rule counts are read from the backend health endpoint.'}
           </p>
-        </div>
-      </div>
-
-      <div className="card__body card__body--divided">
-        <div className="field field--actions">
-          <button
-            type="submit"
-            className="button button--primary button--block"
-            disabled={!canSubmit || isBusy}
-          >
-            {isBusy ? (
-              <>
-                <span className="spinner" aria-hidden="true" />
-                {busyLabel}
-              </>
-            ) : (
-              'Start analysis'
-            )}
-          </button>
-          <button
-            type="button"
-            className="button button--block"
-            onClick={onReset}
-            disabled={isBusy}
-          >
-            Clear
-          </button>
-        </div>
-        {!canSubmit && (
-          <p className="hint">Requires product imagery to begin.</p>
-        )}
+          <p className="hint">
+            You cannot choose which rules apply. They are decided by the loaded
+            rule set and the product type.
+          </p>
+        </details>
       </div>
     </div>
   );

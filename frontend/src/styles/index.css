@@ -24,7 +24,7 @@
   --font-mono: ui-monospace, SFMono-Regular, 'Cascadia Mono', Menlo, Consolas,
     monospace;
 
-  --colour-page: #f8f9fa;
+  --colour-page: #f7f8f7;
   --colour-surface: #ffffff;
   --colour-surface-muted: #f5f7f8;
   --colour-border: #e3e6ea;
@@ -36,7 +36,15 @@
 
   --colour-primary: #12341f;
   --colour-primary-hover: #1c4a2c;
+  --colour-primary-soft: #eef3ef;
+  --colour-primary-softer: #f6f9f7;
   --colour-on-primary: #ffffff;
+
+  /* The accent is for wayfinding - the active step, the brand mark, a
+     focused control. It is deliberately NOT one of the status tones: an
+     accent surface must never be readable as a verdict. */
+  --colour-accent: #0f6b5c;
+  --colour-accent-soft: #e6f2f0;
 
   /* Tone palette. Named for the tone, never for a verdict. */
   --tone-success: #1b6b33;
@@ -61,10 +69,31 @@
   --tone-neutral-bg: #eceef1;
   --tone-neutral-border: #dcdfe4;
 
-  --radius: 8px;
-  --radius-sm: 6px;
-  --shadow-card: 0 1px 2px rgba(16, 24, 40, 0.05);
-  --content-width: 80rem;
+  /* --- scale ------------------------------------------------------------
+     One spacing rhythm and one radius family, so that "a bit more room here"
+     is a token and not a number somebody picked. Everything below is used by
+     name; a raw pixel value in a component is a bug waiting to drift. */
+  --space-1: 0.25rem;
+  --space-2: 0.5rem;
+  --space-3: 0.75rem;
+  --space-4: 1rem;
+  --space-5: 1.5rem;
+  --space-6: 2rem;
+  --space-7: 3rem;
+
+  --radius: 12px;
+  --radius-sm: 8px;
+  --radius-lg: 16px;
+  --radius-pill: 999px;
+
+  /* Elevation is carried by a hairline plus a soft shadow, never by a heavy
+     drop shadow. Three levels is enough to say "page", "surface", "raised". */
+  --shadow-card: 0 1px 2px rgba(16, 24, 40, 0.04);
+  --shadow-raised: 0 4px 16px -4px rgba(16, 24, 40, 0.1),
+    0 1px 3px rgba(16, 24, 40, 0.05);
+  --shadow-focus: 0 0 0 3px rgba(18, 52, 31, 0.16);
+
+  --content-width: 68rem;
 }
 
 * {
@@ -328,25 +357,6 @@ pre {
   color: var(--colour-muted);
 }
 
-/* --- workspace grid (Figma: main column + configuration sidebar) ----------- */
-
-.workspace {
-  display: grid;
-  grid-template-columns: minmax(0, 1fr) 21rem;
-  gap: 1.25rem;
-  align-items: start;
-}
-
-.workspace__main {
-  min-width: 0;
-}
-
-.workspace__aside {
-  min-width: 0;
-  position: sticky;
-  top: 1rem;
-}
-
 /*
  * The results screen is a near-even split rather than a sidebar: the evidence
  * image and the findings column both carry primary content, which is how the
@@ -357,34 +367,15 @@ pre {
  * columns having to be written in a different sequence in the JSX than they are
  * read in on a wide screen.
  */
-.result-layout {
-  display: grid;
-  grid-template-columns: minmax(0, 1fr) minmax(0, 1.05fr);
-  gap: 1.25rem;
-  align-items: start;
-}
-
-.result-layout__evidence,
-.result-layout__findings {
+.result {
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
   min-width: 0;
 }
 
-@media (max-width: 60rem) {
-  .workspace {
-    grid-template-columns: minmax(0, 1fr);
-  }
-
-  .workspace__aside {
-    position: static;
-  }
-
-  .result-layout {
-    grid-template-columns: minmax(0, 1fr);
-  }
-
-  .result-layout__findings {
-    order: -1;
-  }
+.result__section {
+  min-width: 0;
 }
 
 /* --- buttons -------------------------------------------------------------- */
@@ -622,10 +613,6 @@ pre {
   border-style: dashed;
 }
 
-.finding--muted .finding__index {
-  background: var(--colour-surface-muted);
-  color: var(--colour-faint);
-}
 
 .finding__flag--muted {
   color: var(--colour-faint);
@@ -694,173 +681,6 @@ pre {
   margin: 0.5rem 0 0;
 }
 
-.applicability {
-  border-top: 1px solid var(--colour-border);
-}
-
-.applicability > summary {
-  padding: 0.7rem 1rem;
-  cursor: pointer;
-  font-size: 0.86rem;
-  font-weight: 600;
-}
-
-.applicability__body {
-  padding: 0 1rem 1rem;
-}
-
-.applicability__group + .applicability__group {
-  margin-top: 1.25rem;
-}
-
-.applicability__field {
-  margin: 0.85rem 0 0;
-  padding: 0.6rem 0.75rem;
-  border: 1px solid var(--colour-border);
-  border-radius: var(--radius-sm);
-  background: var(--colour-surface-muted);
-}
-
-.applicability__field legend {
-  padding: 0 0.3rem;
-  font-size: 0.86rem;
-  font-weight: 600;
-}
-
-.applicability__options {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 0.75rem;
-  margin-top: 0.4rem;
-}
-
-.applicability__option {
-  display: inline-flex;
-  align-items: center;
-  gap: 0.35rem;
-  font-size: 0.84rem;
-}
-
-.applicability__effects {
-  margin: 0.5rem 0 0;
-  padding-left: 1.1rem;
-  font-size: 0.78rem;
-  color: var(--colour-faint);
-}
-
-/* --- pipeline stepper (Figma mobile: Upload > Analyze > Extract > ...) ----- */
-
-.stepper {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 0.35rem;
-  margin: 0 0 1.25rem;
-  padding: 0.5rem 0.65rem;
-  list-style: none;
-  background: var(--colour-surface);
-  border: 1px solid var(--colour-border);
-  border-radius: var(--radius);
-  box-shadow: var(--shadow-card);
-}
-
-.stepper__step {
-  display: flex;
-  align-items: center;
-  gap: 0.4rem;
-  padding: 0.2rem 0.5rem;
-  font-size: 0.82rem;
-  color: var(--colour-faint);
-}
-
-.stepper__step::after {
-  content: '\203A';
-  margin-left: 0.35rem;
-  color: var(--colour-faint);
-}
-
-.stepper__step:last-child::after {
-  content: '';
-}
-
-.stepper__step--active {
-  color: var(--colour-text);
-  font-weight: 600;
-}
-
-.stepper__step--done {
-  color: var(--colour-muted);
-}
-
-.stepper__marker {
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  width: 1.15rem;
-  height: 1.15rem;
-  font-size: 0.66rem;
-  font-weight: 700;
-  border-radius: 50%;
-  border: 1px solid var(--colour-border-strong);
-  background: var(--colour-surface);
-  color: var(--colour-faint);
-}
-
-.stepper__step--done .stepper__marker {
-  background: var(--tone-success-bg);
-  border-color: var(--tone-success-border);
-  color: var(--tone-success);
-}
-
-.stepper__step--active .stepper__marker {
-  background: var(--colour-primary);
-  border-color: var(--colour-primary);
-  color: var(--colour-on-primary);
-}
-
-/* --- upload panel --------------------------------------------------------- */
-
-.dropzone {
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  justify-content: center;
-  gap: 0.5rem;
-  padding: 3rem 1.5rem;
-  text-align: center;
-  border: 1px dashed var(--colour-border-strong);
-  border-radius: var(--radius-sm);
-  background: var(--colour-surface-muted);
-}
-
-.dropzone--active {
-  border-color: var(--colour-primary);
-  background: var(--tone-success-bg);
-}
-
-.dropzone__icon {
-  font-size: 1.6rem;
-  line-height: 1;
-  color: var(--colour-faint);
-}
-
-.dropzone__title {
-  margin: 0;
-  font-family: var(--font-serif);
-  font-size: 1.15rem;
-  font-weight: 700;
-}
-
-.dropzone__text {
-  margin: 0;
-  max-width: 28rem;
-  font-size: 0.88rem;
-  color: var(--colour-muted);
-}
-
-.dropzone__actions {
-  margin-top: 0.5rem;
-}
-
 .visually-hidden {
   position: absolute;
   width: 1px;
@@ -871,61 +691,6 @@ pre {
   clip: rect(0 0 0 0);
   white-space: nowrap;
   border: 0;
-}
-
-.file-summary {
-  display: flex;
-  flex-wrap: wrap;
-  align-items: center;
-  gap: 0.6rem;
-  margin-top: 0.9rem;
-  padding: 0.55rem 0.75rem;
-  font-size: 0.85rem;
-  background: var(--colour-surface-muted);
-  border: 1px solid var(--colour-border);
-  border-radius: var(--radius-sm);
-}
-
-.file-summary__name {
-  font-weight: 600;
-  word-break: break-all;
-}
-
-.file-summary__size {
-  color: var(--colour-muted);
-}
-
-.file-summary button {
-  margin-left: auto;
-}
-
-/* --- check rows (pre-flight, configuration) ------------------------------- */
-
-.check-row {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 1rem;
-  padding: 0.6rem 0;
-  border-top: 1px solid var(--colour-border);
-}
-
-.check-row:first-child {
-  border-top: 0;
-}
-
-.check-row__label {
-  display: flex;
-  flex-direction: column;
-  gap: 0.1rem;
-  font-size: 0.88rem;
-  font-weight: 600;
-}
-
-.check-row__detail {
-  font-size: 0.78rem;
-  font-weight: 400;
-  color: var(--colour-muted);
 }
 
 /* --- form fields ---------------------------------------------------------- */
@@ -1022,20 +787,6 @@ pre {
   color: var(--tone-neutral);
 }
 
-.finding--error .finding__index {
-  background: var(--tone-error);
-  color: #ffffff;
-}
-
-.finding--review .finding__index {
-  background: var(--tone-review-bg);
-  color: var(--tone-review);
-}
-
-.finding--success .finding__index {
-  background: var(--tone-success-bg);
-  color: var(--tone-success);
-}
 
 .finding__heading {
   min-width: 0;
@@ -1055,18 +806,6 @@ pre {
   color: var(--colour-faint);
 }
 
-.finding__body {
-  margin: 0 0.9rem 0.9rem;
-  padding: 0.6rem 0.75rem;
-  border: 1px solid var(--colour-border);
-  border-radius: var(--radius-sm);
-  background: var(--colour-surface-muted);
-}
-
-.finding--error .finding__body {
-  border-color: var(--tone-error-border);
-  background: var(--tone-error-bg);
-}
 
 .finding__message {
   margin: 0 0 0.6rem;
@@ -1111,6 +850,16 @@ pre {
   white-space: pre-wrap;
   overflow-wrap: anywhere;
   color: var(--colour-muted);
+  /*
+   * Capped, not truncated. When a requirement was not found, the excerpt the
+   * engine records is everything it read off the label - which is the honest
+   * evidence for "this is not in there", and is also twelve lines of broken
+   * OCR in the middle of the card. Scrolling keeps every character reachable
+   * while stopping one finding from running three screens long. Cutting the
+   * text instead would hide part of the evidence a reviewer is checking.
+   */
+  max-height: 9rem;
+  overflow-y: auto;
 }
 
 .finding__flag {
@@ -1453,4 +1202,1490 @@ pre {
     width: 100%;
     margin-left: 0;
   }
+}
+
+.scan-flow {
+  display: flex;
+  flex-direction: column;
+  gap: 1.25rem;
+}
+
+.card__title {
+  display: flex;
+  align-items: center;
+}
+
+/* --- plain-language text -------------------------------------------------- */
+
+.lede-text {
+  margin: 0 0 0.75rem;
+  font-size: 1rem;
+  line-height: 1.6;
+  color: var(--colour-text);
+}
+
+.section-lede {
+  margin: -0.35rem 0 0.85rem;
+  color: var(--colour-muted);
+  font-size: 0.92rem;
+}
+
+.hint--centred {
+  text-align: center;
+}
+
+/*
+ * A callout is for something the reader must not miss - it is never the only
+ * carrier of a status, and it always contains its own words rather than relying
+ * on its tint.
+ */
+.callout {
+  margin: 0.85rem 0 0;
+  padding: 0.75rem 0.9rem;
+  border: 1px solid var(--tone-neutral-border);
+  border-left-width: 3px;
+  border-radius: var(--radius-sm);
+  background: var(--tone-neutral-bg);
+  font-size: 0.92rem;
+}
+
+.callout--info {
+  border-color: var(--tone-review-border);
+  border-left-color: var(--tone-review);
+  background: var(--tone-review-bg);
+}
+
+.callout--warning {
+  border-color: var(--tone-warning-border);
+  border-left-color: var(--tone-warning);
+  background: var(--tone-warning-bg);
+}
+
+/* --- disclosures ---------------------------------------------------------- */
+
+/*
+ * The one pattern that makes this redesign possible: legal and technical
+ * material stays on the page, in full, one keystroke away, instead of being
+ * deleted for tidiness or printed in front of somebody who did not ask for it.
+ */
+.technical-details {
+  margin-top: 1rem;
+  border-top: 1px solid var(--colour-border);
+  padding-top: 0.75rem;
+  font-size: 0.9rem;
+}
+
+.technical-details--card {
+  margin-top: 0;
+  padding: 0.75rem 1.1rem 1.1rem;
+}
+
+.technical-details > summary {
+  cursor: pointer;
+  color: var(--colour-muted);
+  font-weight: 600;
+  padding: 0.35rem 0;
+  border-radius: var(--radius-sm);
+}
+
+.technical-details > summary:hover {
+  color: var(--colour-text);
+}
+
+.technical-details[open] > summary {
+  margin-bottom: 0.6rem;
+  color: var(--colour-text);
+}
+
+.technical-details pre,
+.technical-details table {
+  font-size: 0.85rem;
+}
+
+/* --- review summary ------------------------------------------------------- */
+
+.review-summary {
+  display: grid;
+  grid-template-columns: minmax(8rem, auto) minmax(0, 1fr);
+  gap: 0.35rem 1rem;
+  margin: 0 0 1rem;
+  font-size: 0.92rem;
+}
+
+.review-summary dt {
+  color: var(--colour-muted);
+}
+
+.review-summary dd {
+  margin: 0;
+  word-break: break-word;
+}
+
+/* --- progress ------------------------------------------------------------- */
+
+.progress {
+  margin-bottom: 1.25rem;
+}
+
+.progress__status {
+  margin: 0.5rem 0 0;
+  color: var(--colour-muted);
+  font-size: 0.92rem;
+}
+
+/* --- verdict -------------------------------------------------------------- */
+
+.verdict__eyebrow {
+  margin: 0 0 0.35rem;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  font-size: 0.72rem;
+  font-weight: 700;
+  color: var(--colour-muted);
+}
+
+/*
+ * Sized to be the first thing read on the page. The mark beside it is
+ * aria-hidden and carries no meaning on its own - the verdict's own words are
+ * in the heading text, which is what a screen reader announces.
+ */
+.verdict__title {
+  font-size: 1.75rem;
+  align-items: center;
+  gap: 0.6rem;
+}
+
+.verdict__mark {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 2rem;
+  height: 2rem;
+  flex: none;
+  border-radius: 50%;
+  border: 2px solid currentColor;
+  font-size: 1.1rem;
+  font-weight: 700;
+}
+
+.verdict__headline {
+  margin: 0.35rem 0 0;
+  font-size: 1.05rem;
+  font-weight: 600;
+}
+
+/* --- findings ------------------------------------------------------------- */
+
+.finding__status {
+  display: flex;
+  align-items: center;
+  gap: 0.4rem;
+  margin: 0 0 0.15rem;
+  font-size: 0.78rem;
+  font-weight: 700;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+}
+
+.finding__status-mark {
+  font-size: 0.95rem;
+  line-height: 1;
+}
+
+.finding__status-mark--success {
+  color: var(--tone-success);
+}
+
+.finding__status-mark--error {
+  color: var(--tone-error);
+}
+
+.finding__status-mark--review {
+  color: var(--tone-review);
+}
+
+.finding__status-mark--muted,
+.finding__status-mark--neutral {
+  color: var(--colour-faint);
+}
+
+.finding__block {
+  margin-top: 0.9rem;
+}
+
+.finding__block-title {
+  margin: 0 0 0.25rem;
+  font-size: 0.8rem;
+  font-weight: 700;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: var(--colour-muted);
+}
+
+.finding__block p {
+  margin: 0;
+}
+
+.finding__review-heading {
+  margin: 0 0 0.4rem;
+  font-size: 0.9rem;
+  font-weight: 700;
+}
+
+.finding__review-action {
+  margin: 0.6rem 0 0;
+  font-size: 0.9rem;
+}
+
+/* --- what was read -------------------------------------------------------- */
+
+.read-fields {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  border-top: 1px solid var(--colour-border);
+}
+
+.read-field {
+  display: grid;
+  grid-template-columns: minmax(9rem, 14rem) minmax(0, 1fr);
+  gap: 0.15rem 1rem;
+  padding: 0.7rem 1.1rem;
+}
+
+.read-field + .read-field {
+  border-top: 1px solid var(--colour-border);
+}
+
+.read-field__name {
+  font-weight: 600;
+  color: var(--colour-muted);
+}
+
+.read-field__value {
+  word-break: break-word;
+}
+
+.read-field__meta {
+  grid-column: 2;
+  font-size: 0.82rem;
+}
+
+/* --- focus ---------------------------------------------------------------- */
+
+/*
+ * One visible focus ring for everything that takes focus. The default UA ring
+ * disappears against the dark primary button, and a keyboard user losing their
+ * place on the submit control is the failure this prevents.
+ */
+a:focus-visible,
+button:focus-visible,
+input:focus-visible,
+select:focus-visible,
+summary:focus-visible,
+[tabindex]:focus-visible {
+  outline: 2px solid var(--colour-primary);
+  outline-offset: 2px;
+  border-radius: var(--radius-sm);
+}
+
+/* --- narrow screens ------------------------------------------------------- */
+
+@media (max-width: 40rem) {
+  .verdict__title {
+    font-size: 1.4rem;
+  }
+
+  .review-summary {
+    grid-template-columns: minmax(0, 1fr);
+    gap: 0.1rem;
+  }
+
+  .review-summary dt {
+    font-size: 0.82rem;
+  }
+
+  .review-summary dd {
+    margin-bottom: 0.5rem;
+  }
+
+  .read-field {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .read-field__meta {
+    grid-column: 1;
+  }
+
+  .step-block__title,
+  .card__title {
+    font-size: 1.05rem;
+  }
+}
+
+/* ==========================================================================
+   The product surface
+   ==========================================================================
+   The vocabulary the redesigned screens are built from. It adds to the tokens
+   at the top of this file and replaces none of them, and it introduces no
+   colour outside the palette declared in :root.
+
+   The rule stated at the top of this file holds here without exception:
+   nothing below encodes a compliance decision. `.finding__badge--success` says
+   what a tone looks like; the component decides which tone a backend status
+   gets, and an unrecognised status gets the neutral one.
+   ========================================================================== */
+
+/* --- shell ---------------------------------------------------------------- */
+
+.app-header {
+  gap: var(--space-5);
+  padding: var(--space-3) var(--space-5);
+  border-bottom: 1px solid var(--colour-border);
+  background: var(--colour-surface);
+  position: sticky;
+  top: 0;
+  z-index: 10;
+}
+
+.app-header__title {
+  gap: var(--space-3);
+  font-family: var(--font-sans);
+}
+
+.app-header__mark {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 2.25rem;
+  height: 2.25rem;
+  flex: none;
+  border-radius: var(--radius-sm);
+  background: var(--colour-primary);
+  color: var(--colour-on-primary);
+  font-size: 0;
+}
+
+.app-header__words {
+  display: flex;
+  flex-direction: column;
+  line-height: 1.15;
+}
+
+.app-header__name {
+  font-family: var(--font-serif);
+  font-size: 1.08rem;
+  font-weight: 700;
+  letter-spacing: -0.01em;
+}
+
+.app-header__tagline {
+  font-size: 0.74rem;
+  font-weight: 600;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--colour-muted);
+}
+
+.app-nav {
+  display: flex;
+  align-items: center;
+  gap: var(--space-1);
+  margin-left: auto;
+}
+
+.app-nav a {
+  padding: 0.45rem 0.8rem;
+  border-radius: var(--radius-pill);
+  color: var(--colour-muted);
+  font-weight: 600;
+  font-size: 0.92rem;
+  text-decoration: none;
+  transition: background 0.14s ease, color 0.14s ease;
+}
+
+.app-nav a:hover {
+  background: var(--colour-primary-softer);
+  color: var(--colour-text);
+}
+
+/* The active item is marked by weight and a filled pill, never by colour
+   alone - and `aria-current` is what actually announces it. */
+.app-nav a[aria-current='page'] {
+  background: var(--colour-primary-soft);
+  color: var(--colour-primary);
+}
+
+.app-nav__cta {
+  margin-left: var(--space-2);
+  background: var(--colour-primary);
+  color: var(--colour-on-primary);
+}
+
+.app-nav__cta:hover {
+  background: var(--colour-primary-hover);
+  color: var(--colour-on-primary);
+}
+
+.app-nav__cta[aria-current='page'] {
+  background: var(--colour-primary);
+  color: var(--colour-on-primary);
+}
+
+.app-main {
+  width: 100%;
+  max-width: var(--content-width);
+  margin: 0 auto;
+  padding: var(--space-6) var(--space-5) var(--space-7);
+  flex: 1;
+}
+
+.app-footer {
+  border-top: 1px solid var(--colour-border);
+  background: var(--colour-surface);
+  padding: var(--space-5);
+}
+
+.app-footer__disclaimer {
+  max-width: var(--content-width);
+  margin: 0 auto;
+  color: var(--colour-muted);
+  font-size: 0.82rem;
+  line-height: 1.6;
+}
+
+/* --- page headings -------------------------------------------------------- */
+
+.page-title {
+  font-family: var(--font-serif);
+  font-size: 2.1rem;
+  line-height: 1.15;
+  letter-spacing: -0.02em;
+  margin: 0 0 var(--space-2);
+}
+
+.page-lede {
+  max-width: 46rem;
+  font-size: 1.02rem;
+  line-height: 1.6;
+  color: var(--colour-muted);
+}
+
+.section-heading {
+  font-family: var(--font-serif);
+  font-size: 1.3rem;
+  margin: var(--space-6) 0 var(--space-2);
+}
+
+/* --- workflow progress ---------------------------------------------------- */
+
+.workflow {
+  margin-bottom: var(--space-5);
+  padding: var(--space-3) var(--space-4);
+  border: 1px solid var(--colour-border);
+  border-radius: var(--radius);
+  background: var(--colour-surface);
+}
+
+.workflow__steps {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-2) var(--space-5);
+  list-style: none;
+  margin: 0;
+  padding: 0;
+}
+
+.workflow__step {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-2);
+  color: var(--colour-faint);
+  font-size: 0.88rem;
+  font-weight: 600;
+}
+
+.workflow__marker {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 1.5rem;
+  height: 1.5rem;
+  flex: none;
+  border-radius: 50%;
+  border: 1.5px solid currentColor;
+  font-size: 0.76rem;
+  font-weight: 700;
+}
+
+.workflow__step--done {
+  color: var(--colour-accent);
+}
+
+.workflow__step--done .workflow__marker {
+  background: var(--colour-accent);
+  border-color: var(--colour-accent);
+  color: var(--colour-on-primary);
+}
+
+.workflow__step--active {
+  color: var(--colour-primary);
+}
+
+.workflow__step--active .workflow__marker {
+  background: var(--colour-primary);
+  border-color: var(--colour-primary);
+  color: var(--colour-on-primary);
+}
+
+.workflow__status {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  margin: var(--space-3) 0 0;
+  padding-top: var(--space-3);
+  border-top: 1px solid var(--colour-border);
+  color: var(--colour-text);
+  font-size: 0.92rem;
+  font-weight: 600;
+}
+
+/* --- scan flow ------------------------------------------------------------ */
+
+.scan-flow {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-5);
+}
+
+/* --- upload hero ---------------------------------------------------------- */
+
+.upload {
+  display: block;
+}
+
+/*
+ * A <label> wrapping the whole target, so the click area, the keyboard
+ * affordance and the accessible name are the browser's rather than three
+ * separate things this file has to keep in agreement.
+ */
+.upload__dropzone {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  text-align: center;
+  padding: var(--space-7) var(--space-5);
+  border: 2px dashed var(--colour-border-strong);
+  border-radius: var(--radius-lg);
+  background:
+    linear-gradient(var(--colour-surface), var(--colour-surface)) padding-box,
+    var(--colour-primary-softer);
+  cursor: pointer;
+  transition: border-color 0.15s ease, background 0.15s ease;
+}
+
+.upload__dropzone:hover,
+.upload__dropzone--active {
+  border-color: var(--colour-primary);
+  background: var(--colour-primary-softer);
+}
+
+.upload__dropzone:has(input:focus-visible),
+.upload:has(#scan-image:focus-visible) .upload__dropzone {
+  outline: 2px solid var(--colour-primary);
+  outline-offset: 3px;
+}
+
+.upload__icon {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 3.5rem;
+  height: 3.5rem;
+  margin-bottom: var(--space-3);
+  border-radius: 50%;
+  background: var(--colour-primary-soft);
+  color: var(--colour-primary);
+}
+
+.upload__title {
+  font-family: var(--font-serif);
+  font-size: 1.4rem;
+  margin: 0 0 var(--space-2);
+}
+
+.upload__text {
+  margin: 0 0 var(--space-3);
+  color: var(--colour-muted);
+}
+
+.upload__button {
+  pointer-events: none;
+}
+
+.upload__formats {
+  margin: var(--space-3) 0 0;
+  color: var(--colour-faint);
+  font-size: 0.82rem;
+  letter-spacing: 0.06em;
+}
+
+.upload__chosen {
+  display: flex;
+  gap: var(--space-4);
+  align-items: flex-start;
+  padding: var(--space-4);
+  border: 1px solid var(--colour-border);
+  border-radius: var(--radius-lg);
+  background: var(--colour-surface);
+  box-shadow: var(--shadow-card);
+}
+
+.upload__preview {
+  flex: none;
+  width: 9rem;
+  height: 9rem;
+  border-radius: var(--radius);
+  overflow: hidden;
+  border: 1px solid var(--colour-border);
+  background: var(--colour-surface-muted);
+}
+
+.upload__image {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  display: block;
+}
+
+.upload__meta {
+  min-width: 0;
+  flex: 1;
+}
+
+.upload__confirm {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  margin: 0 0 var(--space-2);
+  color: var(--tone-success);
+  font-weight: 700;
+}
+
+.upload__confirm-mark {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 1.3rem;
+  height: 1.3rem;
+  border-radius: 50%;
+  background: var(--tone-success-bg);
+  border: 1px solid var(--tone-success-border);
+  font-size: 0.8rem;
+}
+
+.upload__filename {
+  margin: 0;
+  font-weight: 600;
+  word-break: break-word;
+}
+
+.upload__filesize {
+  margin: var(--space-1) 0 0;
+  color: var(--colour-muted);
+  font-size: 0.88rem;
+}
+
+.upload__actions {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--space-3);
+  margin-top: var(--space-3);
+}
+
+/* --- cards ---------------------------------------------------------------- */
+
+.card {
+  border: 1px solid var(--colour-border);
+  border-radius: var(--radius);
+  background: var(--colour-surface);
+  box-shadow: var(--shadow-card);
+  overflow: hidden;
+}
+
+.card__header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-3);
+  padding: var(--space-4) var(--space-4) 0;
+  border-bottom: 0;
+}
+
+.card__title {
+  font-family: var(--font-serif);
+  font-size: 1.15rem;
+  margin: 0;
+}
+
+.card__body {
+  padding: var(--space-4);
+}
+
+/* --- questions ------------------------------------------------------------ */
+
+.answered-chip {
+  flex: none;
+  padding: 0.2rem 0.6rem;
+  border-radius: var(--radius-pill);
+  background: var(--colour-surface-muted);
+  border: 1px solid var(--colour-border);
+  color: var(--colour-muted);
+  font-size: 0.78rem;
+  font-weight: 700;
+  white-space: nowrap;
+}
+
+.answered-chip--some {
+  background: var(--colour-accent-soft);
+  border-color: var(--colour-accent);
+  color: var(--colour-accent);
+}
+
+.question-groups {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+  margin-top: var(--space-4);
+}
+
+.question-group {
+  border: 1px solid var(--colour-border);
+  border-radius: var(--radius);
+  background: var(--colour-surface);
+  overflow: hidden;
+}
+
+.question-group[open] {
+  border-color: var(--colour-border-strong);
+}
+
+.question-group__summary {
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+  padding: var(--space-3) var(--space-4);
+  cursor: pointer;
+  list-style: none;
+  transition: background 0.14s ease;
+}
+
+.question-group__summary::-webkit-details-marker {
+  display: none;
+}
+
+.question-group__summary:hover {
+  background: var(--colour-primary-softer);
+}
+
+/* The disclosure triangle, drawn so it rotates with the open state. */
+.question-group__summary::before {
+  content: '';
+  flex: none;
+  width: 0.5rem;
+  height: 0.5rem;
+  border-right: 2px solid var(--colour-muted);
+  border-bottom: 2px solid var(--colour-muted);
+  transform: rotate(-45deg);
+  transition: transform 0.15s ease;
+}
+
+.question-group[open] > .question-group__summary::before {
+  transform: rotate(45deg);
+}
+
+.question-group__text {
+  display: flex;
+  flex-direction: column;
+  gap: 0.1rem;
+  min-width: 0;
+  flex: 1;
+}
+
+.question-group__eyebrow {
+  font-size: 0.7rem;
+  font-weight: 700;
+  letter-spacing: 0.09em;
+  text-transform: uppercase;
+  color: var(--colour-accent);
+}
+
+.question-group__heading {
+  font-weight: 600;
+}
+
+.question-group__count {
+  flex: none;
+  color: var(--colour-muted);
+  font-size: 0.8rem;
+  white-space: nowrap;
+}
+
+.question-group__body {
+  padding: 0 var(--space-4) var(--space-4);
+  border-top: 1px solid var(--colour-border);
+  padding-top: var(--space-3);
+}
+
+.question {
+  border: 0;
+  border-top: 1px solid var(--colour-border);
+  margin: 0;
+  padding: var(--space-4) 0 0;
+}
+
+.question:first-of-type {
+  border-top: 0;
+}
+
+.question__legend {
+  padding: 0;
+  font-weight: 600;
+  font-size: 0.98rem;
+}
+
+.question__help {
+  margin: var(--space-1) 0 var(--space-3);
+  color: var(--colour-muted);
+  font-size: 0.88rem;
+  line-height: 1.55;
+}
+
+.question__options {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-2);
+}
+
+/*
+ * Real radios, styled through the label around them, so keyboard operation,
+ * grouping and the focus ring stay the browser's rather than reimplemented.
+ */
+.question__option {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-2);
+  padding: 0.4rem 0.85rem;
+  border: 1px solid var(--colour-border-strong);
+  border-radius: var(--radius-pill);
+  background: var(--colour-surface);
+  font-size: 0.9rem;
+  cursor: pointer;
+  transition: border-color 0.14s ease, background 0.14s ease;
+}
+
+.question__option:hover {
+  border-color: var(--colour-primary);
+}
+
+.question__option:has(input:checked) {
+  border-color: var(--colour-primary);
+  background: var(--colour-primary-soft);
+  font-weight: 600;
+}
+
+/*
+ * "Not answered" is the default and reads as the absence of an answer, so it
+ * is drawn quieter than the three real answers even when it is selected. It
+ * must never look like a choice somebody made.
+ */
+.question__option--none {
+  color: var(--colour-muted);
+}
+
+.question__option--none:has(input:checked) {
+  background: var(--colour-surface-muted);
+  border-color: var(--colour-border-strong);
+  font-weight: 500;
+}
+
+.question__option:has(input:focus-visible) {
+  outline: 2px solid var(--colour-primary);
+  outline-offset: 2px;
+}
+
+.question:disabled .question__option {
+  cursor: not-allowed;
+  opacity: 0.65;
+}
+
+.question__why {
+  margin-top: var(--space-3);
+  font-size: 0.86rem;
+}
+
+.question__why > summary {
+  cursor: pointer;
+  color: var(--colour-accent);
+  font-weight: 600;
+}
+
+.question__why p {
+  margin: var(--space-2) 0;
+  color: var(--colour-muted);
+  line-height: 1.6;
+}
+
+.question__effects {
+  margin: var(--space-2) 0;
+  padding-left: 1.1rem;
+  color: var(--colour-muted);
+  line-height: 1.6;
+}
+
+.question__effects li + li {
+  margin-top: var(--space-1);
+}
+
+/* --- ready to check ------------------------------------------------------- */
+
+.ready {
+  padding: var(--space-5);
+  border: 1px solid var(--colour-border-strong);
+  border-radius: var(--radius-lg);
+  background: var(--colour-primary-softer);
+  box-shadow: var(--shadow-card);
+}
+
+.ready__title {
+  font-family: var(--font-serif);
+  font-size: 1.4rem;
+  margin: 0 0 var(--space-2);
+}
+
+.ready__text {
+  margin: 0 0 var(--space-4);
+  color: var(--colour-muted);
+  max-width: 42rem;
+}
+
+.ready__actions {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+  margin-top: var(--space-4);
+}
+
+.ready__note {
+  margin: var(--space-3) 0 0;
+  text-align: center;
+  color: var(--colour-faint);
+  font-size: 0.82rem;
+}
+
+.review-summary {
+  display: grid;
+  grid-template-columns: minmax(8rem, auto) minmax(0, 1fr);
+  gap: var(--space-2) var(--space-4);
+  margin: 0;
+  padding: var(--space-4);
+  border-radius: var(--radius);
+  background: var(--colour-surface);
+  border: 1px solid var(--colour-border);
+  font-size: 0.9rem;
+}
+
+.review-summary dt {
+  color: var(--colour-muted);
+}
+
+.review-summary dd {
+  margin: 0;
+  font-weight: 600;
+  word-break: break-word;
+}
+
+/* --- buttons -------------------------------------------------------------- */
+
+.button {
+  border-radius: var(--radius-sm);
+  font-weight: 600;
+  transition: background 0.14s ease, border-color 0.14s ease,
+    box-shadow 0.14s ease;
+}
+
+.button--large {
+  padding: 0.8rem 1.4rem;
+  font-size: 1.02rem;
+}
+
+.button--primary:hover:not(:disabled) {
+  box-shadow: var(--shadow-raised);
+}
+
+/* --- verdict -------------------------------------------------------------- */
+
+.verdict {
+  border-radius: var(--radius-lg);
+  padding: var(--space-5);
+  box-shadow: var(--shadow-card);
+}
+
+.verdict__eyebrow {
+  margin: 0 0 var(--space-2);
+  text-transform: uppercase;
+  letter-spacing: 0.09em;
+  font-size: 0.72rem;
+  font-weight: 700;
+  color: var(--colour-muted);
+}
+
+.verdict__title {
+  font-size: 2rem;
+  align-items: center;
+  gap: var(--space-3);
+  letter-spacing: -0.02em;
+}
+
+.verdict__mark {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 2.4rem;
+  height: 2.4rem;
+  flex: none;
+  border-radius: 50%;
+  border: 2px solid currentColor;
+  font-size: 1.25rem;
+  font-weight: 700;
+}
+
+.verdict__headline {
+  margin: var(--space-2) 0 0;
+  font-size: 1.08rem;
+  font-weight: 600;
+}
+
+.verdict__summary {
+  max-width: 52rem;
+}
+
+.verdict__counts {
+  gap: var(--space-2);
+  margin-top: var(--space-4);
+}
+
+.count-chip {
+  border-radius: var(--radius-pill);
+}
+
+/* --- findings ------------------------------------------------------------- */
+
+.finding {
+  border: 1px solid var(--colour-border);
+  border-radius: var(--radius);
+  background: var(--colour-surface);
+  box-shadow: var(--shadow-card);
+  overflow: hidden;
+}
+
+.finding__head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-3);
+  padding: var(--space-3) var(--space-4) 0;
+}
+
+.finding__badge {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-2);
+  padding: 0.22rem 0.7rem;
+  border-radius: var(--radius-pill);
+  border: 1px solid var(--tone-neutral-border);
+  background: var(--tone-neutral-bg);
+  color: var(--tone-neutral);
+  font-size: 0.74rem;
+  font-weight: 800;
+  letter-spacing: 0.07em;
+  text-transform: uppercase;
+}
+
+.finding__badge-mark {
+  font-size: 0.85rem;
+  line-height: 1;
+}
+
+.finding__badge--success {
+  border-color: var(--tone-success-border);
+  background: var(--tone-success-bg);
+  color: var(--tone-success);
+}
+
+.finding__badge--error {
+  border-color: var(--tone-error-border);
+  background: var(--tone-error-bg);
+  color: var(--tone-error);
+}
+
+.finding__badge--review {
+  border-color: var(--tone-review-border);
+  background: var(--tone-review-bg);
+  color: var(--tone-review);
+}
+
+.finding__badge--muted {
+  border-color: var(--colour-border);
+  background: var(--colour-surface-muted);
+  color: var(--colour-faint);
+}
+
+.finding__index {
+  color: var(--colour-faint);
+  font-size: 0.8rem;
+  font-weight: 700;
+  font-variant-numeric: tabular-nums;
+}
+
+.finding__body {
+  padding: var(--space-2) var(--space-4) var(--space-4);
+}
+
+.finding__title {
+  font-family: var(--font-serif);
+  font-size: 1.1rem;
+  margin: var(--space-2) 0 0;
+}
+
+.finding__rule {
+  margin: 0.15rem 0 0;
+  color: var(--colour-muted);
+  font-size: 0.84rem;
+  font-weight: 600;
+}
+
+.finding__message {
+  margin: var(--space-3) 0 0;
+  line-height: 1.6;
+}
+
+.finding__disclosures {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-4);
+  margin-top: var(--space-4);
+  padding-top: var(--space-3);
+  border-top: 1px solid var(--colour-border);
+}
+
+.finding__details {
+  flex: 1 1 100%;
+  font-size: 0.9rem;
+}
+
+.finding__details > summary {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-2);
+  cursor: pointer;
+  color: var(--colour-accent);
+  font-weight: 600;
+  padding: 0.2rem 0;
+}
+
+.finding__details > summary::-webkit-details-marker {
+  display: none;
+}
+
+.finding__details > summary::before {
+  content: '';
+  width: 0.42rem;
+  height: 0.42rem;
+  border-right: 2px solid currentColor;
+  border-bottom: 2px solid currentColor;
+  transform: rotate(-45deg);
+  transition: transform 0.15s ease;
+}
+
+.finding__details[open] > summary::before {
+  transform: rotate(45deg);
+}
+
+.finding__review {
+  margin-top: var(--space-4);
+  padding: var(--space-3) var(--space-4);
+  border-radius: var(--radius-sm);
+  border: 1px solid var(--tone-review-border);
+  background: var(--tone-review-bg);
+}
+
+.finding__review-heading {
+  margin: 0 0 var(--space-2);
+  font-size: 0.95rem;
+  font-weight: 700;
+}
+
+.finding__review-list {
+  margin: 0;
+  padding-left: 1.1rem;
+  line-height: 1.6;
+}
+
+.finding__review-action {
+  margin: var(--space-3) 0 0;
+  font-size: 0.9rem;
+  line-height: 1.6;
+}
+
+.finding__block-title {
+  margin: var(--space-4) 0 var(--space-1);
+  font-size: 0.78rem;
+  font-weight: 700;
+  letter-spacing: 0.05em;
+  text-transform: uppercase;
+  color: var(--colour-muted);
+}
+
+.finding__evidence-label {
+  margin: var(--space-2) 0 0;
+  color: var(--colour-muted);
+  font-size: 0.82rem;
+}
+
+/* --- label information ---------------------------------------------------- */
+
+.read-fields {
+  list-style: none;
+  margin: var(--space-3) 0 0;
+  padding: 0;
+  border-top: 1px solid var(--colour-border);
+}
+
+.read-field {
+  display: grid;
+  grid-template-columns: minmax(9rem, 15rem) minmax(0, 1fr);
+  gap: var(--space-1) var(--space-4);
+  padding: var(--space-3) var(--space-4);
+}
+
+.read-field + .read-field {
+  border-top: 1px solid var(--colour-border);
+}
+
+.read-field__name {
+  color: var(--colour-muted);
+  font-weight: 600;
+  font-size: 0.88rem;
+}
+
+.read-field__value {
+  font-weight: 600;
+  word-break: break-word;
+}
+
+.read-field__warning {
+  grid-column: 2;
+  color: var(--tone-warning);
+  font-size: 0.84rem;
+  line-height: 1.5;
+}
+
+.read-field__meta {
+  grid-column: 2;
+  font-size: 0.8rem;
+}
+
+/* --- disclosures ---------------------------------------------------------- */
+
+.technical-details {
+  margin-top: var(--space-4);
+  border-top: 1px solid var(--colour-border);
+  padding-top: var(--space-3);
+  font-size: 0.9rem;
+}
+
+.technical-details--card {
+  margin-top: 0;
+  padding: var(--space-3) var(--space-4) var(--space-4);
+}
+
+.technical-details > summary {
+  cursor: pointer;
+  color: var(--colour-muted);
+  font-weight: 600;
+  padding: 0.3rem 0;
+}
+
+.technical-details > summary:hover {
+  color: var(--colour-text);
+}
+
+.technical-details[open] > summary {
+  margin-bottom: var(--space-2);
+  color: var(--colour-text);
+}
+
+/* --- narrow screens ------------------------------------------------------- */
+
+@media (max-width: 48rem) {
+  .app-main {
+    padding: var(--space-5) var(--space-4) var(--space-6);
+  }
+
+  .app-header {
+    padding: var(--space-3) var(--space-4);
+    gap: var(--space-3);
+  }
+
+  /* The tagline is the first thing to go: the mark and the name already
+     identify the product, and a phone header has room for one line. */
+  .app-header__tagline {
+    display: none;
+  }
+
+  .app-nav {
+    gap: 0;
+  }
+
+  .app-nav a {
+    padding: 0.4rem 0.6rem;
+    font-size: 0.86rem;
+  }
+
+  .app-nav__cta {
+    margin-left: var(--space-1);
+    padding: 0.4rem 0.8rem;
+  }
+
+  .page-title {
+    font-size: 1.65rem;
+  }
+
+  .verdict {
+    padding: var(--space-4);
+  }
+
+  .verdict__title {
+    font-size: 1.5rem;
+  }
+
+  .verdict__mark {
+    width: 2rem;
+    height: 2rem;
+    font-size: 1.05rem;
+  }
+
+  .upload__dropzone {
+    padding: var(--space-6) var(--space-4);
+  }
+
+  .upload__chosen {
+    flex-direction: column;
+  }
+
+  .upload__preview {
+    width: 100%;
+    height: 11rem;
+  }
+
+  .upload__actions .button {
+    width: 100%;
+    justify-content: center;
+  }
+
+  .review-summary {
+    grid-template-columns: minmax(0, 1fr);
+    gap: 0;
+    padding: var(--space-3);
+  }
+
+  .review-summary dt {
+    font-size: 0.8rem;
+  }
+
+  .review-summary dd {
+    margin-bottom: var(--space-3);
+  }
+
+  .read-field {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .read-field__warning,
+  .read-field__meta {
+    grid-column: 1;
+  }
+
+  .question-group__summary {
+    flex-wrap: wrap;
+  }
+
+  .question-group__count {
+    width: 100%;
+    padding-left: 1.1rem;
+  }
+
+  /*
+   * Two per row on a phone. A pill sized for a mouse is a mis-tap waiting to
+   * happen, and a mis-tap here asserts a fact about somebody's product.
+   */
+  .question__options {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .question__option {
+    padding: 0.6rem 0.7rem;
+    justify-content: center;
+  }
+
+  .workflow__steps {
+    gap: var(--space-2) var(--space-4);
+  }
+
+  .workflow__step {
+    font-size: 0.8rem;
+  }
+}
+
+/* --- finding tone --------------------------------------------------------- */
+
+/*
+ * The tone is carried by the card itself: a coloured rule down its leading
+ * edge and a hairline in the same family. It is never the only signal - the
+ * badge above says the status in words and carries its own mark - and it is
+ * never a fill behind the text, which is what made an earlier version read as
+ * a box inside a box and cost the message its contrast.
+ */
+.finding {
+  border-left: 4px solid var(--colour-border-strong);
+}
+
+.finding--success {
+  border-left-color: var(--tone-success);
+}
+
+.finding--error {
+  border-left-color: var(--tone-error);
+  border-color: var(--tone-error-border);
+  border-left-color: var(--tone-error);
+}
+
+.finding--review {
+  border-left-color: var(--tone-review);
+  border-color: var(--tone-review-border);
+  border-left-color: var(--tone-review);
+}
+
+/*
+ * Not applicable keeps the dashed edge it has always had. Nothing was examined,
+ * so the card should not look like a result - and the dash says that without
+ * relying on the muted colour to say it.
+ */
+.finding--muted {
+  border-style: dashed;
+  border-left-style: solid;
+  border-left-color: var(--colour-border-strong);
 }

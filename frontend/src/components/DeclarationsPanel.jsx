@@ -23,9 +23,7 @@ export function DeclarationsPanel({ declarations }) {
   return (
     <div className="card">
       <div className="card__header">
-        <h3 className="card__title">
-          <span aria-hidden="true">✎</span> Declared facts — what was stated
-        </h3>
+        <h3 className="card__title">What you told us about this package</h3>
         {declarations.length > 0 && (
           <span className="verdict__meta">{declarations.length} stated</span>
         )}
@@ -33,10 +31,10 @@ export function DeclarationsPanel({ declarations }) {
 
       <div className="card__body">
         <p className="hint">
-          These were <strong>asserted by a person</strong>, not read off the
-          photograph. Several clauses apply or do not apply on facts a camera
+          These were <strong>stated by a person</strong>, not read off the
+          photo. Several requirements apply, or do not apply, on facts a camera
           cannot see, and the engine uses these to decide which rules govern
-          this package. Nothing here was verified.
+          this package. <strong>Nothing here was verified.</strong>
         </p>
       </div>
 
