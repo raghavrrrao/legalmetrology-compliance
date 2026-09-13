@@ -800,9 +800,13 @@ stored result back, listing stored results, and listing the declarable
 applicability conditions — follow the deny-by-default rule and require an
 authenticated user, unless
 `DEMO_PUBLIC_ANALYSIS_API` is set. That setting **defaults to False** and is
-intended only for a local demonstration, where no login screen exists yet. It
-affects these five endpoints and nothing else, and uploads still go through
-validation and anonymous throttling either way.
+intended only for a demonstration, where no login screen exists yet. It affects
+these six — five URL routes, since the collection's GET and POST share one —
+and nothing else, and uploads still go through validation and anonymous
+throttling either way. The set is pinned by
+`apps/core/tests/test_demo_mode_scope.py`; see
+[docs/deployment.md](deployment.md#demonstration-mode) for what turning it on
+makes true.
 
 **The permission class does not do authorisation.** It answers "may this caller
 reach the analysis API?", never "is this result theirs?". The second question is

@@ -234,7 +234,7 @@ are covered.
 |---|---|
 | **Throttling is per-process** | DRF's counters live in `LocMemCache`, which is per-process, so N workers means N counters and roughly N x the configured rate. Mitigated rather than fixed: `backend/gunicorn.conf.py` runs **one worker** by default, which makes the configured rate the real rate. Raising `WEB_CONCURRENCY` reintroduces the gap and needs a shared cache (Redis/Memcached) first. |
 | **No antivirus scanning** | Format validation is not malware scanning. Consider ClamAV if uploads are ever re-served to other users. |
-| **No login screen** | Session authentication and deny-by-default permissions exist; there is no sign-in UI, so a demonstration uses `DEMO_PUBLIC_ANALYSIS_API`. `feature/authentication` owns this. |
+| **No login screen** | Session authentication and deny-by-default permissions exist; there is no sign-in UI, so a demonstration uses `DEMO_PUBLIC_ANALYSIS_API` — anonymous analysis, rate-limited, and never a substitute for authentication on a service holding real submissions. `feature/authentication` owns this. |
 | **Anonymous results are a shared pool** | Compliance results *are* scoped to the caller (see below), but an anonymous caller has no identity to scope to, so anonymous checks are visible to every anonymous caller of the same deployment. Only reachable with `DEMO_PUBLIC_ANALYSIS_API` on, which defaults to off. |
 | **No per-object authorisation on images** | `ProductImage.uploaded_by` is recorded and not filtered on. No endpoint returns an image or its file today, so nothing is exposed by it; it must be enforced before one does. |
 | **Uploaded images are unencrypted at rest** | Filesystem permissions only (`FILE_UPLOAD_PERMISSIONS = 0o640`). |

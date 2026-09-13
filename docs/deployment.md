@@ -259,12 +259,16 @@ Expect `400`. A `200` means `DJANGO_ALLOWED_HOSTS` is too wide.
 
 ```bash
 curl -sS -o /dev/null -w '%{http_code}
-' https://<your-service>.up.railway.app/api/v1/compliance/history/
+' https://<your-service>.up.railway.app/api/v1/compliance/
 ```
 
-Expect `403` with `DEMO_PUBLIC_ANALYSIS_API=False`. A `200` from an
-unauthenticated request means the demo switch is on — deliberate or not,
-[know which](#demonstration-mode).
+Expect `403` with `DEMO_PUBLIC_ANALYSIS_API=False`, and `200` with it on. This
+is also how you confirm the demo switch took effect after changing it —
+[know which position it is in](#demonstration-mode), deliberate or not.
+
+> Use exactly that path. An URL the API does not route — `compliance/history/`,
+> say — answers `404` from the catch-all in either position, so a smoke test
+> written against one would report "not public" on a deployment that is.
 
 **5. Uploaded media is not served**
 
@@ -439,24 +443,79 @@ demonstration's rate limiter would be the wrong shape.
 
 ## Demonstration mode
 
-`DEMO_PUBLIC_ANALYSIS_API=True` opens exactly two things to anonymous callers:
+`DEMO_PUBLIC_ANALYSIS_API` **defaults to `False`** and should stay False unless
+the deployment is deliberately a public demonstration. It is an environment
+variable, never a code change: nothing in the repository turns it on.
 
-- `POST /api/v1/images/` — upload and analyse
-- `GET /api/v1/compliance/<id>/` and the history list — read stored results
+### What it opens
 
-It defaults to **False**, and it should stay False unless the deployment is
-deliberately a public demonstration. If you turn it on, this is what becomes
-true and it should be said out loud:
+Exactly five routes become reachable by anonymous callers — the frontend's
+workflow, end to end, and nothing else:
 
+| Route | What the demo needs it for |
+|---|---|
+| `GET /api/v1/compliance/applicability-conditions/` | The declarable facts the scan form asks about |
+| `POST /api/v1/extraction/` | Upload a label, read it with Tesseract |
+| `POST /api/v1/compliance/` | Evaluate a reading against the loaded rules |
+| `GET /api/v1/compliance/<uuid>/` | Open a stored result by its link |
+| `GET /api/v1/compliance/` | The inspections history list |
+
+`POST /api/v1/images/` (the one-shot upload-and-analyse path) is the same
+permission and is open too; the frontend uses the two-step path above instead.
+
+`GET /api/v1/health/` was already public and is unaffected. **Everything else
+stays authenticated**, and the Django admin is not in this switch's reach at
+all — it is a DRF permission class, and admin does not use one. That set is
+pinned by `backend/apps/core/tests/test_demo_mode_scope.py`, so it cannot widen
+without a failing test.
+
+### What becomes true when you turn it on
+
+Said out loud rather than discovered:
+
+- **Analysis becomes anonymous.** No account, no login, no identity recorded —
+  which is the point for a demonstration where judges should not have to sign
+  up, and is exactly why it is wrong for a service holding real submissions.
 - Anyone with the URL can upload a photograph and consume OCR and database
-  capacity, bounded only by the anonymous throttle (30/min by default).
+  capacity, **bounded only by the anonymous throttle** (`API_THROTTLE_ANON`,
+  30/min). The throttle is not relaxed by this switch and is the demonstration's
+  only defence against a script; it is asserted against a demo-opened endpoint
+  in the test named above.
 - Anonymous results are a **shared pool**: everyone using the demonstration can
   read every result created anonymously. Authenticated users' results stay
   private to them — `CallerScopedCheckQuerysetMixin` enforces that regardless of
-  this flag.
-- Uploads are still validated in full. Nothing about validation is relaxed.
+  this flag, and an anonymous caller asking for a signed-in user's result gets a
+  404, not a 403.
+- **Uploads are still validated in full**: format allowlist, real image
+  decoding, maximum file size, maximum pixel count. Nothing about validation,
+  logging or UUID identifiers is relaxed.
 
-If real submissions will be stored, leave it False and add authentication first.
+### Turning it on for the SIH demonstration
+
+Set it in the Railway service variables — not in code, not in a committed file:
+
+```
+DEMO_PUBLIC_ANALYSIS_API=True
+```
+
+Railway redeploys on a variable change; the flag is read per request, so the
+new value is live as soon as the new instance is serving. Confirm with
+`GET /api/v1/health/` (which answers either way) and then with an anonymous
+`GET /api/v1/compliance/applicability-conditions/`, which returns `403` before
+the change and `200` after it.
+
+**Turn it back off when the demonstration is over.** Demo access is not a
+substitute for authentication on a public service: it is a deliberate,
+time-boxed relaxation for an audience that must not be asked to create
+accounts. If persistent private user data is ever introduced, this switch must
+be `False` and real authenticated access built first — the anonymous shared
+pool described above has no way to separate one person's submissions from
+another's.
+
+Enabling it changes **API access only**. The compliance engine, its rules, its
+determinism and its traceability are untouched by it, and a demonstration
+running in this mode is no more legally authoritative than one running
+authenticated.
 
 ---
 
