@@ -10,14 +10,15 @@ import { humaniseCode } from '../utils/format.js';
 /**
  * One requirement's outcome: scannable at a glance, verifiable on demand.
  *
- * A reader with eight findings in front of them is triaging, not studying. So
- * the closed card carries exactly what triage needs — the status, the
- * requirement's name, its clause, and the engine's one-sentence explanation —
- * and everything a reviewer needs to *check* the outcome sits behind "Details":
- * what was expected, what was found, the normalised reading, the legal source,
- * the confidence, and why the requirement was applied at all.
+ * A reader with eight findings in front of them is triaging, not studying. The
+ * closed card carries what triage needs and nothing else: the status, the
+ * requirement's name, its clause, the engine's one-sentence explanation, and
+ * **what was expected beside what was found** — the two values the reader is
+ * actually comparing. Behind "Details" sits what a reviewer needs to *verify*
+ * that comparison: the normalised reading, the legal reference and source, the
+ * severity, the confidence, and why the requirement was applied at all.
  *
- * Two things refuse to be hidden, because hiding them would change what the
+ * Three things refuse to be hidden, because hiding them would change what the
  * card says:
  *
  * - **Why a review is needed**, with what the user can do about it. A
@@ -56,9 +57,7 @@ export function FindingCard({ finding, index }) {
     <article className={`finding finding--${tone}`}>
       <header className="finding__head">
         <span className={`finding__badge finding__badge--${tone}`}>
-          <span className="finding__badge-mark" aria-hidden="true">
-            {STATUS_MARK[finding.status] ?? '?'}
-          </span>
+          <StatusIcon status={finding.status} />
           {STATUS_LABEL[finding.status] ?? humaniseCode(finding.status)}
         </span>
         <span className="finding__index" aria-hidden="true">
@@ -76,6 +75,41 @@ export function FindingCard({ finding, index }) {
         )}
 
         <p className="finding__message">{finding.message}</p>
+
+        {/*
+          Expected beside found, on the face of the card. These are the two
+          values a reviewer is comparing; behind a disclosure they cost a click
+          per finding, and eight findings means eight clicks to answer the
+          question the page exists to answer.
+        */}
+        <dl className="finding__facts">
+          {finding.requirement && (
+            <div className="finding__fact">
+              <dt>Expected</dt>
+              <dd>{finding.requirement}</dd>
+            </div>
+          )}
+          <div className="finding__fact">
+            <dt>Found</dt>
+            <dd>
+              {finding.extractedRawValue ? (
+                <span className="finding__value">
+                  {finding.extractedRawValue}
+                </span>
+              ) : (
+                /*
+                  An absence is the finding here, and it must not be dressed up
+                  as a value - nor stated more strongly than the evidence
+                  allows. What is known is that nothing was detected in this
+                  photo, not that the package lacks the declaration.
+                */
+                <span className="is-muted">
+                  Not detected in this photo
+                </span>
+              )}
+            </dd>
+          </div>
+        </dl>
 
         {reviewReasons.length > 0 && (
           <div className="finding__review" role="note">
@@ -158,33 +192,11 @@ export function FindingCard({ finding, index }) {
             <summary>Details</summary>
 
             <dl className="detail-list">
-              {finding.requirement && (
-                <>
-                  <dt>What we expected</dt>
-                  <dd>{finding.requirement}</dd>
-                </>
-              )}
-
-              <dt>What we found</dt>
-              <dd>
-                {finding.extractedRawValue ? (
-                  <span className="finding__value">
-                    {finding.extractedRawValue}
-                  </span>
-                ) : (
-                  /*
-                    An absence is the finding here, and it must not be dressed
-                    up as a value. Nor stated more strongly than the evidence
-                    allows: what is known is that nothing was detected in this
-                    photo, not that the package lacks the declaration.
-                  */
-                  <span className="is-muted">
-                    Nothing was detected for this requirement in the supplied
-                    photo.
-                  </span>
-                )}
-              </dd>
-
+              {/*
+                Expected and found are on the card itself, above. Repeating
+                them here would give a reader two copies to reconcile and no
+                way to tell which was the reading.
+              */}
               {finding.extractedNormalizedValue && (
                 <>
                   <dt>Normalised reading</dt>
@@ -307,12 +319,41 @@ const STATUS_LABEL = Object.freeze({
   not_applicable: 'Not applicable',
 });
 
-const STATUS_MARK = Object.freeze({
-  passed: '✓',
-  failed: '!',
-  inconclusive: '?',
-  not_applicable: '—',
-});
+/**
+ * The status mark, drawn.
+ *
+ * `aria-hidden`, and never the only carrier of the status: the badge says the
+ * word beside it, so the outcome survives a failed icon, a high-contrast mode
+ * and a monochrome printout. An unrecognised status gets the question mark,
+ * which is the honest glyph for one.
+ */
+function StatusIcon({ status }) {
+  const paths = {
+    passed: <path d="m3.5 8.5 3 3 6-7" />,
+    failed: <path d="M8 3.5v5.5M8 12.2v.3" />,
+    inconclusive: (
+      <path d="M5.8 6a2.2 2.2 0 1 1 2.9 2.1c-.5.2-.7.6-.7 1.1v.4M8 12.2v.3" />
+    ),
+    not_applicable: <path d="M4 8h8" />,
+  };
+
+  return (
+    <span className="finding__badge-mark" aria-hidden="true">
+      <svg
+        viewBox="0 0 16 16"
+        width="12"
+        height="12"
+        fill="none"
+        stroke="currentColor"
+        strokeWidth="2"
+        strokeLinecap="round"
+        strokeLinejoin="round"
+      >
+        {paths[status] ?? paths.inconclusive}
+      </svg>
+    </span>
+  );
+}
 
 /**
  * True when a review is waiting on a fact the submitter could simply state.

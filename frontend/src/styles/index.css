@@ -2689,3 +2689,652 @@ summary:focus-visible,
   border-left-style: solid;
   border-left-color: var(--colour-border-strong);
 }
+
+/* ==========================================================================
+   Visual pass
+   ==========================================================================
+   A polish layer over the system above: depth, rhythm, and the states that
+   make an interface feel built rather than assembled. It adds no colour
+   outside the palette in :root, no dependency, and no animation longer than
+   a sixth of a second.
+
+   The rule at the top of this file still holds: nothing here encodes a
+   compliance decision. Every tone is chosen by a component from a value the
+   backend sent.
+   ========================================================================== */
+
+/* --- page ground ---------------------------------------------------------- */
+
+/*
+ * Not flat white. A cool near-neutral with a barely-there grid, which gives
+ * the white cards something to sit on and reads as "instrument" rather than
+ * "document". The grid is two 1px gradients at ~2% contrast - visible as
+ * texture, invisible as lines, and free of an image request.
+ */
+body {
+  background-color: var(--colour-page);
+  background-image:
+    linear-gradient(rgba(18, 52, 31, 0.022) 1px, transparent 1px),
+    linear-gradient(90deg, rgba(18, 52, 31, 0.022) 1px, transparent 1px);
+  background-size: 40px 40px;
+  background-attachment: fixed;
+}
+
+/* --- typography ----------------------------------------------------------- */
+
+.page-header {
+  margin-bottom: var(--space-5);
+  padding-bottom: var(--space-4);
+  border-bottom: 1px solid var(--colour-border);
+}
+
+.page-title {
+  font-size: clamp(1.7rem, 1.2rem + 1.6vw, 2.25rem);
+}
+
+.breadcrumb {
+  font-size: 0.82rem;
+  letter-spacing: 0.01em;
+}
+
+.section-heading {
+  display: flex;
+  align-items: baseline;
+  gap: var(--space-2);
+  letter-spacing: -0.01em;
+}
+
+.hint {
+  line-height: 1.6;
+}
+
+.is-muted {
+  color: var(--colour-muted);
+}
+
+/* --- cards ---------------------------------------------------------------- */
+
+/*
+ * One card treatment, everywhere. The header no longer floats: it sits on a
+ * faintly tinted band with a hairline under it, so "what this card is" and
+ * "what is in it" are told apart at a glance rather than by spacing alone.
+ */
+.card__header {
+  padding: var(--space-3) var(--space-4);
+  background: linear-gradient(
+    var(--colour-primary-softer),
+    var(--colour-surface)
+  );
+  border-bottom: 1px solid var(--colour-border);
+}
+
+.card__title {
+  letter-spacing: -0.01em;
+}
+
+.card__body + .card__body {
+  border-top: 1px solid var(--colour-border);
+}
+
+.card__footer {
+  padding: var(--space-3) var(--space-4);
+  border-top: 1px solid var(--colour-border);
+  background: var(--colour-surface-muted);
+  color: var(--colour-muted);
+  font-size: 0.84rem;
+}
+
+/* --- buttons -------------------------------------------------------------- */
+
+/*
+ * A comfortable target everywhere, which is the part usually lost on a phone.
+ * 2.75rem is 44px at the default root size - the smallest target that is
+ * reliably hittable with a thumb.
+ */
+.button {
+  min-height: 2.75rem;
+  padding: 0.55rem 1.1rem;
+  gap: var(--space-2);
+  border: 1px solid var(--colour-border-strong);
+  background: var(--colour-surface);
+  color: var(--colour-text);
+  cursor: pointer;
+}
+
+.button:hover:not(:disabled) {
+  border-color: var(--colour-primary);
+  background: var(--colour-primary-softer);
+}
+
+.button:active:not(:disabled) {
+  transform: translateY(1px);
+}
+
+.button--primary {
+  border-color: var(--colour-primary);
+  background: var(--colour-primary);
+  color: var(--colour-on-primary);
+}
+
+.button--primary:hover:not(:disabled) {
+  background: var(--colour-primary-hover);
+  border-color: var(--colour-primary-hover);
+}
+
+/* The subordinate action: readable, reachable, and obviously not the point. */
+.button--quiet {
+  border-color: transparent;
+  background: transparent;
+  color: var(--colour-muted);
+}
+
+.button--quiet:hover:not(:disabled) {
+  border-color: var(--colour-border-strong);
+  background: var(--colour-surface-muted);
+  color: var(--colour-text);
+}
+
+.button:disabled {
+  opacity: 0.55;
+  cursor: not-allowed;
+}
+
+.button--link {
+  min-height: 2.75rem;
+  padding: 0 0.25rem;
+}
+
+/* --- upload --------------------------------------------------------------- */
+
+.upload__dropzone {
+  position: relative;
+  isolation: isolate;
+  padding: var(--space-7) var(--space-5);
+  border-width: 1.5px;
+  transition: border-color 0.16s ease, background 0.16s ease,
+    box-shadow 0.16s ease, transform 0.16s ease;
+}
+
+/*
+ * The technical grid, masked to fade out before it reaches the edge so it
+ * reads as texture under the panel rather than as a pattern with a border.
+ * Decorative only - the component marks it aria-hidden.
+ */
+.upload__grid {
+  position: absolute;
+  inset: 0;
+  z-index: -1;
+  background-image:
+    linear-gradient(rgba(18, 52, 31, 0.055) 1px, transparent 1px),
+    linear-gradient(90deg, rgba(18, 52, 31, 0.055) 1px, transparent 1px);
+  background-size: 22px 22px;
+  -webkit-mask-image: radial-gradient(
+    ellipse at center,
+    rgba(0, 0, 0, 0.9),
+    transparent 72%
+  );
+  mask-image: radial-gradient(
+    ellipse at center,
+    rgba(0, 0, 0, 0.9),
+    transparent 72%
+  );
+  transition: opacity 0.16s ease;
+}
+
+.upload__inner {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+}
+
+.upload__dropzone:hover {
+  transform: translateY(-1px);
+  box-shadow: var(--shadow-raised);
+}
+
+/* The drag state is unmistakable: solid edge, tinted ground, lifted panel. */
+.upload__dropzone--active {
+  border-style: solid;
+  border-color: var(--colour-accent);
+  background: var(--colour-accent-soft);
+  box-shadow: var(--shadow-raised);
+}
+
+.upload__dropzone--active .upload__grid {
+  opacity: 0.45;
+}
+
+.upload__icon {
+  box-shadow: 0 0 0 6px var(--colour-primary-softer);
+  transition: transform 0.16s ease;
+}
+
+.upload__dropzone:hover .upload__icon {
+  transform: translateY(-2px);
+}
+
+.upload__title {
+  font-size: 1.35rem;
+  letter-spacing: -0.01em;
+}
+
+.upload__formats {
+  max-width: 24rem;
+  line-height: 1.5;
+}
+
+/* The selected state is a result, so it is drawn as one. */
+.upload__chosen {
+  border-color: var(--tone-success-border);
+  background: linear-gradient(
+    180deg,
+    var(--tone-success-bg),
+    var(--colour-surface) 40%
+  );
+}
+
+.upload__confirm-mark {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 1.35rem;
+  height: 1.35rem;
+  flex: none;
+  border-radius: 50%;
+  background: var(--tone-success);
+  border: 0;
+  color: #ffffff;
+}
+
+.upload__facts {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr);
+  gap: 0.15rem var(--space-3);
+  margin: var(--space-2) 0 0;
+  font-size: 0.88rem;
+}
+
+.upload__facts dt {
+  color: var(--colour-muted);
+}
+
+.upload__facts dd {
+  margin: 0;
+  font-weight: 600;
+}
+
+/* --- workflow ------------------------------------------------------------- */
+
+.workflow {
+  padding: var(--space-3) var(--space-4);
+  box-shadow: var(--shadow-card);
+}
+
+.workflow__steps {
+  gap: var(--space-2) var(--space-3);
+}
+
+/*
+ * A connector between steps, drawn on the item rather than as a separate
+ * element so it wraps with the row instead of stranding a line at the end of it.
+ */
+.workflow__step + .workflow__step::before {
+  content: '';
+  width: 1.25rem;
+  height: 1px;
+  flex: none;
+  margin-right: var(--space-1);
+  background: var(--colour-border-strong);
+}
+
+.workflow__step--done + .workflow__step::before,
+.workflow__step--active + .workflow__step::before {
+  background: var(--colour-accent);
+}
+
+.workflow__marker {
+  transition: background 0.16s ease, border-color 0.16s ease, color 0.16s ease;
+}
+
+/* The step in progress is the loudest thing in the strip. */
+.workflow__step--active .workflow__marker {
+  box-shadow: 0 0 0 4px var(--colour-primary-soft);
+}
+
+.workflow__step--active .workflow__label {
+  font-weight: 700;
+}
+
+/* --- question groups ------------------------------------------------------ */
+
+.question-group {
+  transition: border-color 0.16s ease, box-shadow 0.16s ease;
+}
+
+.question-group:hover {
+  border-color: var(--colour-border-strong);
+}
+
+.question-group[open] {
+  box-shadow: var(--shadow-card);
+}
+
+.question-group__summary {
+  align-items: flex-start;
+  padding: var(--space-4);
+  min-height: 2.75rem;
+}
+
+.question-group__summary::before {
+  margin-top: 0.55rem;
+  transition: transform 0.16s ease, border-color 0.16s ease;
+}
+
+.question-group__heading {
+  font-size: 1rem;
+  letter-spacing: -0.005em;
+}
+
+.question-group__blurb {
+  color: var(--colour-muted);
+  font-size: 0.86rem;
+  line-height: 1.5;
+}
+
+.question-group__count {
+  padding: 0.2rem 0.6rem;
+  border-radius: var(--radius-pill);
+  border: 1px solid var(--colour-border);
+  background: var(--colour-surface-muted);
+  font-size: 0.76rem;
+  font-weight: 700;
+}
+
+.question-group__count--some {
+  border-color: var(--colour-accent);
+  background: var(--colour-accent-soft);
+  color: var(--colour-accent);
+}
+
+/* --- answers -------------------------------------------------------------- */
+
+.question__legend {
+  font-size: 1rem;
+  line-height: 1.45;
+}
+
+.question__option {
+  min-height: 2.5rem;
+}
+
+/*
+ * The selected answer is unmistakable - filled, not merely outlined. A user
+ * scanning back over seventeen questions must be able to see which ones they
+ * have answered without reading each one.
+ */
+.question__option:has(input:checked) {
+  background: var(--colour-primary);
+  border-color: var(--colour-primary);
+  color: var(--colour-on-primary);
+  font-weight: 600;
+}
+
+/* Except "Not answered", which is the absence of a choice and stays quiet. */
+.question__option--none:has(input:checked) {
+  background: var(--colour-surface-muted);
+  border-color: var(--colour-border-strong);
+  color: var(--colour-muted);
+  font-weight: 500;
+}
+
+/* --- ready to check ------------------------------------------------------- */
+
+/*
+ * The checkpoint. A tinted panel with a top rule in the accent, which marks it
+ * as the end of the form without a gradient or a border of a different colour
+ * from everything else on the page.
+ */
+.ready {
+  border-top: 3px solid var(--colour-primary);
+  box-shadow: var(--shadow-raised);
+}
+
+.ready__title {
+  font-size: 1.45rem;
+  letter-spacing: -0.01em;
+}
+
+.ready__actions .button--primary {
+  min-height: 3.1rem;
+}
+
+/* --- verdict -------------------------------------------------------------- */
+
+.verdict {
+  box-shadow: var(--shadow-raised);
+}
+
+.verdict__headline {
+  padding-top: var(--space-2);
+}
+
+.verdict__summary {
+  color: var(--colour-text);
+  line-height: 1.65;
+}
+
+/* --- findings ------------------------------------------------------------- */
+
+.finding {
+  transition: box-shadow 0.16s ease, transform 0.16s ease;
+}
+
+.finding:hover {
+  box-shadow: var(--shadow-raised);
+}
+
+.finding__badge-mark {
+  display: inline-flex;
+  align-items: center;
+}
+
+/*
+ * Expected beside found. Two columns where there is room, stacked where there
+ * is not - and the labels stay attached to their values either way, which a
+ * single two-column grid over four cells would not guarantee.
+ */
+.finding__facts {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(15rem, 1fr));
+  gap: var(--space-3);
+  margin: var(--space-4) 0 0;
+  padding: var(--space-3);
+  border: 1px solid var(--colour-border);
+  border-radius: var(--radius-sm);
+  background: var(--colour-surface-muted);
+}
+
+.finding__fact dt {
+  margin-bottom: 0.15rem;
+  font-size: 0.72rem;
+  font-weight: 700;
+  letter-spacing: 0.07em;
+  text-transform: uppercase;
+  color: var(--colour-muted);
+}
+
+.finding__fact dd {
+  margin: 0;
+  line-height: 1.55;
+  overflow-wrap: anywhere;
+}
+
+.finding__value {
+  font-family: var(--font-mono);
+  font-size: 0.88rem;
+  padding: 0.1rem 0.35rem;
+  border-radius: 4px;
+  background: var(--colour-surface);
+  border: 1px solid var(--colour-border);
+}
+
+/* --- history -------------------------------------------------------------- */
+
+.history-list {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-3);
+}
+
+.history-item {
+  border-radius: var(--radius);
+  box-shadow: var(--shadow-card);
+  transition: box-shadow 0.16s ease, border-color 0.16s ease,
+    transform 0.16s ease;
+}
+
+/*
+ * The whole row lifts on hover, because the whole row is the link target - a
+ * hover state on the title alone would say the rest of the card is not
+ * clickable, which is not what it does.
+ */
+.history-item:hover {
+  border-color: var(--colour-border-strong);
+  box-shadow: var(--shadow-raised);
+  transform: translateY(-1px);
+}
+
+.pagination {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-3);
+  margin-top: var(--space-5);
+  padding-top: var(--space-4);
+  border-top: 1px solid var(--colour-border);
+}
+
+.pagination__status {
+  margin: 0;
+  color: var(--colour-muted);
+  font-size: 0.88rem;
+}
+
+/* --- states --------------------------------------------------------------- */
+
+.empty-state {
+  padding: var(--space-6) var(--space-5);
+  border: 1px dashed var(--colour-border-strong);
+  border-radius: var(--radius);
+  background: var(--colour-surface);
+  text-align: center;
+  color: var(--colour-muted);
+}
+
+.panel {
+  border-radius: var(--radius);
+  padding: var(--space-4);
+  box-shadow: var(--shadow-card);
+}
+
+.panel--error {
+  border-left: 3px solid var(--tone-error);
+}
+
+.panel--warning {
+  border-left: 3px solid var(--tone-warning);
+}
+
+.status-list {
+  gap: var(--space-2) var(--space-4);
+}
+
+/* --- narrow screens ------------------------------------------------------- */
+
+@media (max-width: 48rem) {
+  body {
+    background-size: 28px 28px;
+  }
+
+  .page-header {
+    margin-bottom: var(--space-4);
+    padding-bottom: var(--space-3);
+  }
+
+  .upload__title {
+    font-size: 1.2rem;
+  }
+
+  .upload__formats {
+    font-size: 0.8rem;
+  }
+
+  .ready__title {
+    font-size: 1.25rem;
+  }
+
+  .question-group__summary {
+    padding: var(--space-3);
+  }
+
+  /* The connector costs width a phone does not have to spare. */
+  .workflow__step + .workflow__step::before {
+    display: none;
+  }
+
+  .finding__facts {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .pagination {
+    flex-direction: column;
+    align-items: stretch;
+  }
+
+  .pagination .button {
+    width: 100%;
+  }
+
+  .pagination__status {
+    order: -1;
+    text-align: center;
+  }
+}
+
+/* --- motion --------------------------------------------------------------- */
+
+/*
+ * Every transition above is decoration over a state that is already legible
+ * without it, so all of them can simply stop.
+ */
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    transition-duration: 0.01ms !important;
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+  }
+}
+
+/*
+ * The upload's own technical disclosure sits between the hero and the next
+ * card, where a full-bleed top rule made it read as an orphaned section rather
+ * than as a footnote to the panel above it. Indented, quiet, and with no rule
+ * of its own.
+ */
+.upload > .technical-details {
+  margin: var(--space-2) 0 0;
+  padding: 0 var(--space-2);
+  border-top: 0;
+  font-size: 0.84rem;
+}
+
+.upload > .technical-details > summary {
+  color: var(--colour-faint);
+}
+
+.upload > .technical-details > summary:hover {
+  color: var(--colour-muted);
+}

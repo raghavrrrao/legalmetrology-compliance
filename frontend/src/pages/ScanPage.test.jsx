@@ -97,11 +97,11 @@ function renderPage() {
 async function uploadAndSubmit() {
   const file = new File(['fake-image-bytes'], 'label.png', { type: 'image/png' });
 
-  fireEvent.change(screen.getByLabelText(/upload a label photograph/i), {
+  fireEvent.change(screen.getByLabelText(/upload a product label image/i), {
     target: { files: [file] },
   });
 
-  const submit = screen.getByRole('button', { name: /check this package/i });
+  const submit = screen.getByRole('button', { name: /check compliance/i });
   await waitFor(() => expect(submit).toBeEnabled());
   fireEvent.click(submit);
 }
@@ -120,7 +120,7 @@ describe('the extraction to compliance flow', () => {
     routeFetch();
     renderPage();
 
-    expect(screen.getByRole('button', { name: /check this package/i })).toBeDisabled();
+    expect(screen.getByRole('button', { name: /check compliance/i })).toBeDisabled();
     await screen.findByText(/tesseract 0\.2\.0/i);
   });
 
@@ -188,10 +188,10 @@ describe('the extraction to compliance flow', () => {
     renderPage();
 
     const file = new File(['bytes'], 'label.png', { type: 'image/png' });
-    fireEvent.change(screen.getByLabelText(/upload a label photograph/i), {
+    fireEvent.change(screen.getByLabelText(/upload a product label image/i), {
       target: { files: [file] },
     });
-    const submit = screen.getByRole('button', { name: /check this package/i });
+    const submit = screen.getByRole('button', { name: /check compliance/i });
     await waitFor(() => expect(submit).toBeEnabled());
 
     fireEvent.click(submit);
@@ -540,7 +540,7 @@ describe('findings', () => {
     ).toBeInTheDocument();
     expect(screen.getByText('The declaration was not found.')).toBeInTheDocument();
     expect(
-      screen.getByText(/nothing was detected for this requirement/i),
+      screen.getByText(/not detected in this photo/i),
     ).toBeInTheDocument();
   });
 

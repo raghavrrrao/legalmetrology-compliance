@@ -173,6 +173,7 @@ const GROUPS = [
     key: 'scope_gate',
     mode: 'scope_gate',
     eyebrow: 'Package scope',
+    blurb: 'Tell us how this package is being sold.',
     heading: 'Does any scope exclusion apply to this package?',
     lede:
       'Some types of packages are outside the scope of these Rules. Answer “Yes” only if one of these describes your package. If you are unsure, choose “Not sure”.',
@@ -181,6 +182,7 @@ const GROUPS = [
     key: 'withholds_exemption',
     mode: 'withholds_exemption',
     eyebrow: 'Product type',
+    blurb: 'Tell us what kind of goods are inside.',
     heading: 'Does this package belong to a special product category?',
     lede:
       'These product types cannot rely on an exemption that might otherwise excuse a declaration.',
@@ -189,6 +191,7 @@ const GROUPS = [
     key: 'exempts',
     mode: 'exempts',
     eyebrow: 'Special circumstances',
+    blurb: 'Tell us whether anything excuses a declaration.',
     heading: 'Does a special exemption apply?',
     lede:
       'Each of these excuses the package from one particular declaration. The rest of the check stands either way.',
@@ -197,6 +200,7 @@ const GROUPS = [
     key: 'requires',
     mode: 'requires',
     eyebrow: 'Import information',
+    blurb: 'Tell us where the goods came from.',
     heading: 'Where did this product come from?',
     lede: 'These facts make an additional declaration required.',
   },
@@ -205,6 +209,7 @@ const GROUPS = [
 const OTHER_GROUP = {
   key: 'other',
   eyebrow: 'Other',
+  blurb: 'Questions this screen has no plainer summary for.',
   heading: 'Anything else we should know?',
   lede:
     'These affect the check in a way this version of the screen has no plainer description for. Open “Why are we asking?” under a question for what the backend says it does.',
@@ -256,11 +261,21 @@ function ConditionGroup({ group, answers, onChange, disabled }) {
         <span className="question-group__text">
           <span className="question-group__eyebrow">{group.eyebrow}</span>
           <span className="question-group__heading">{group.heading}</span>
+          {group.blurb && (
+            <span className="question-group__blurb">{group.blurb}</span>
+          )}
         </span>
-        <span className="question-group__count">
-          {answeredHere > 0
-            ? `${answeredHere} of ${group.conditions.length} answered`
-            : `${group.conditions.length} question${group.conditions.length === 1 ? '' : 's'}`}
+        {/*
+          Both numbers, always: "8 questions" alone does not say whether any
+          have been answered, and "0 answered" alone does not say how many
+          there are. Together they are the whole state of the group, which is
+          what a closed card has to carry.
+        */}
+        <span
+          className={`question-group__count${answeredHere > 0 ? ' question-group__count--some' : ''}`}
+        >
+          {group.conditions.length} question
+          {group.conditions.length === 1 ? '' : 's'} · {answeredHere} answered
         </span>
       </summary>
 

@@ -108,24 +108,28 @@ export function UploadPanel({
 
           <div className="upload__meta">
             <p className="upload__confirm">
-              <span className="upload__confirm-mark" aria-hidden="true">
-                ✓
-              </span>
+              <CheckIcon />
               Photo ready to check
             </p>
             <p className="upload__filename">{file.name}</p>
-            <p className="upload__filesize">
-              {formatFileSize(file.size)}
-              {typeAccepted && ' · supported format'}
-            </p>
+            <dl className="upload__facts">
+              <dt>Size</dt>
+              <dd>{formatFileSize(file.size)}</dd>
+              <dt>Format</dt>
+              <dd>
+                {typeAccepted
+                  ? `${formatName(file.type)} · supported`
+                  : formatName(file.type)}
+              </dd>
+            </dl>
 
             <div className="upload__actions">
               <label htmlFor="scan-image" className="button">
-                Replace photo
+                Replace
               </label>
               <button
                 type="button"
-                className="button--link"
+                className="button button--quiet"
                 onClick={handleClear}
                 disabled={disabled}
               >
@@ -146,42 +150,54 @@ export function UploadPanel({
           onDrop={handleDrop}
         >
           {/*
-            Inline SVG rather than a glyph: the icon characters in the design
-            are not in every system font, and a missing one renders as a tofu
-            box on the most prominent element of the screen.
+            A faint technical grid behind the panel, masked to fade out at the
+            edges. Drawn with two repeating-linear-gradients rather than 451
+            elements or an image: it costs one painted layer, it scales to any
+            panel size, and it needs no library. Purely decorative, so it is
+            aria-hidden and sits behind the content.
           */}
-          <span className="upload__icon" aria-hidden="true">
-            <svg viewBox="0 0 24 24" width="30" height="30" fill="none">
-              <rect
-                x="3"
-                y="5"
-                width="18"
-                height="14"
-                rx="2.5"
-                stroke="currentColor"
-                strokeWidth="1.5"
-              />
-              <path
-                d="M3 16.2l4.6-4.1 3.8 3.3 3.1-2.6L21 16.6"
-                stroke="currentColor"
-                strokeWidth="1.5"
-                strokeLinecap="round"
-                strokeLinejoin="round"
-              />
-              <circle cx="8.8" cy="9.6" r="1.4" fill="currentColor" />
-            </svg>
-          </span>
+          <span className="upload__grid" aria-hidden="true" />
 
-          <h2 className="upload__title">
-            Upload a label photograph
-          </h2>
-          <p className="upload__text">
-            Drag and drop your image here, or
-          </p>
-          <span className="upload__button button button--primary">
-            Choose a photo
+          <span className="upload__inner">
+            {/*
+              Inline SVG rather than a glyph: the icon characters in the design
+              are not in every system font, and a missing one renders as a tofu
+              box on the most prominent element of the screen.
+            */}
+            <span className="upload__icon" aria-hidden="true">
+              <svg viewBox="0 0 24 24" width="26" height="26" fill="none">
+                <rect
+                  x="3"
+                  y="5"
+                  width="18"
+                  height="14"
+                  rx="2.5"
+                  stroke="currentColor"
+                  strokeWidth="1.6"
+                />
+                <path
+                  d="M3 16.2l4.6-4.1 3.8 3.3 3.1-2.6L21 16.6"
+                  stroke="currentColor"
+                  strokeWidth="1.6"
+                  strokeLinecap="round"
+                  strokeLinejoin="round"
+                />
+                <circle cx="8.8" cy="9.6" r="1.4" fill="currentColor" />
+              </svg>
+            </span>
+
+            <h2 className="upload__title">Upload a product label image</h2>
+            <p className="upload__text">
+              Drag and drop, or choose an image
+            </p>
+            <span className="upload__button button button--primary">
+              Choose an image
+            </span>
+            <p className="upload__formats">
+              JPG · PNG · WebP — the server checks the size and rejects an
+              oversized file
+            </p>
           </span>
-          <p className="upload__formats">JPG · PNG · WebP</p>
         </label>
       )}
 
@@ -234,4 +250,37 @@ export function UploadPanel({
       </details>
     </section>
   );
+}
+
+/** A tick, drawn rather than typed, so it cannot render as a tofu box. */
+function CheckIcon() {
+  return (
+    <span className="upload__confirm-mark" aria-hidden="true">
+      <svg viewBox="0 0 16 16" width="11" height="11" fill="none">
+        <path
+          d="m3.5 8.5 3 3 6-7"
+          stroke="currentColor"
+          strokeWidth="2.2"
+          strokeLinecap="round"
+          strokeLinejoin="round"
+        />
+      </svg>
+    </span>
+  );
+}
+
+/**
+ * A MIME type as the word a person uses for it.
+ *
+ * Falls back to the raw type, and then to a plain statement that the browser
+ * reported none - which is a real state for a file dragged out of some tools,
+ * and is not the same thing as an unsupported one.
+ */
+function formatName(mimeType) {
+  const names = {
+    'image/jpeg': 'JPG',
+    'image/png': 'PNG',
+    'image/webp': 'WebP',
+  };
+  return names[mimeType] ?? mimeType ?? 'type not reported';
 }

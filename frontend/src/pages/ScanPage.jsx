@@ -236,10 +236,11 @@ export function ScanPage() {
           />
 
           <section className="ready">
-            <h2 className="ready__title">Ready to check?</h2>
+            <h2 className="ready__title">Ready to check</h2>
             <p className="ready__text">
-              We will read the label and compare the information we can identify
-              against the requirements that apply.
+              Review the information above, then run the compliance check. We
+              read the label and compare what we can identify against the
+              requirements that apply.
             </p>
 
             <dl className="review-summary">
@@ -269,7 +270,7 @@ export function ScanPage() {
                     {isEvaluating ? 'Checking requirements…' : 'Reading label…'}
                   </>
                 ) : (
-                  'Check this package'
+                  'Check compliance'
                 )}
               </button>
               <button
