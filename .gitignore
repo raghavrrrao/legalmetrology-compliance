@@ -4,6 +4,11 @@
 .env
 .env.*
 !.env.example
+# The deployed frontend's API URL is public configuration, not a secret:
+# every VITE_ variable is readable in the shipped bundle regardless. It is
+# committed so a production build is reproducible rather than depending on
+# whatever was in one person's shell. Nothing confidential goes in it.
+!frontend/.env.production
 *.pem
 *.key
 *.p12

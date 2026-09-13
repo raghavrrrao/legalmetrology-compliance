@@ -284,7 +284,10 @@ Copy-Item frontend\.env.example frontend\.env
 cp frontend/.env.example frontend/.env
 ```
 
-The default `VITE_API_BASE_URL` works for local development.
+The default `VITE_API_BASE_URL` works for local development. A production
+build (`npm run build`) instead reads the committed
+`frontend/.env.production`, which points at the deployed Railway API — see
+[frontend/README.md](frontend/README.md) and [docs/deployment.md](docs/deployment.md).
 
 > **Never put a secret in `frontend/.env`.** Vite inlines every `VITE_`
 > variable into the JavaScript bundle, where anyone can read it.

@@ -18,6 +18,32 @@ endpoints require an authenticated user unless `DEMO_PUBLIC_ANALYSIS_API` is set
 in the backend environment; without either, the scan screen renders a 403 that
 says so.
 
+## The API URL
+
+`VITE_API_BASE_URL` is the only place the backend address is configured.
+`src/config/env.js` reads it once and `services/apiClient.js` resolves every
+path against it; nothing else touches `import.meta.env`. The value **includes**
+`/api/v1/` and a trailing slash, because services ask for `health/` and
+`compliance/` relative to it.
+
+| Command | File Vite loads | Value |
+|---|---|---|
+| `npm run dev` | `.env` (your copy of `.env.example`) | `http://localhost:8000/api/v1/` |
+| `npm run build` | `.env.production` (committed) | `https://legalmetrology-compliance-production.up.railway.app/api/v1/` |
+
+It is a **build-time** variable: it is compiled into the bundle, so changing it
+means rebuilding and redeploying, not editing a setting on whatever hosts
+`dist/`. A shell variable overrides both files
+(`VITE_API_BASE_URL="https://…/api/v1/" npm run build`).
+
+A build with no value **fails** — in `vite.config.js`, and again in
+`src/config/env.js` — rather than quietly defaulting to localhost, which in a
+deployed page means asking each visitor's own computer for the API.
+
+Pointing a local `npm run dev` at the deployed API works, but the backend must
+list `http://localhost:5173` in `CORS_ALLOWED_ORIGINS` or the browser blocks
+every response. See [docs/deployment.md](../docs/deployment.md).
+
 ## Screens
 
 | Route | What it is |

@@ -8,7 +8,11 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { ApiError, apiRequest } from './apiClient.js';
-import { DEFAULT_API_BASE_URL, normaliseBaseUrl } from '../config/env.js';
+import {
+  DEFAULT_API_BASE_URL,
+  normaliseBaseUrl,
+  resolveApiBaseUrl,
+} from '../config/env.js';
 
 function jsonResponse(body, { status = 200 } = {}) {
   return {
@@ -40,6 +44,24 @@ describe('URL construction', () => {
   it('falls back to the default when unset', () => {
     expect(normaliseBaseUrl(undefined)).toBe(DEFAULT_API_BASE_URL);
     expect(normaliseBaseUrl('   ')).toBe(DEFAULT_API_BASE_URL);
+  });
+
+  it('uses the localhost default when unset outside production', () => {
+    expect(resolveApiBaseUrl(undefined, false)).toBe(DEFAULT_API_BASE_URL);
+    expect(resolveApiBaseUrl('   ', false)).toBe(DEFAULT_API_BASE_URL);
+  });
+
+  it('refuses to fall back to localhost in a production build', () => {
+    // A deployed bundle pointed at localhost asks the visitor's own machine
+    // for the API. Failing is the only honest outcome.
+    expect(() => resolveApiBaseUrl(undefined, true)).toThrow(/VITE_API_BASE_URL/);
+    expect(() => resolveApiBaseUrl('', true)).toThrow(/VITE_API_BASE_URL/);
+  });
+
+  it('uses the configured URL in a production build', () => {
+    expect(resolveApiBaseUrl('https://api.example.test/api/v1', true)).toBe(
+      'https://api.example.test/api/v1/',
+    );
   });
 
   it('resolves a leading-slash path against the base, not the domain root', async () => {

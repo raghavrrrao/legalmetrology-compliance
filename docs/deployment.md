@@ -462,28 +462,56 @@ If real submissions will be stored, leave it False and add authentication first.
 
 ## Frontend deployment
 
-The frontend is a static Vite bundle. Build it with the deployed API's origin:
+The frontend is a static Vite bundle, and the API it calls is compiled into it.
+
+| Where | File Vite reads | `VITE_API_BASE_URL` |
+|---|---|---|
+| `npm run dev` | `frontend/.env` (copied from `.env.example`) | `http://localhost:8000/api/v1/` |
+| `npm run build` | `frontend/.env.production` (committed) | `https://legalmetrology-compliance-production.up.railway.app/api/v1/` |
+
+So a production build needs no arguments:
 
 ```bash
 cd frontend
-VITE_API_BASE_URL="https://<your-service>.up.railway.app/api/v1/" npm run build
+npm run build
 ```
 
 Then host `frontend/dist/` anywhere static (Netlify, Vercel, Cloudflare Pages,
 GitHub Pages, or a second Railway service).
 
-Three things to know:
+To build against a different backend, override on the command line — a shell
+variable beats both files:
+
+```bash
+VITE_API_BASE_URL="https://<other-service>.up.railway.app/api/v1/" npm run build
+```
+
+Five things to know:
 
 - **The value is baked in at build time**, not read at runtime. Changing the API
-  URL means rebuilding, not editing an environment variable on the host.
-- A shell variable **overrides** `frontend/.env`, which is what makes the
-  command above work without editing a file.
-- Every `VITE_`-prefixed variable is **public** — readable by anyone who opens
-  the bundle. Never put a secret there. The trailing slash matters and is
-  normalised by `src/config/env.js` if you forget it.
+  URL means **rebuilding and redeploying the frontend**, not editing an
+  environment variable on the host.
+- **`/api/v1/` is part of the value**, not something the code appends. Services
+  request paths relative to it (`health/`, `compliance/`), so an origin on its
+  own sends every request to the site root.
+- **A build with no value fails** rather than falling back to localhost — in
+  `vite.config.js` at build time, and again in `src/config/env.js` if a bundle
+  is produced some other way. A deployed page pointed at `localhost:8000` asks
+  each visitor's own computer for the API, which looks like an outage nobody
+  can reproduce.
+- `frontend/.env.production` is **committed on purpose**: it holds a public URL,
+  and every `VITE_`-prefixed variable is readable in the shipped bundle anyway.
+  That is not licence to add anything else — never put a secret in any file
+  under `frontend/`.
+- The trailing slash matters and is normalised by `src/config/env.js` if you
+  forget it.
 
 Whatever origin the frontend ends up on must be added to the backend's
-`CORS_ALLOWED_ORIGINS`, exactly, with scheme and no trailing slash.
+`CORS_ALLOWED_ORIGINS`, exactly, with scheme and no trailing slash — including
+`http://localhost:5173` while testing a local frontend against the deployed
+API. Until it is there, every request fails in the browser with a CORS error
+and the health card reports the backend as unreachable; the API itself is fine
+and `curl` against it will say so.
 
 ---
 
