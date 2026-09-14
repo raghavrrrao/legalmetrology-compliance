@@ -97,11 +97,11 @@ function renderPage() {
 async function uploadAndSubmit() {
   const file = new File(['fake-image-bytes'], 'label.png', { type: 'image/png' });
 
-  fireEvent.change(screen.getByLabelText(/label photograph/i), {
+  fireEvent.change(screen.getByLabelText(/upload a product label image/i), {
     target: { files: [file] },
   });
 
-  const submit = screen.getByRole('button', { name: /start analysis/i });
+  const submit = screen.getByRole('button', { name: /check compliance/i });
   await waitFor(() => expect(submit).toBeEnabled());
   fireEvent.click(submit);
 }
@@ -120,8 +120,8 @@ describe('the extraction to compliance flow', () => {
     routeFetch();
     renderPage();
 
-    expect(screen.getByRole('button', { name: /start analysis/i })).toBeDisabled();
-    await screen.findByText(/tesseract 0\.2\.0 is installed/i);
+    expect(screen.getByRole('button', { name: /check compliance/i })).toBeDisabled();
+    await screen.findByText(/tesseract 0\.2\.0/i);
   });
 
   it('posts the file to the extraction endpoint as multipart', async () => {
@@ -159,7 +159,7 @@ describe('the extraction to compliance flow', () => {
     routeFetch();
     renderPage();
 
-    fireEvent.change(screen.getByLabelText(/product category/i), {
+    fireEvent.change(screen.getByLabelText(/what kind of product is this/i), {
       target: { value: 'packaged-food' },
     });
     await uploadAndSubmit();
@@ -188,10 +188,10 @@ describe('the extraction to compliance flow', () => {
     renderPage();
 
     const file = new File(['bytes'], 'label.png', { type: 'image/png' });
-    fireEvent.change(screen.getByLabelText(/label photograph/i), {
+    fireEvent.change(screen.getByLabelText(/upload a product label image/i), {
       target: { files: [file] },
     });
-    const submit = screen.getByRole('button', { name: /start analysis/i });
+    const submit = screen.getByRole('button', { name: /check compliance/i });
     await waitFor(() => expect(submit).toBeEnabled());
 
     fireEvent.click(submit);
@@ -249,9 +249,11 @@ describe('showing the result', () => {
     await uploadAndSubmit();
 
     const verdict = within(await screen.findByLabelText(/compliance verdict/i));
-    expect(verdict.getByText(/2 passed/i)).toBeInTheDocument();
-    expect(verdict.getByText(/1 failed/i)).toBeInTheDocument();
-    expect(verdict.getByText(/1 undetermined/i)).toBeInTheDocument();
+    // The counts appear twice inside the verdict on purpose: once as the
+    // sentence a reader repeats, once as the chips they check it against.
+    expect(verdict.getAllByText(/2 passed/i).length).toBeGreaterThan(0);
+    expect(verdict.getAllByText(/1 failed/i).length).toBeGreaterThan(0);
+    expect(verdict.getAllByText(/1 requires review/i).length).toBeGreaterThan(0);
   });
 
   it('shows the declarations that were read, raw and normalised', async () => {
@@ -261,13 +263,14 @@ describe('showing the result', () => {
 
     expect(await screen.findByText(/net quantity/i)).toBeInTheDocument();
 
-    // Scoped to the table: the same string also appears in the recognised-text
-    // block below it, which is the point - the reading is shown beside the
-    // text it came from - so an unscoped query is legitimately ambiguous.
-    const table = within(screen.getByRole('table'));
-    expect(table.getByText('Net Qty: 500 g')).toBeInTheDocument();
-    expect(table.getByText(/"value":500/)).toBeInTheDocument();
-    expect(table.getByText('91%')).toBeInTheDocument();
+    // Scoped to the read-fields list: the same string also appears in the
+    // recognised-text block behind the disclosure, which is the point - the
+    // reading is shown beside the text it came from - so an unscoped query is
+    // legitimately ambiguous.
+    const read = within(screen.getByRole('list', { name: /what we read/i }));
+    expect(read.getByText('Net Qty: 500 g')).toBeInTheDocument();
+    expect(read.getByText(/"value":500/)).toBeInTheDocument();
+    expect(read.getByText(/91%/)).toBeInTheDocument();
   });
 
   it('keeps extraction and compliance under separate headings', async () => {
@@ -278,10 +281,10 @@ describe('showing the result', () => {
     // A reading and a verdict are different claims. Running them together is
     // the specific thing this screen exists not to do.
     expect(
-      await screen.findByRole('heading', { name: /extraction — what was read/i }),
+      await screen.findByRole('heading', { name: /label information/i }),
     ).toBeInTheDocument();
     expect(
-      screen.getByRole('heading', { name: /key findings — what was checked/i }),
+      screen.getByRole('heading', { name: /requirements checked/i }),
     ).toBeInTheDocument();
   });
 
@@ -300,7 +303,7 @@ describe('showing the result', () => {
     renderPage();
     await uploadAndSubmit();
 
-    expect(await screen.findByText(/no ocr engine is installed/i)).toBeInTheDocument();
+    expect(await screen.findByText(/no text reader is installed/i)).toBeInTheDocument();
   });
 
   it('keeps "named but unreadable" separate from "not found"', async () => {
@@ -355,7 +358,7 @@ describe('errors', () => {
     await uploadAndSubmit();
 
     const alert = await screen.findByRole('alert');
-    expect(alert).toHaveTextContent(/could not be read/i);
+    expect(alert).toHaveTextContent(/could not read this photo/i);
     expect(alert).toHaveTextContent(/unsupported file extension/i);
     // Extraction failed, so no verdict was asked for.
     expect(callsTo('/compliance/')).toHaveLength(0);
@@ -378,7 +381,7 @@ describe('errors', () => {
     await uploadAndSubmit();
 
     const alert = await screen.findByRole('alert');
-    expect(alert).toHaveTextContent(/rules could not be checked/i);
+    expect(alert).toHaveTextContent(/could not finish the check/i);
     // The reading is unaffected and still on screen.
     expect(await screen.findByText('Net Qty: 500 g')).toBeInTheDocument();
 
@@ -433,7 +436,7 @@ describe('findings', () => {
     });
     renderPage();
     await uploadAndSubmit();
-    return screen.findByRole('heading', { name: /key findings/i });
+    return screen.findByRole('heading', { name: /requirements checked/i });
   }
 
   it('renders a passed finding with its requirement, evidence and confidence', async () => {
@@ -450,7 +453,7 @@ describe('findings', () => {
       finding.getByText('The package must declare its net quantity.'),
     ).toBeInTheDocument();
     expect(finding.getByText('Rule 6(1)(e), LMPC Rules 2011')).toBeInTheDocument();
-    expect(finding.getByText('91%')).toBeInTheDocument();
+    expect(finding.getByText(/91%/)).toBeInTheDocument();
   });
 
   it('renders several findings, failures first', async () => {
@@ -478,7 +481,7 @@ describe('findings', () => {
       }),
     ]);
 
-    expect(await screen.findByText('Inconclusive')).toBeInTheDocument();
+    expect(await screen.findByText('Requires review')).toBeInTheDocument();
     expect(screen.queryByText('Passed')).not.toBeInTheDocument();
   });
 
@@ -487,7 +490,7 @@ describe('findings', () => {
       findingBody({ status: 'failed', violation: 42 }),
     ]);
 
-    expect(await screen.findByText(/violation #42/i)).toBeInTheDocument();
+    expect(await screen.findByText(/#42/)).toBeInTheDocument();
   });
 
   it('explains a failure that was downgraded because the rule is unverified', async () => {
@@ -500,7 +503,7 @@ describe('findings', () => {
     ]);
 
     expect(
-      await screen.findByText(/recorded as undetermined, not as a violation/i),
+      await screen.findByText(/recorded as requiring review, not as a violation/i),
     ).toBeInTheDocument();
   });
 
@@ -537,7 +540,7 @@ describe('findings', () => {
     ).toBeInTheDocument();
     expect(screen.getByText('The declaration was not found.')).toBeInTheDocument();
     expect(
-      screen.getByText(/no text excerpt was recorded/i),
+      screen.getByText(/not detected in this photo/i),
     ).toBeInTheDocument();
   });
 
@@ -580,6 +583,73 @@ describe('findings', () => {
     // Existing violation behaviour is untouched.
     expect(screen.getByText('DEMO-0001')).toBeInTheDocument();
     expect(screen.getByText('SOME TEXT WE DID READ')).toBeInTheDocument();
+  });
+});
+
+describe('the four statuses are told apart', () => {
+  async function renderWithFindings(findings) {
+    routeFetch({
+      compliance: jsonResponse(
+        complianceBody({ findings, rules_evaluated: findings.length }),
+        201,
+      ),
+    });
+    renderPage();
+    await uploadAndSubmit();
+    return screen.findByRole('heading', { name: /requirements checked/i });
+  }
+
+  it('names each status in words, not by colour alone', async () => {
+    await renderWithFindings([
+      findingBody({ id: 1, title: 'A passed rule', status: 'passed' }),
+      findingBody({ id: 2, title: 'A failed rule', status: 'failed' }),
+      findingBody({ id: 3, title: 'An undecided rule', status: 'inconclusive' }),
+      findingBody({ id: 4, title: 'An excused rule', status: 'not_applicable' }),
+    ]);
+
+    // Each of the four is readable as text. A user who cannot distinguish the
+    // tones - colour-blind, high-contrast mode, a printout - must still be able
+    // to tell a failure from an exemption.
+    expect(await screen.findByText('Passed')).toBeInTheDocument();
+    expect(screen.getByText('Failed')).toBeInTheDocument();
+    expect(screen.getByText('Requires review')).toBeInTheDocument();
+    expect(screen.getByText('Not applicable')).toBeInTheDocument();
+  });
+
+  it('never calls a not-applicable requirement a pass', async () => {
+    await renderWithFindings([
+      findingBody({ status: 'not_applicable', title: 'An excused rule' }),
+    ]);
+
+    expect(await screen.findByText('Not applicable')).toBeInTheDocument();
+    expect(screen.queryByText('Passed')).not.toBeInTheDocument();
+    expect(
+      screen.getByText(/this requirement does not govern this package/i),
+    ).toBeInTheDocument();
+  });
+});
+
+describe('the reading does not drown the result', () => {
+  it('puts the raw recognised text behind a disclosure, not on the page', async () => {
+    routeFetch();
+    renderPage();
+    await uploadAndSubmit();
+
+    // The fields it found come first, in the open.
+    const read = within(
+      await screen.findByRole('list', { name: /what we read/i }),
+    );
+    expect(read.getByText('Net Qty: 500 g')).toBeInTheDocument();
+
+    // The OCR dump is still there - it is how a reviewer checks a reading that
+    // looks wrong - but it is inside a closed <details>, so it cannot swamp the
+    // verdict it is evidence for.
+    const disclosure = screen
+      .getByText(/view extracted text/i)
+      .closest('details');
+    expect(disclosure).not.toBeNull();
+    expect(disclosure.open).toBe(false);
+    expect(within(disclosure).getByText(/recognised text/i)).toBeInTheDocument();
   });
 });
 
@@ -656,17 +726,28 @@ describe('unexpected data', () => {
 });
 
 /**
- * Open the declaration disclosure and answer one question.
+ * Open every collapsed question group on the page.
  *
- * `within` the first form: the page renders the same component again under
- * "Resolve a review" once a result exists, and a bare `getByRole` would then
- * match two groups.
+ * The seventeen questions live in four collapsed groups now, so a test that
+ * wants to reach one opens them the way a user does. Safe to call when a result
+ * is on screen as well, where the form is rendered a second time under "Help us
+ * finish this check".
+ */
+function openQuestionGroups() {
+  const summaries = document.querySelectorAll('.question-group > summary');
+  expect(summaries.length).toBeGreaterThan(0);
+  summaries.forEach((summary) => fireEvent.click(summary));
+}
+
+/**
+ * Open the question groups and answer one question.
+ *
+ * The first match, deliberately: the page renders the same component again
+ * under "Help us finish this check" once a result exists, and a bare
+ * `getByRole` would then match two groups with the same name.
  */
 function answerFirstQuestion(name, answer) {
-  const [disclosure] = screen.getAllByText(
-    /state what you know about this package/i,
-  );
-  fireEvent.click(disclosure);
+  openQuestionGroups();
   const [group] = screen.getAllByRole('group', { name });
   fireEvent.click(within(group).getByRole('radio', { name: answer }));
 }
@@ -676,8 +757,8 @@ describe('applicability declarations', () => {
     routeFetch();
     renderPage();
 
-    await screen.findByText(/state what you know about this package/i);
-    fireEvent.click(screen.getByText(/state what you know about this package/i));
+    await screen.findByText(/tell us about this package/i);
+    openQuestionGroups();
 
     expect(
       screen.getByRole('group', { name: /imported product/i }),
@@ -687,7 +768,8 @@ describe('applicability declarations', () => {
   it('sends nothing when no question was answered', async () => {
     routeFetch();
     renderPage();
-    await screen.findByText(/state what you know about this package/i);
+    await screen.findByText(/tell us about this package/i);
+    openQuestionGroups();
     await uploadAndSubmit();
 
     await waitFor(() => expect(callsTo('/compliance/')).toHaveLength(1));
@@ -700,7 +782,8 @@ describe('applicability declarations', () => {
   it('sends the answers that were given', async () => {
     routeFetch();
     renderPage();
-    await screen.findByText(/state what you know about this package/i);
+    await screen.findByText(/tell us about this package/i);
+    openQuestionGroups();
     answerFirstQuestion(/imported product/i, 'No');
     await uploadAndSubmit();
 
@@ -709,11 +792,12 @@ describe('applicability declarations', () => {
     expect(body.applicability_declarations).toEqual({ 'imported-product': 'no' });
   });
 
-  it('sends "don’t know" as unknown, never as no', async () => {
+  it('sends "not sure" as unknown, never as no', async () => {
     routeFetch();
     renderPage();
-    await screen.findByText(/state what you know about this package/i);
-    answerFirstQuestion(/imported product/i, 'Don’t know');
+    await screen.findByText(/tell us about this package/i);
+    openQuestionGroups();
+    answerFirstQuestion(/imported product/i, 'Not sure');
     await uploadAndSubmit();
 
     await waitFor(() => expect(callsTo('/compliance/')).toHaveLength(1));
@@ -726,7 +810,8 @@ describe('applicability declarations', () => {
   it('re-checks the same reading without uploading the photograph again', async () => {
     routeFetch();
     renderPage();
-    await screen.findByText(/state what you know about this package/i);
+    await screen.findByText(/tell us about this package/i);
+    openQuestionGroups();
     await uploadAndSubmit();
     await screen.findByRole('button', { name: /check the rules again/i });
 
@@ -772,11 +857,11 @@ describe('applicability declarations', () => {
     await uploadAndSubmit();
 
     const heading = await screen.findByRole('heading', {
-      name: /declarations — what was stated/i,
+      name: /what you told us about this package/i,
     });
     expect(heading).toBeInTheDocument();
     // Labelled as an assertion, never as a measurement.
-    expect(screen.getByText(/asserted by a person/i)).toBeInTheDocument();
+    expect(screen.getByText(/stated by a person/i)).toBeInTheDocument();
     expect(screen.getByText(/nothing here was verified/i)).toBeInTheDocument();
   });
 
@@ -859,7 +944,7 @@ describe('why a review is required', () => {
     renderPage();
     await uploadAndSubmit();
 
-    expect(await screen.findByText(/why this needs review/i)).toBeInTheDocument();
+    expect(await screen.findByText(/why can.t we decide/i)).toBeInTheDocument();
     expect(screen.getByText(/was not stated/i)).toBeInTheDocument();
   });
 
@@ -882,7 +967,7 @@ describe('why a review is required', () => {
     await uploadAndSubmit();
 
     expect(
-      await screen.findByText(/a photograph cannot settle this/i),
+      await screen.findByText(/a photo cannot settle this/i),
     ).toBeInTheDocument();
   });
 
@@ -898,8 +983,10 @@ describe('why a review is required', () => {
     renderPage();
     await uploadAndSubmit();
 
-    await screen.findByText(/undetermined/i);
-    expect(screen.queryByText(/why this needs review/i)).not.toBeInTheDocument();
+    await screen.findByText('Requires review');
+    expect(
+      screen.queryByText(/why can.t we decide/i),
+    ).not.toBeInTheDocument();
   });
 });
 
@@ -914,7 +1001,7 @@ describe('legal context and evidence', () => {
     renderPage();
     await uploadAndSubmit();
 
-    await screen.findByText(/evidence — text read from the photograph/i);
+    await screen.findByText(/text read from the photo/i);
     expect(screen.getByText(/Rule 6\(1\)\(c\)/)).toBeInTheDocument();
     expect(screen.getByText(/G\.S\.R\. 202\(E\)/)).toBeInTheDocument();
     expect(
@@ -950,7 +1037,7 @@ describe('legal context and evidence', () => {
     await uploadAndSubmit();
 
     const disclosure = await screen.findByText(
-      /applicability — why this rule was applied/i,
+      /why this requirement was applied/i,
     );
     fireEvent.click(disclosure);
     expect(

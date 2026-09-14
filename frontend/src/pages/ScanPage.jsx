@@ -5,25 +5,32 @@ import { ApplicabilityForm } from '../components/ApplicabilityForm.jsx';
 import { ComplianceResult } from '../components/ComplianceResult.jsx';
 import { ConfigurationPanel } from '../components/ConfigurationPanel.jsx';
 import { ExtractionPanel } from '../components/ExtractionPanel.jsx';
-import { PipelineStepper } from '../components/PipelineStepper.jsx';
 import { UploadPanel } from '../components/UploadPanel.jsx';
-import { PHASES, useLabelAnalysis } from '../hooks/useLabelAnalysis.js';
+import { WorkflowProgress } from '../components/WorkflowProgress.jsx';
+import { useLabelAnalysis } from '../hooks/useLabelAnalysis.js';
+import { config } from '../config/env.js';
 import { useApiHealth } from '../hooks/useApiHealth.js';
 import { useApplicabilityConditions } from '../hooks/useApplicabilityConditions.js';
 
 /**
  * Upload a label photograph and show what the system made of it.
  *
- * The Figma "Inspection Workspace" before analysis and "Compliance Assessment"
- * after it, over the real two-step backend flow:
+ * Four numbered steps before the check, over the real two-step backend flow:
  *
  *     POST /api/v1/extraction/  ->  run id  ->  POST /api/v1/compliance/
  *
- * Two steps rather than the one-shot `POST /api/v1/images/`, because the
+ * Two requests rather than the one-shot `POST /api/v1/images/`, because the
  * reading and the verdict are different claims and this screen shows both. The
  * photograph is uploaded once; `useLabelAnalysis` holds the run id, so
  * retrying a failed verdict re-evaluates the reading the user is already
  * looking at rather than producing a new one that might read differently.
+ *
+ * **The steps are a reading order, not a wizard.** Every control stays on the
+ * page and reachable at once; what the numbers do is tell somebody who has
+ * never seen the screen what to do first, and let them stop after step one if
+ * that is all they have. A wizard that hid step 2 until step 1 was "complete"
+ * would make the optional steps feel mandatory and would put a gate in front of
+ * a user who only wants to press the button.
  *
  * Things on this page that are deliberate and should survive a redesign:
  *
@@ -150,6 +157,8 @@ export function ScanPage() {
     }
   }
 
+  const answeredCount = Object.values(declarations).filter(Boolean).length;
+
   return (
     <section className="page">
       <div className="page-header">
@@ -161,12 +170,12 @@ export function ScanPage() {
             <li>{result ? `Result ${result.id.slice(0, 8)}` : 'New inspection'}</li>
           </ol>
           <h1 className="page-title">
-            {result ? 'Compliance assessment' : 'Scan a package label'}
+            {result ? 'Compliance assessment' : 'Check a packaged product label'}
           </h1>
           <p className="page-lede">
             {result
               ? 'What the label was read to say, and what the loaded rules make of it.'
-              : 'Upload a photograph of a packaged commodity label. The system reads the declarations it can find, then checks them against the rules loaded in this installation.'}
+              : 'Upload a clear photo of the product label. We read the information we can find on it and check the requirements that apply.'}
           </p>
         </div>
 
@@ -186,84 +195,146 @@ export function ScanPage() {
         )}
       </div>
 
-      {phase !== PHASES.IDLE && <PipelineStepper phase={phase} />}
+      <WorkflowProgress
+        phase={phase}
+        hasFile={Boolean(file)}
+        hasDetails={Boolean(categoryCode.trim()) || answeredCount > 0}
+        hasResult={Boolean(result)}
+      />
 
       {!result && (
-        <form className="workspace" onSubmit={handleSubmit}>
-          <div className="workspace__main">
-            <UploadPanel
-              file={file}
-              health={health}
-              disabled={isBusy}
-              onFileSelected={(chosen) => {
-                setFile(chosen);
-                setCopied(false);
-              }}
-              onClear={handleReset}
-            />
-          </div>
+        <form className="scan-flow" onSubmit={handleSubmit}>
+          <UploadPanel
+            file={file}
+            previewUrl={previewUrl}
+            health={health}
+            disabled={isBusy}
+            onFileSelected={(chosen) => {
+              setFile(chosen);
+              setCopied(false);
+            }}
+            onClear={handleReset}
+          />
 
-          <div className="workspace__aside">
-            <ApplicabilityForm
-              catalogue={conditions}
-              isLoading={conditionsLoading}
-              error={conditionsError}
-              answers={declarations}
-              onChange={setDeclaration}
-              onClearAll={clearDeclarations}
-              disabled={isBusy}
-            />
+          <ConfigurationPanel
+            categoryCode={categoryCode}
+            onCategoryCodeChange={setCategoryCode}
+            viewType={viewType}
+            onViewTypeChange={setViewType}
+            health={health}
+            isBusy={isBusy}
+          />
 
-            <ConfigurationPanel
-              categoryCode={categoryCode}
-              onCategoryCodeChange={setCategoryCode}
-              viewType={viewType}
-              onViewTypeChange={setViewType}
-              health={health}
-              canSubmit={Boolean(file)}
-              isBusy={isBusy}
-              busyLabel={
-                isEvaluating ? 'Checking rules…' : 'Reading label…'
-              }
-              onReset={handleReset}
-            />
-          </div>
+          <ApplicabilityForm
+            catalogue={conditions}
+            isLoading={conditionsLoading}
+            error={conditionsError}
+            answers={declarations}
+            onChange={setDeclaration}
+            onClearAll={clearDeclarations}
+            disabled={isBusy}
+          />
+
+          <section className="ready">
+            <h2 className="ready__title">Ready to check</h2>
+            <p className="ready__text">
+              Review the information above, then run the compliance check. We
+              read the label and compare what we can identify against the
+              requirements that apply.
+            </p>
+
+            <dl className="review-summary">
+              <dt>Photo</dt>
+              <dd>{file ? file.name : 'No photo chosen yet'}</dd>
+              <dt>Product type</dt>
+              <dd>{categoryCode.trim() || 'Not specified'}</dd>
+              <dt>Part of package</dt>
+              <dd>{viewTypeLabel(viewType)}</dd>
+              <dt>Questions answered</dt>
+              <dd>
+                {answeredCount === 0
+                  ? 'None — anything that depends on them will be reported as requiring review'
+                  : `${answeredCount} of ${conditions?.conditions.length ?? 0}`}
+              </dd>
+            </dl>
+
+            <div className="ready__actions">
+              <button
+                type="submit"
+                className="button button--primary button--large button--block"
+                disabled={!file || isBusy}
+              >
+                {isBusy ? (
+                  <>
+                    <span className="spinner" aria-hidden="true" />
+                    {isEvaluating ? 'Checking requirements…' : 'Reading label…'}
+                  </>
+                ) : (
+                  'Check compliance'
+                )}
+              </button>
+              <button
+                type="button"
+                className="button button--block"
+                onClick={handleReset}
+                disabled={isBusy}
+              >
+                Clear
+              </button>
+            </div>
+
+            {!file && (
+              <p className="hint hint--centred">
+                Upload a photo above to start the check.
+              </p>
+            )}
+
+            <p className="ready__note">
+              Automated assistance · Human review may be required
+            </p>
+          </section>
         </form>
       )}
 
       {extractionError && (
         <div className="panel panel--error" role="alert">
           <p>
-            <strong>The label could not be read.</strong>{' '}
-            {extractionError.message}
+            <strong>We could not read this photo.</strong>{' '}
+            {friendlyExtractionError(extractionError)}
           </p>
-          <ErrorDetails details={extractionError.details} />
           {extractionError.status === 403 && (
             <p className="panel__hint">
-              The analysis endpoints require an authenticated user unless the
-              demonstration switch is on. Sign in, or set{' '}
-              <code>DEMO_PUBLIC_ANALYSIS_API</code> in the backend environment.
+              Analysis requires a signed-in user on this deployment, unless the
+              public demonstration mode (
+              <code>DEMO_PUBLIC_ANALYSIS_API</code>) is switched on.
             </p>
           )}
-          {extractionError.isNetworkError && (
+          {/*
+            Developer guidance, and only where a developer is: telling a
+            demonstration audience to run `manage.py runserver` names a machine
+            they do not have and an action they cannot take. `isDevelopment` is
+            the flag this project keeps for exactly this - an affordance, never
+            an authorisation.
+          */}
+          {extractionError.isNetworkError && config.isDevelopment && (
             <p className="panel__hint">
               Start the Django server with{' '}
               <code>python backend/manage.py runserver</code>.
             </p>
           )}
+          <ErrorDetails error={extractionError} />
         </div>
       )}
 
       {complianceError && (
         <div className="panel panel--error" role="alert">
           <p>
-            <strong>The label was read, but the rules could not be checked.</strong>{' '}
+            <strong>We read the label, but could not finish the check.</strong>{' '}
             {complianceError.message}
           </p>
-          <ErrorDetails details={complianceError.details} />
           <p className="panel__hint">
-            The reading is unaffected and is still held. Retrying evaluates the
-            same reading — the photograph is not uploaded or read again.
+            Nothing has been lost. Trying again checks the same reading — the
+            photo is not uploaded or read a second time.
           </p>
           <button
             type="button"
@@ -275,6 +346,7 @@ export function ScanPage() {
           >
             Check the rules again
           </button>
+          <ErrorDetails error={complianceError} />
         </div>
       )}
 
@@ -288,11 +360,11 @@ export function ScanPage() {
             without them, and at that point re-checking must not cost another
             upload - it evaluates the same stored reading.
           */}
-          <h2 className="section-heading">Resolve a review</h2>
-          <p className="page-lede">
-            A clause reported as needing review often turns on a fact no
-            photograph can show. State what you know and check the same reading
-            again — the photograph is not uploaded or read a second time.
+          <h2 className="section-heading">Help us finish this check</h2>
+          <p className="section-lede">
+            Some requirements depend on information that a photograph cannot
+            establish. Answer what you know and check the same reading again —
+            the photo is not uploaded or read a second time.
           </p>
           <ApplicabilityForm
             catalogue={conditions}
@@ -313,7 +385,7 @@ export function ScanPage() {
               {isEvaluating ? (
                 <>
                   <span className="spinner" aria-hidden="true" />
-                  Checking rules…
+                  Checking requirements…
                 </>
               ) : (
                 'Check the rules again'
@@ -353,25 +425,74 @@ export function ScanPage() {
   );
 }
 
+/** The label for a view type, for the review summary. */
+function viewTypeLabel(value) {
+  const labels = {
+    unspecified: 'Not specified',
+    front: 'Front panel',
+    back: 'Back panel',
+    principal_display: 'Principal display panel',
+    label: 'Label close-up',
+    other: 'Other',
+  };
+  return labels[value] ?? value;
+}
+
 /**
- * The API's per-field validation messages.
+ * A sentence a submitter can act on, for the failures that have one.
+ *
+ * Only the cases where the cause is genuinely known are reworded. Everything
+ * else falls through to the backend's own message, which is written for a
+ * person and is more specific than any generic sentence this file could offer —
+ * an oversized upload says what the limit was, and replacing that with "unable
+ * to upload this image" would lose the one fact the user needed.
+ */
+function friendlyExtractionError(error) {
+  if (error.isNetworkError) {
+    return 'We could not reach the server. Check your connection and try again.';
+  }
+  if (error.code === 'timeout') {
+    return 'The request took too long. Try again, or try a smaller photo.';
+  }
+  if (error.status === 403) {
+    return 'This server did not allow the request.';
+  }
+  return error.message;
+}
+
+/**
+ * The API's per-field validation messages, behind a disclosure.
  *
  * Rendered as text, never as markup: this is server-generated content and the
- * details object is shaped by whatever field failed.
+ * details object is shaped by whatever field failed. The error code travels
+ * with it because it is what somebody debugging will ask for first, and it is
+ * meaningless to everybody else — which is exactly what a disclosure is for.
  */
-function ErrorDetails({ details }) {
-  if (!details || typeof details !== 'object') {
-    return null;
-  }
+function ErrorDetails({ error }) {
+  const details = error?.details;
+  const hasFields = details && typeof details === 'object';
 
   return (
-    <ul>
-      {Object.entries(details).map(([field, messages]) => (
-        <li key={field}>
-          <strong>{field}:</strong>{' '}
-          {Array.isArray(messages) ? messages.join(' ') : String(messages)}
-        </li>
-      ))}
-    </ul>
+    <details className="technical-details">
+      <summary>Technical details</summary>
+      <dl className="detail-list">
+        <dt>Error code</dt>
+        <dd>
+          <code>{error.code}</code>
+        </dd>
+        <dt>HTTP status</dt>
+        <dd>{error.status === 0 ? 'No response received' : error.status}</dd>
+      </dl>
+      {hasFields && (
+        <ul>
+          {Object.entries(details).map(([field, messages]) => (
+            <li key={field}>
+              <strong>{field}:</strong>{' '}
+              {Array.isArray(messages) ? messages.join(' ') : String(messages)}
+            </li>
+          ))}
+        </ul>
+      )}
+    </details>
   );
 }

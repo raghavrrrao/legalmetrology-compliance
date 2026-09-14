@@ -63,9 +63,18 @@ function renderForm(props = {}) {
   return { ...utils, onChange };
 }
 
-/** Open the disclosure the questions live behind. */
+/**
+ * Open every question group.
+ *
+ * The questions live in collapsed `<details>` groups now - four of them, so
+ * that seventeen questions arrive as four headings rather than one wall. A test
+ * that wants to reach a question opens them all, which is what a user does to
+ * the group they care about.
+ */
 function openQuestions() {
-  fireEvent.click(screen.getByText(/state what you know about this package/i));
+  const summaries = document.querySelectorAll('.question-group > summary');
+  expect(summaries.length).toBeGreaterThan(0);
+  summaries.forEach((summary) => fireEvent.click(summary));
 }
 
 describe('states', () => {
@@ -123,9 +132,31 @@ describe('the questions', () => {
     openQuestions();
 
     // The two behave differently: one takes the package out of the Rules
-    // entirely, the other excuses a single declaration.
-    expect(screen.getByText(/takes the package outside these rules/i)).toBeInTheDocument();
-    expect(screen.getByText(/the rest of the check stands/i)).toBeInTheDocument();
+    // entirely, the other adds a declaration to what is required. They are
+    // grouped by the effect the API declares (`affects[].mode`), so each lands
+    // under a heading that explains what answering it would do.
+    expect(screen.getByText(/outside the scope of these rules/i)).toBeInTheDocument();
+    expect(
+      screen.getByText(/make an additional declaration required/i),
+    ).toBeInTheDocument();
+  });
+
+  it('keeps the full legal description, behind "Why are we asking?"', () => {
+    // The redesign leads with a short question and moves the framework's own
+    // prose one disclosure down. "One disclosure down" must mean still on the
+    // page, in full - if simplifying the form quietly dropped the statutory
+    // text, it would have traded the thing this project exists to preserve for
+    // a tidier screen.
+    renderForm();
+    openQuestions();
+
+    const group = screen.getByRole('group', { name: /imported product/i });
+    expect(
+      within(group).getByText(/why are we asking/i),
+    ).toBeInTheDocument();
+    expect(
+      within(group).getByText(/nothing on the label establishes import status/i),
+    ).toBeInTheDocument();
   });
 
   it('shows the clause each answer would affect, in the API’s own words', () => {
@@ -148,7 +179,7 @@ describe('the questions', () => {
       .getAllByRole('radio')
       .map((radio) => radio.closest('label').textContent);
 
-    expect(labels).toEqual(['Not stated', 'Yes', 'No', 'Don’t know']);
+    expect(labels).toEqual(['Not answered', 'Yes', 'No', 'Not sure']);
   });
 });
 
@@ -158,7 +189,7 @@ describe('answers', () => {
     openQuestions();
 
     const group = screen.getByRole('group', { name: /imported product/i });
-    expect(within(group).getByRole('radio', { name: 'Not stated' })).toBeChecked();
+    expect(within(group).getByRole('radio', { name: 'Not answered' })).toBeChecked();
     expect(within(group).getByRole('radio', { name: 'No' })).not.toBeChecked();
   });
 
@@ -172,12 +203,12 @@ describe('answers', () => {
     expect(onChange).toHaveBeenCalledWith('imported-product', 'yes');
   });
 
-  it('keeps “don’t know” distinct from “no”', () => {
+  it('keeps “not sure” distinct from “no”', () => {
     const { onChange } = renderForm();
     openQuestions();
 
     const group = screen.getByRole('group', { name: /imported product/i });
-    fireEvent.click(within(group).getByRole('radio', { name: 'Don’t know' }));
+    fireEvent.click(within(group).getByRole('radio', { name: 'Not sure' }));
 
     // 'unknown', never 'no'. Folding the two together would silently assert a
     // fact about somebody's product.
@@ -189,7 +220,7 @@ describe('answers', () => {
     openQuestions();
 
     const group = screen.getByRole('group', { name: /imported product/i });
-    fireEvent.click(within(group).getByRole('radio', { name: 'Not stated' }));
+    fireEvent.click(within(group).getByRole('radio', { name: 'Not answered' }));
 
     expect(onChange).toHaveBeenCalledWith('imported-product', '');
   });
