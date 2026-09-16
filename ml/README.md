@@ -629,13 +629,21 @@ python -m labelextract.evaluation.cli run data/hv-evaluation-set \
     --report data/hv-evaluation-set/report-v0.3.0.json
 ```
 
-Three pipeline versions stay registered — 0.1.0, 0.2.0 and 0.3.0 — so a stored
-run keeps resolving and any single change can be isolated on one image:
+Four pipeline versions stay registered — 0.1.0, 0.2.0, 0.3.0 and 0.4.0 — so a
+stored run keeps resolving and any single change can be isolated on one image:
 
 ```bash
 python -m labelextract.cli LABEL.jpg --pipeline-version 0.2.0   # no retry
 python -m labelextract.cli LABEL.jpg --pipeline-version 0.3.0   # with it
+python -m labelextract.cli LABEL.jpg --pipeline-version 0.4.0   # plus the product classifier
 ```
+
+0.4.0 changes nothing about the reading: `ocr` and `fields` are identical to
+0.3.0's, and the only addition is `metadata["product_classification"]` from
+`labelextract.classification` — what kind of product the recognised text
+looks like, with a confidence and the evidence for it, or `unknown`. It is an
+observation about the label, never a compliance decision, and it is documented
+in [`docs/ml/product-classification.md`](../docs/ml/product-classification.md).
 
 A version pins the **engine and preprocessing configuration** written out in
 each factory. It does not pin `fields/patterns.py`, which every registered

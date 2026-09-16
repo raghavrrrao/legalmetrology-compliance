@@ -27,6 +27,15 @@ between an honest reading and a misleading one:
    better photograph; the other is a possible contravention. Collapsing them
    would turn the first into the second.
 
+3. **A classification is an observation, and is labelled as one.** The
+   pipeline's product classifier records what kind of product the label text
+   reads like into `raw_output["metadata"]["product_classification"]`, and
+   `get_product_classification` surfaces it unchanged - category, confidence
+   and evidence, or `null` when the configured pipeline has no classifier.
+   Its confidence is the classifier's confidence in the *category*. It is not
+   a compliance figure, it decides nothing, and nothing in `apps.compliance`
+   reads it.
+
 Bodies are `snake_case` per `docs/api.md`; the frontend maps to camelCase in
 one place at its own boundary.
 """
@@ -79,6 +88,7 @@ class ExtractionRunSerializer(serializers.ModelSerializer):
         source="fields", many=True, read_only=True
     )
     unread_declarations = serializers.SerializerMethodField()
+    product_classification = serializers.SerializerMethodField()
     produced_usable_output = serializers.BooleanField(read_only=True)
 
     class Meta:
@@ -96,6 +106,7 @@ class ExtractionRunSerializer(serializers.ModelSerializer):
             "error_message",
             "fields_read",
             "unread_declarations",
+            "product_classification",
         ]
         read_only_fields = fields
 
@@ -121,6 +132,37 @@ class ExtractionRunSerializer(serializers.ModelSerializer):
         if not isinstance(declarations, list):
             return []
         return [item for item in declarations if isinstance(item, dict)]
+
+    def get_product_classification(self, run: ExtractionRun) -> dict | None:
+        """Read the classifier's observation out of the run's raw output.
+
+        Passed through in the shape `labelextract.contracts.ProductClassification.as_dict`
+        already defines - `category`, `subcategory`, `confidence`,
+        `subcategory_confidence`, `evidence`, `category_scores`,
+        `subcategory_scores`, `classifier_name`, `classifier_version` - for
+        the same reason `unread_declarations` is: the vocabulary belongs to
+        the ml/ package and a second statement of it here would drift.
+
+        `null` is the ordinary case for every run made before the classifier
+        existed, for every run of a pipeline without one (`tesseract` 0.3.0
+        and earlier, `null-engine`), and for a run whose classifier failed.
+        A client must treat `null` as "no classification was made", never
+        as a category. `category: "unknown"` is different: the classifier
+        ran and declined to choose.
+
+        Nothing here is consulted by the compliance engine. Which rules apply
+        is still answered from `Product.category` and the stated
+        applicability declarations; this field is what a client may show a
+        person as a *suggestion* for that category.
+        """
+        raw_output = run.raw_output or {}
+        metadata = raw_output.get("metadata") or {}
+        classification = metadata.get("product_classification")
+        if not isinstance(classification, dict):
+            return None
+        if not isinstance(classification.get("category"), str):
+            return None
+        return classification
 
 
 class ExtractionResponseSerializer(ExtractionRunSerializer):

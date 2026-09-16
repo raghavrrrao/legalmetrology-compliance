@@ -140,6 +140,7 @@ def _tesseract_with_languages(args: argparse.Namespace):
     what produced it. Asking for languages on any other pipeline is therefore a
     usage error, not something to satisfy by quietly swapping the engine.
     """
+    from labelextract.classification import build_classifier
     from labelextract.fields import RuleBasedFieldExtractor
     from labelextract.ocr import tesseract
     from labelextract.pipeline import ExtractionPipeline
@@ -167,6 +168,9 @@ def _tesseract_with_languages(args: argparse.Namespace):
         ocr_engine=tesseract.TesseractOcrEngine(options),
         preprocessor=PillowPreprocessor(),
         field_extractor=RuleBasedFieldExtractor(),
+        # Named as the current version, so it carries the current version's
+        # classifier too; a run labelled 0.4.0 without one would be mislabelled.
+        classifier=build_classifier(),
     )
 
 

@@ -100,3 +100,58 @@ def test_results_are_immutable():
     field = ExtractedField(key=LabelFieldKey.NET_QUANTITY, raw_value="500 g")
     with pytest.raises(FrozenInstanceError):
         field.raw_value = "1 kg"  # type: ignore[misc]
+
+
+# --- ProductClassification ------------------------------------------------------
+
+
+def test_product_classification_confidence_is_range_checked():
+    from labelextract.contracts import ProductClassification
+
+    with pytest.raises(ValueError):
+        ProductClassification(category="packaged-food", confidence=1.5)
+    with pytest.raises(ValueError):
+        ProductClassification(category="packaged-food", subcategory_confidence=-0.1)
+
+
+def test_product_classification_confidence_may_be_absent():
+    """None means 'no prediction was attempted', never zero."""
+    from labelextract.contracts import UNKNOWN_CATEGORY, ProductClassification
+
+    unknown = ProductClassification(category=UNKNOWN_CATEGORY)
+    assert unknown.is_unknown
+    assert unknown.confidence is None
+    assert unknown.as_dict()["confidence"] is None
+
+
+def test_product_classification_unknown_cannot_carry_a_subcategory():
+    from labelextract.contracts import UNKNOWN_CATEGORY, ProductClassification
+
+    with pytest.raises(ValueError):
+        ProductClassification(category=UNKNOWN_CATEGORY, subcategory="general-food")
+
+
+def test_product_classification_requires_a_category():
+    from labelextract.contracts import ProductClassification
+
+    with pytest.raises(ValueError):
+        ProductClassification(category="")
+
+
+def test_product_classification_as_dict_is_json_ready_and_immutable():
+    import json
+
+    from labelextract.contracts import ProductClassification
+
+    classification = ProductClassification(
+        category="packaged-food", subcategory="general-food",
+        confidence=0.8, subcategory_confidence=0.6,
+        evidence=("signal: ingredients",),
+        category_scores={"packaged-food": 0.8, "packaged-non-food": 0.2},
+        classifier_name="x", classifier_version="1",
+    )
+    body = classification.as_dict()
+    assert json.loads(json.dumps(body)) == body
+    assert body["evidence"] == ["signal: ingredients"]
+    with pytest.raises(FrozenInstanceError):
+        classification.category = "packaged-non-food"  # type: ignore[misc]

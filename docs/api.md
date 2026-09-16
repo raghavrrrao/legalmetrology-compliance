@@ -308,6 +308,17 @@ and an `ExtractionRun`: no `Product`, no `ComplianceCheck`.
     }
   ],
   "unread_declarations": [],
+  "product_classification": {
+    "category": "packaged-food",
+    "subcategory": "health-supplement",
+    "confidence": 0.7232,
+    "subcategory_confidence": 0.5517,
+    "evidence": ["signal: ingredients (typical of packaged-food)", "…"],
+    "category_scores": {"packaged-food": 0.7232, "packaged-non-food": 0.2768},
+    "subcategory_scores": {"general-food": 0.1715, "health-supplement": 0.5517, "…": 0.0},
+    "classifier_name": "tfidf-logreg",
+    "classifier_version": "0.1.0"
+  },
   "image": {"id": "…", "image_format": "png", "width": 1024, "height": 768, "…": "…"}
 }
 ```
@@ -315,7 +326,7 @@ and an `ExtractionRun`: no `Product`, no `ComplianceCheck`.
 The body has no `result`, `summary` or `violations` key and must never grow
 one. A test asserts their absence.
 
-Four fields are load-bearing and a client should not ignore any of them:
+Five fields are load-bearing and a client should not ignore any of them:
 
 - **`produced_usable_output`** — false means the label was not read well enough
   to be judged against. An absent declaration in that case says nothing about
@@ -328,6 +339,20 @@ Four fields are load-bearing and a client should not ignore any of them:
   not be read. Empty means "the engine reported none", not "everything was
   read". This is the difference between asking for a better photograph and
   reporting a possible contravention.
+- **`product_classification`** — what kind of product the recognised text
+  *looks like*, from the pipeline's product classifier: a `category` that is
+  a `ProductCategory` code (`packaged-food`, `packaged-non-food`) or
+  `"unknown"`, an optional narrower `subcategory`, the classifier's
+  `confidence` in that category (or `null` when it attempted no prediction),
+  every category's score, and the `evidence` it drew on. **`null` means no
+  classification was made** — an older run, a pipeline without a classifier
+  (`tesseract` 0.3.0 and earlier, `null-engine`), or a classifier that
+  failed; `"unknown"` means the classifier ran and declined. Added in
+  `tesseract` 0.4.0. It is an observation about the label, not a decision:
+  nothing in the rule engine reads it, and its confidence is **not** a
+  compliance figure. A client may offer it as a *suggestion* for
+  `category_code`; it must not fill that field without a person confirming.
+  See [`ml/product-classification.md`](ml/product-classification.md).
 
 **201 even when nothing could be read.** An unreadable photograph produces a
 stored run with `status` `empty` or `failed`, `produced_usable_output` false,
@@ -613,7 +638,7 @@ response:
 
 | Key | What it is |
 |---|---|
-| `extraction` | What the pipeline **read** off the photograph — with a confidence and a bounding box per declaration. An observation. |
+| `extraction` | What the pipeline **read** off the photograph — with a confidence and a bounding box per declaration. An observation. Its `product_classification` sub-key is a second observation — what kind of product the text *looks like* — and is likewise never a conclusion; see `POST /api/v1/extraction/` above. |
 | `applicability_declarations` | What a person **asserted** about the goods. No photograph could establish these, and nothing verified them. |
 | `findings` | What the rules **concluded** from both. See *Findings and violations* below for the per-finding fields. |
 
@@ -649,7 +674,10 @@ may be derived from it in a client.** A number would imply that partial
 compliance with a labelling requirement is partial credit, which is not how the
 Rules work. The per-reading `extracted_confidence` is the OCR engine's opinion
 of its own characters and affects no outcome; it is not a compliance figure and
-must not be aggregated into one.
+must not be aggregated into one. The same applies to
+`extraction.product_classification.confidence`: it is a classifier's opinion
+of what kind of product the label is, it affects no outcome, and it is not a
+compliance figure either.
 
 ### `GET /api/v1/compliance/<uuid>/`
 

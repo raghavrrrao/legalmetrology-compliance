@@ -9,7 +9,16 @@ these stages, so there is nothing worth subclassing.
         -> OcrEngine.recognise()         (required)
         -> boxes mapped back to source-image space
         -> FieldExtractor.extract()      (optional)
+        -> ProductClassifier.classify()  (optional)
         -> ExtractionResult
+
+The classifier runs last and reads what the stages before it produced. Its
+output is an observation *about* the reading - "this label looks like a
+packaged food" - and it rides in `metadata["product_classification"]` next to
+`unread_declarations`, not in `fields`: it is not a declaration read off the
+package, and a consumer that iterates `fields` must never find one. It is
+guarded the same way `unread_declarations` is - a classifier failure costs the
+classification, never the reading.
 
 Why the mapping step is here and not in a component
 ---------------------------------------------------
@@ -44,10 +53,16 @@ from labelextract.contracts import (
     ExtractionStatus,
     ImageRef,
     OcrResult,
+    ProductClassification,
     UnreadDeclaration,
 )
 from labelextract.exceptions import LabelExtractError
-from labelextract.interfaces import FieldExtractor, ImagePreprocessor, OcrEngine
+from labelextract.interfaces import (
+    FieldExtractor,
+    ImagePreprocessor,
+    OcrEngine,
+    ProductClassifier,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -63,6 +78,10 @@ class ExtractionPipeline:
         field_extractor: Optional interpretation stage. When absent, the result
             carries recognised text but no declarations - useful while an OCR
             engine is being evaluated on its own.
+        classifier: Optional identification stage. When absent,
+            `metadata["product_classification"]` is None and nothing else
+            changes - every pipeline registered before this stage existed
+            keeps producing exactly what it did.
     """
 
     def __init__(
@@ -73,6 +92,7 @@ class ExtractionPipeline:
         ocr_engine: OcrEngine,
         preprocessor: ImagePreprocessor | None = None,
         field_extractor: FieldExtractor | None = None,
+        classifier: ProductClassifier | None = None,
     ) -> None:
         if ocr_engine is None:
             raise ValueError("ExtractionPipeline requires an ocr_engine")
@@ -81,15 +101,24 @@ class ExtractionPipeline:
         self.ocr_engine = ocr_engine
         self.preprocessor = preprocessor
         self.field_extractor = field_extractor
+        self.classifier = classifier
+
+    @property
+    def _components(self) -> tuple:
+        return (
+            self.preprocessor,
+            self.ocr_engine,
+            self.field_extractor,
+            self.classifier,
+        )
 
     @property
     def is_placeholder(self) -> bool:
         """True when any configured component is wiring-only."""
-        components = (self.preprocessor, self.ocr_engine, self.field_extractor)
-        return any(c is not None and c.is_placeholder for c in components)
+        return any(c is not None and c.is_placeholder for c in self._components)
 
     def warmup(self) -> None:
-        for component in (self.preprocessor, self.ocr_engine, self.field_extractor):
+        for component in self._components:
             if component is not None:
                 component.warmup()
 
@@ -99,6 +128,7 @@ class ExtractionPipeline:
         source = image
         scale: tuple[float, float] | None = None
         unread: tuple[UnreadDeclaration, ...] = ()
+        classification: ProductClassification | None = None
         try:
             if self.preprocessor is not None:
                 source = self.preprocessor.process(image)
@@ -113,6 +143,9 @@ class ExtractionPipeline:
             if self.field_extractor is not None:
                 fields = self.field_extractor.extract(ocr, source)
                 unread = self._unread_declarations(ocr, fields)
+
+            if self.classifier is not None:
+                classification = self._classify(ocr, fields, source)
         except LabelExtractError as exc:
             return self._failure(exc, started)
         finally:
@@ -131,8 +164,40 @@ class ExtractionPipeline:
             ocr=ocr,
             fields=fields,
             is_placeholder=self.is_placeholder,
-            metadata=self._metadata(image, source, scale, unread),
+            metadata=self._metadata(image, source, scale, unread, classification),
         )
+
+    def _classify(
+        self,
+        ocr: OcrResult,
+        fields: tuple[ExtractedField, ...],
+        source: ImageRef,
+    ) -> ProductClassification | None:
+        """Ask the classifier what kind of product this label belongs to.
+
+        Guarded for the same reason `_unread_declarations` is: the
+        classification is a secondary observation about a reading that is
+        already complete, and a classifier bug must not cost the caller the
+        declarations that were read. A failure here is logged with its
+        traceback and recorded as `None` - which `metadata` keeps distinct from
+        "no classifier is configured" by naming the classifier that was.
+
+        `LabelExtractError` is caught here too, deliberately. Raised from the
+        OCR stage it means the *reading* failed and the run is FAILED; raised
+        from a classifier it means the model could not load, and a label that
+        was read perfectly well must not be reported as unreadable because a
+        second, optional model was missing.
+        """
+        try:
+            return self.classifier.classify(ocr, fields, source)
+        except Exception:
+            logger.warning(
+                "Product classifier %r failed; continuing with the reading "
+                "and no classification",
+                getattr(self.classifier, "name", self.classifier),
+                exc_info=True,
+            )
+            return None
 
     def _unread_declarations(
         self, ocr: OcrResult, fields: tuple[ExtractedField, ...]
@@ -211,6 +276,7 @@ class ExtractionPipeline:
         source: ImageRef,
         scale: tuple[float, float] | None = None,
         unread: tuple[UnreadDeclaration, ...] = (),
+        classification: ProductClassification | None = None,
     ) -> dict:
         """Which components ran, and what the image looked like on the way in.
 
@@ -232,9 +298,17 @@ class ExtractionPipeline:
         explicitly not a field (see `contracts.UnreadDeclaration`), and
         because the backend already persists this whole mapping verbatim, so
         the signal reaches a stored run with no change on that side.
+
+        `product_classification` rides here for the same reasons. It is an
+        observation about the whole label rather than a declaration read off
+        it, and it is None both when no classifier is configured and when the
+        configured one failed - `classifier_name` tells those two apart.
         """
         return {
             "unread_declarations": [item.as_dict() for item in unread],
+            "product_classification": (
+                classification.as_dict() if classification is not None else None
+            ),
             "bounding_box_space": (
                 "preprocessed"
                 if source is not image and scale is None
@@ -252,6 +326,11 @@ class ExtractionPipeline:
             "ocr_engine_name": self.ocr_engine.name,
             "ocr_engine_version": self.ocr_engine.version,
             "field_extractor_name": _component_name(self.field_extractor),
+            "classifier_name": _component_name(self.classifier),
+            "classifier_version": (
+                None if self.classifier is None
+                else getattr(self.classifier, "version", None)
+            ),
         }
 
     def _status_for(

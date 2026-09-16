@@ -132,3 +132,57 @@ def tesseract_data():
         return columns
 
     return _make
+
+
+@pytest.fixture
+def classification_artifact(tmp_path):
+    """Write a hand-built product-classifier artifact and return its path.
+
+    Four classes whose beliefs are obvious from their coefficients: food
+    words push general-food, supplement words push health-supplement,
+    cleaning words push cleaning-product, toiletry words push cosmetics. Used
+    to test the classifier's mechanics independently of any trained model.
+    Keyword overrides replace top-level artifact keys.
+    """
+    import json
+
+    from labelextract.classification import taxonomy
+    from labelextract.classification.model import ARTIFACT_FORMAT
+    from labelextract.classification.preprocessing import TOKENISER_VERSION
+
+    vocabulary = [
+        "ingredients", "fssai", "energy", "supplement", "tablets", "serving",
+        "detergent", "spray", "flammable", "shampoo", "soap", "bathing",
+    ]
+    strong, off = 4.0, -1.0
+    rows = {
+        "cleaning-product":         [off, off, off, off, off, off, strong, strong, strong, off, off, off],
+        "cosmetics-and-toiletries": [off, off, off, off, off, off, off, off, off, strong, strong, strong],
+        "general-food":             [strong, strong, strong, off, off, off, off, off, off, off, off, off],
+        "health-supplement":        [1.0, 1.0, off, strong, strong, strong, off, off, off, off, off, off],
+    }
+
+    def _write(name: str = "artifact.json", **overrides) -> Path:
+        artifact = {
+            "artifact_format": ARTIFACT_FORMAT,
+            "model_name": "tfidf-logreg",
+            "model_version": "test",
+            "taxonomy_version": taxonomy.TAXONOMY_VERSION,
+            "tokeniser_version": TOKENISER_VERSION,
+            "features": {"ngram_range": [1, 1], "sublinear_tf": False, "norm": "l2",
+                         "smooth_idf": True, "min_df": 1},
+            "vocabulary": vocabulary,
+            "idf": [1.0] * len(vocabulary),
+            "classes": list(rows),
+            "coef": list(rows.values()),
+            "intercept": [0.0, 0.0, 0.0, 0.0],
+            "link": "softmax",
+            "trained_on": {"dataset_version": "fixture"},
+            "training": {},
+        }
+        artifact.update(overrides)
+        path = tmp_path / name
+        path.write_text(json.dumps(artifact), encoding="utf-8")
+        return path
+
+    return _write

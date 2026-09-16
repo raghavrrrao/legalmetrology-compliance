@@ -360,10 +360,22 @@ mutating it, so a comparison across versions is possible.
 
 ## Model artifacts
 
-The Tesseract pipeline has **no artifacts at all**: language data is installed
+The Tesseract *engine* has **no artifacts at all**: language data is installed
 by the operating system's package manager into a system directory, so there is
-nothing to download, checksum or version. What follows applies to an engine that
-ships weights, not to that one.
+nothing to download, checksum or version.
+
+The `tesseract` 0.4.0 *pipeline* does carry one, and it is the exception that
+tests the rule below rather than breaking it: the product classifier's
+TF-IDF + logistic-regression parameters, exported to a 120 KB JSON file and
+committed under `ml/labelextract/classification/artifacts/`. It is JSON and
+not a pickle because a pickle executes code on load and `.gitignore` blocks
+`*.pkl` for that reason; it is committed because it is small, diffable and
+inspectable, and because it records the SHA-256 of the dataset that produced
+it, which a test checks. Nothing about it is downloaded. The reasoning, the
+format and its limits are in
+[`ml/product-classification.md`](ml/product-classification.md#model-artifact).
+What follows applies to an engine that ships *weights* - hundreds of
+megabytes of floats - which no format makes suitable for Git.
 
 **Never commit weights.** `.gitignore` blocks `*.pt`, `*.onnx`, `*.h5`,
 `*.traineddata`, `ml/artifacts/`, `ml/models/`, `ml/data/`. A 200 MB file in

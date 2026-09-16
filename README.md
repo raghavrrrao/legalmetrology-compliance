@@ -534,6 +534,7 @@ Gunicorn is POSIX-only and does not run on Windows; use the container or
 | [docs/deployment.md](docs/deployment.md) | Deploying to Railway, and what does not work yet |
 | [docs/security.md](docs/security.md) | Upload validation, secrets, threat notes |
 | [docs/ai-ml-strategy.md](docs/ai-ml-strategy.md) | What AI does and does not decide |
+| [docs/ml/product-classification.md](docs/ml/product-classification.md) | The product category classifier: taxonomy, dataset, model, measured results, and why it decides nothing |
 | [docs/data-strategy.md](docs/data-strategy.md) | Training, evaluation, demo and legal reference data |
 | [docs/evaluation-strategy.md](docs/evaluation-strategy.md) | How performance will be measured |
 

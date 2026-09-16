@@ -3,11 +3,20 @@
 What data this project needs, where each kind comes from, and what must never
 enter the repository.
 
-**Current state: no datasets exist in this repository.** No training data, no
-evaluation set, no demo images are committed, and nothing is downloaded at
-runtime. The OCR engine that ships (Tesseract) is **untrained by us** — it uses
-language data installed by the operating system's package manager, so there is
-no weight file for this project to host, version or checksum.
+**Current state: no image datasets exist in this repository.** No training
+photographs, no evaluation images, no demo images are committed, and nothing
+is downloaded at runtime. The OCR engine that ships (Tesseract) is **untrained
+by us** — it uses language data installed by the operating system's package
+manager, so there is no weight file for this project to host, version or
+checksum.
+
+The one committed dataset is **text**: `ml/labelextract/classification/datasets/seed_v0.1.json`,
+33 OCR readings and transcriptions of the 10 packages in our own evaluation
+set, labelled by product category for the product classifier. It contains the
+public print on retail packaging and nothing else, records the SHA-256 of the
+photograph each text came from, and flags every label as model-drafted and
+unverified. Its rules are in
+[`ml/product-classification.md`](ml/product-classification.md#dataset).
 
 This document is the plan the data-owning work follows, not a description of
 files you will find in a clone.
@@ -63,10 +72,17 @@ Photographs of packaged commodities used to fit or fine-tune a model.
 - Provenance must be recorded per image: where it came from and on what basis
   it may be used. Photographs of retail packaging carry third-party trade dress
   and, occasionally, incidental personal data.
-- The first OCR engine **is** off-the-shelf, so there is currently **no
-  training data at all**. That is a legitimate outcome, not a gap to fill, and
-  it should be stated plainly rather than papered over with a downloaded corpus
-  nobody trained on.
+- The first OCR engine **is** off-the-shelf, so there is **no OCR training
+  data at all**. That is a legitimate outcome, not a gap to fill, and it should
+  be stated plainly rather than papered over with a downloaded corpus nobody
+  trained on.
+- The product classifier is the exception, and a narrow one: its training
+  data is *text*, not photographs, taken from our own evaluation set, and it
+  is committed because a 50 KB JSON of label text is reviewable in a pull
+  request in a way a directory of images is not. The photographs it was read
+  from stay outside the repository. Nothing in it may be quoted as an
+  evaluation number: leave-one-product-out on the same file is the only
+  measurement, and `docs/evaluation-results.md` §13 says what it is worth.
 
 ## 3. Evaluation data
 

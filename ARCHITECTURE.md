@@ -258,7 +258,7 @@ Five distinct responsibilities, kept apart because they fail differently:
 1. **Image preprocessing** — deskew, denoise, crop.
 2. **OCR** — what characters are there, and where.
 3. **Field extraction** — which declaration is this text.
-4. **Product classification** — what commodity is this. *(future)*
+4. **Product classification** — what kind of product is this. A TF-IDF + logistic-regression baseline over the recognised text, reporting a category the applicability layer already speaks or UNKNOWN. Consumed by nothing in the decision path yet; see `docs/ml/product-classification.md`.
 5. **Compliance reasoning** — is this correct. **Not ML. Lives in the backend.**
 
 OCR and compliance reasoning are not the same thing and must never be merged.
@@ -457,7 +457,7 @@ Things we did **not** build, and why. Revisit each when its trigger fires.
 | Split settings (base/dev/prod) | The differences are a handful of values already read from the environment. | The environments genuinely diverge in structure. |
 | Frontend state library | Three pages, one hook each, and the only shared state is a result the API can be asked for again by id. Adding Redux now would be ceremony. | State has to outlive a route change, or two screens must stay in step. |
 | Ruff / Python linter | No Python linter. Nothing in the current code violates a rule it would catch, and it is one more toolchain for six people to install. ESLint was added for JavaScript because six people write JSX and hook-dependency bugs are silent. | Python style disagreements start costing review time. |
-| `ProductClassifier` interface | No caller and no implementation. Its signature would be a guess. | `feature/product-classification`. |
+| ~~`ProductClassifier` interface~~ **- now built** | The trigger fired. `labelextract.interfaces.ProductClassifier` runs as the optional last stage of `ExtractionPipeline`; `tesseract` 0.4.0 wires the shipped `tfidf-logreg` 0.1.0. Its output is an observation in run metadata and the API, and **nothing in applicability or the rule engine reads it** — that wiring is the next step, gated on human confirmation and on data the project does not yet have. | A calibrated classifier and a confirmation UI exist. |
 | Extra models beyond the current nine | Adding schema later is a migration; adding half-designed schema now is a liability. | A feature actually needs it. |
 | A `RuleOutcome` row per evaluated rule | Violations are recorded in full with a rule snapshot and evidence, so every *finding* is traceable. Which rules merely *passed* is stored only as counts on `ComplianceCheck`. Adding a row per rule per check multiplies write volume for data nothing currently reads. | An inspection report or enforcement dashboard needs to list the rules that passed, not just how many. `feature/compliance-analysis` owns it. |
 | The five planned check types (`value_check`, `format_check`, `numeric_check`, `conditional_check`, `visual_check`) | Named in `apps.rules.checks.PLANNED_CHECK_TYPES` so the loader can say "planned, not built" instead of "unknown", but none is registered or callable. Writing five validators with no verified rule to exercise them would be guessing at signatures. Nothing since has needed the generic names: each clause that could be automated got a validator shaped to that clause, which is why the registry holds `month_year_declaration` rather than a general `format_check`. | A verified rule needs one. The registry takes a validator plus its parameter validator, so each is a self-contained module. |

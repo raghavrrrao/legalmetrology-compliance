@@ -1,24 +1,26 @@
 """Abstract interfaces that OCR/ML implementations must satisfy.
 
-Three separate responsibilities, three separate interfaces. Keeping them apart
+Four separate responsibilities, four separate interfaces. Keeping them apart
 matters because they fail differently and improve independently: better
-preprocessing does not make field extraction smarter, and a better OCR engine
-does not know what a "net quantity" is.
+preprocessing does not make field extraction smarter, a better OCR engine does
+not know what a "net quantity" is, and a classifier that knows a label belongs
+to a food product still cannot read the net quantity off it.
 
     ImagePreprocessor   pixels        -> pixels        (deskew, denoise, crop)
     OcrEngine           pixels        -> text + boxes  (recognition)
     FieldExtractor      text + boxes  -> declarations  (interpretation)
+    ProductClassifier   text + fields -> category      (identification)
+
+The fourth is the newest and the one to read most carefully: it *identifies*
+what kind of product the label belongs to, so the applicability layer can ask
+the right questions about it. It never decides whether the package complies -
+see `contracts.ProductClassification`.
 
 Deliberately NOT defined here
 -----------------------------
-`ProductClassifier` (predicting a commodity category from the image) is a real
-future responsibility, but nothing in the base calls it, and an interface with
-no caller and no implementation is a guess about a signature we have not had to
-design yet. `feature/product-classification` adds it.
-
-Label region detection is likewise absent: whether it is a preprocessing step
-or part of the OCR engine depends on which engine is chosen, and committing to
-one answer now would constrain that choice for no benefit.
+Label region detection: whether it is a preprocessing step or part of the OCR
+engine depends on which engine is chosen, and committing to one answer now
+would constrain that choice for no benefit.
 """
 
 from __future__ import annotations
@@ -29,6 +31,7 @@ from labelextract.contracts import (
     ExtractedField,
     ImageRef,
     OcrResult,
+    ProductClassification,
     UnreadDeclaration,
 )
 
@@ -154,3 +157,48 @@ class FieldExtractor(_Component):
         must make no claim about whether the declaration was required.
         """
         return ()
+
+
+class ProductClassifier(_Component):
+    """Predicts what kind of packaged product a label belongs to.
+
+    Runs after field extraction, on the same recognised text, and answers a
+    different question from every other component: not "what is printed here"
+    but "what sort of product prints this". The answer is an internal category
+    the applicability layer can consume - `packaged-food`, `packaged-non-food`
+    - or UNKNOWN when the evidence does not support one.
+
+    Rules that are not negotiable:
+
+    - **UNKNOWN is a valid answer.** An implementation must have a path that
+      declines to choose, and must take it when its evidence is weak. A
+      category forced out of noise is worse than none: it silently selects
+      the wrong set of questions to ask about the package.
+    - **Confidence is the classifier's confidence in its category, and
+      nothing else.** It is not a compliance figure and must not be presented
+      as one. `None` means no prediction was attempted, never zero.
+    - **No legal conclusion.** The output names a kind of product. What the
+      Rules make of that is decided elsewhere, from stated facts and verified
+      rules, and an implementation must not shape its output to produce a
+      desired verdict.
+    - **Retain evidence.** A category with no stated reason cannot be checked
+      by a reviewer. Report the signals and terms that drove the prediction.
+
+    The `image` argument is passed so a future implementation can look at the
+    pixels as well as the text - packaging design is informative - without a
+    change to this signature. The shipped implementation does not use it.
+    """
+
+    @abstractmethod
+    def classify(
+        self,
+        ocr: OcrResult,
+        fields: tuple[ExtractedField, ...],
+        image: ImageRef,
+    ) -> ProductClassification:
+        """Return the classification of the product this label belongs to.
+
+        Never raises for weak or empty input: that is an UNKNOWN result, not
+        an error. Raises `EngineNotAvailableError` when the model it needs is
+        not installed or cannot be loaded.
+        """
