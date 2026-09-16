@@ -23,8 +23,8 @@ product prints this".
 | Model | `tfidf-logreg` **0.1.0**: TF-IDF (word uni- and bigrams) + multinomial logistic regression |
 | Trained on | `product-classification-seed-v0.1`: **33 texts from 10 products**, labels **model-drafted and unverified** |
 | Measured | Leave-one-product-out: category **strict accuracy 0.36**, unknown rate 0.33, `packaged-non-food` **never predicted** when its product is held out — see [Evaluation](#evaluation) |
-| Artifact | 119,536 bytes of JSON, committed, evaluated in plain Python; no scikit-learn at runtime |
-| Latency | median **0.70 ms** per text for the whole `classify_text` call, on the development machine, artifact pre-loaded — see [Performance](#performance) for exactly what that covers |
+| Artifact | 119,535 bytes of JSON, committed, evaluated in plain Python; no scikit-learn at runtime |
+| Latency | median **0.62 ms** per text for the whole `classify_text` call, on the development machine, artifact pre-loaded — see [Performance](#performance) for exactly what that covers |
 | Consumed by | `POST /api/v1/extraction/` and the `extraction` block of every compliance result, as `product_classification`. **Nothing in `apps.compliance` reads it.** |
 
 **What this is:** a reproducible, honestly measured baseline that establishes
@@ -344,7 +344,7 @@ whatever code a pickle contains.
 vocabulary, an IDF vector, a coefficient matrix and an intercept vector. They
 are exported to **JSON** —
 [`product_classifier_v0.1.0.json`](../../ml/labelextract/classification/artifacts/product_classifier_v0.1.0.json),
-119,536 bytes, 1,035 features × 4 classes — and evaluated by
+119,535 bytes, 1,035 features × 4 classes — and evaluated by
 [`model.py`](../../ml/labelextract/classification/model.py) in a hundred
 lines of standard-library Python. A test asserts the plain-Python evaluation
 reproduces scikit-learn's `predict_proba` to `1e-9` on freshly trained
@@ -361,7 +361,16 @@ replaceable by retraining and bumping `VERSION`.
 It carries its own provenance: `trained_on.dataset_version` and
 `trained_on.dataset_sha256` name the exact dataset file, and a test asserts
 they match the committed seed set — edit the dataset and the suite fails
-until the model is retrained. `training` records every hyperparameter and
+until the model is retrained. The digest is the SHA-256 of the dataset
+file **with CRLF normalised to LF** — the bytes as Git stores them — not of
+the bytes on any one disk. That definition was forced by a real failure:
+this repository is checked out with `core.autocrlf=true` on Windows, so the
+identical committed file was CRLF in the working copy that trained the first
+artifact and LF in CI, and a raw-byte digest disagreed between the two
+(`4aa0343f…` recorded, `d40c7751…` in CI) while the content was the same.
+`dataset.dataset_digest` and two tests in `test_classification_dataset.py`
+pin the platform-independent definition, and `train.py` writes its outputs
+with LF so the bytes on disk are the bytes Git will store. `training` records every hyperparameter and
 the scikit-learn and Python versions. Retraining is deterministic: two runs
 on the same data produce byte-identical coefficients.
 
@@ -403,7 +412,7 @@ table.
 
 **The seed set:**
 [`seed_v0.1.json`](../../ml/labelextract/classification/datasets/seed_v0.1.json),
-`product-classification-seed-v0.1`, SHA-256 `4aa0343f…`.
+`product-classification-seed-v0.1`, digest `d40c7751…` (SHA-256 of the file as Git stores it — see below).
 
 | | |
 |---|---|
@@ -461,7 +470,7 @@ one pack share its brand, its address block and its licence numbers; a split
 that puts them on opposite sides measures memorisation and reports a number
 that predicts nothing.
 
-Fitting the final model took 0.02 s; the ten-fold cross-validation 12.4 s (as recorded in the committed report; an earlier run on the same machine took 1.8 s - the figure is wall clock on a shared desktop).
+Fitting the final model took 0.016 s; the ten-fold cross-validation 15.0 s (as recorded in the committed report; earlier runs on the same machine took between 1.8 s and 12.4 s - the figure is wall clock on a shared desktop and says nothing precise).
 
 ## Evaluation
 
@@ -640,8 +649,8 @@ recorded in the report's `machine` block.
 
 | | mean | median | p95 | max |
 |---|---|---|---|---|
-| Preprocessing + tokenising | 0.127 ms | 0.107 ms | 0.339 ms | 0.906 ms |
-| `classify_text`, end to end | 0.818 ms | 0.705 ms | 2.256 ms | 5.812 ms |
+| Preprocessing + tokenising | 0.117 ms | 0.099 ms | 0.308 ms | 1.100 ms |
+| `classify_text`, end to end | 0.748 ms | 0.624 ms | 2.025 ms | 4.406 ms |
 
 The maxima are single outliers over 1,650 timings on a shared desktop, not
 a tail worth engineering for. Against the 2,202 ms median OCR time in

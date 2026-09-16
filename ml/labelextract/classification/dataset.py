@@ -63,6 +63,20 @@ Validation refuses; it never repairs
 Every problem raises `ClassificationDataError`. A dataset that loads with
 some examples silently dropped still reports a sample count, and that count
 is what ends up in a metrics table.
+
+The dataset digest
+------------------
+`ClassificationDataset.sha256` identifies *which data* a model was trained
+on, and the artifact records it so a test can refuse a model whose dataset
+has since changed. It is the SHA-256 of the file's bytes **with every CRLF
+normalised to LF** - the bytes exactly as Git stores the file - and not of
+the bytes as they happen to sit on one machine's disk. The distinction is
+not academic: this repository is checked out with `core.autocrlf=true` on
+Windows, so the same committed file is CRLF in one working copy and LF in
+CI, and a raw-byte digest disagreed between the two while the content was
+identical. JSON cannot carry a raw CR or LF inside a string (they must be
+escaped), so the normalisation can only ever touch whitespace between tokens
+and never changes what the file says.
 """
 
 from __future__ import annotations
@@ -115,8 +129,9 @@ class ClassificationDataset:
     description: str
     taxonomy_version: str
     examples: tuple[ClassificationExample, ...]
-    #: SHA-256 of the file's bytes. Recorded in the artifact trained from it,
-    #: so "which data produced this model" has a checkable answer.
+    #: The dataset digest - see `dataset_digest`. Recorded in the artifact
+    #: trained from it, so "which data produced this model" has a checkable
+    #: answer that is the same on every platform.
     sha256: str
     path: Path
 
@@ -153,6 +168,16 @@ def seed_dataset_path() -> Path:
     return Path(str(package / "datasets" / SEED_DATASET_FILENAME))
 
 
+def dataset_digest(raw: bytes) -> str:
+    """SHA-256 of a dataset file's content, independent of line endings.
+
+    CRLF is normalised to LF before hashing, so the digest of a file is the
+    digest of the bytes Git stores for it whatever `core.autocrlf` did on
+    checkout. See the module docstring for why that matters.
+    """
+    return hashlib.sha256(raw.replace(b"\r\n", b"\n")).hexdigest()
+
+
 def load_dataset(path: Path | None = None) -> ClassificationDataset:
     """Read and validate a dataset file. Defaults to the shipped seed set.
 
@@ -168,7 +193,7 @@ def load_dataset(path: Path | None = None) -> ClassificationDataset:
         data = json.loads(raw.decode("utf-8"))
     except (UnicodeDecodeError, ValueError) as exc:
         raise ClassificationDataError(f"dataset is not valid UTF-8 JSON: {resolved}") from exc
-    return parse_dataset(data, sha256=hashlib.sha256(raw).hexdigest(), path=resolved)
+    return parse_dataset(data, sha256=dataset_digest(raw), path=resolved)
 
 
 def parse_dataset(

@@ -468,9 +468,12 @@ def run(
     _log_metrics(log, "resubstitution (training-set fit, NOT generalisation)", resubstitution_metrics)
 
     output_path.parent.mkdir(parents=True, exist_ok=True)
+    # `newline="\n"` so the bytes on disk are the bytes Git will store, on
+    # Windows as well: an artifact should hash the same wherever it was made.
     output_path.write_text(
         json.dumps(artifact, ensure_ascii=False, separators=(",", ":")) + "\n",
         encoding="utf-8",
+        newline="\n",
     )
     log(f"artifact written: {output_path} ({output_path.stat().st_size:,} bytes, "
         f"{len(artifact['vocabulary'])} features, classes {artifact['classes']})")
@@ -498,6 +501,7 @@ def run(
         report_path.write_text(
             json.dumps(report, ensure_ascii=False, indent=2, sort_keys=True) + "\n",
             encoding="utf-8",
+            newline="\n",
         )
         log(f"report written: {report_path}")
     return report

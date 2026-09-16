@@ -167,3 +167,33 @@ def test_seed_set_contains_no_secret_looking_strings(seed):
     blob = json.dumps([e.text for e in seed.examples]).lower()
     for marker in ("api_key", "secret", "password", "token=", "bearer "):
         assert marker not in blob
+
+
+# --- the digest is the content, not the checkout -----------------------------
+
+
+def test_the_digest_is_independent_of_line_endings(tmp_path):
+    """The same dataset checked out with LF (CI) and CRLF (a Windows working
+    copy under core.autocrlf=true) must have one digest, or the artifact's
+    recorded dataset can disagree with the dataset while both are unchanged
+    - which is exactly the CI failure this test exists to prevent."""
+    import hashlib
+
+    body = json.dumps(minimal(), indent=2)
+    lf = tmp_path / "lf.json"
+    crlf = tmp_path / "crlf.json"
+    lf.write_bytes(body.encode("utf-8"))
+    crlf.write_bytes(body.replace("\n", "\r\n").encode("utf-8"))
+    assert lf.read_bytes() != crlf.read_bytes()
+
+    assert load_dataset(lf).sha256 == load_dataset(crlf).sha256
+    assert load_dataset(lf).sha256 == hashlib.sha256(lf.read_bytes()).hexdigest()
+
+
+def test_the_digest_of_the_seed_set_is_the_digest_of_its_lf_bytes(seed):
+    """Whatever line endings this checkout has, the seed digest is the
+    SHA-256 of the file as Git stores it."""
+    import hashlib
+
+    raw = seed_dataset_path().read_bytes().replace(b"\r\n", b"\n")
+    assert seed.sha256 == hashlib.sha256(raw).hexdigest()

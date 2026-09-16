@@ -1514,7 +1514,7 @@ dataset row first.
 
 | | |
 |---|---|
-| Dataset | `product-classification-seed-v0.1`, SHA-256 `4aa0343f837ee7d2…` |
+| Dataset | `product-classification-seed-v0.1`, digest `d40c7751bd9baf26…` (SHA-256 of the file with CRLF normalised to LF, i.e. as Git stores it) |
 | Texts | **33**, from **10** products: 28 verbatim OCR readings (`tesseract` 0.3.0) of the 28 `our-eval-v0.1-draft` photographs, plus 5 model-drafted transcriptions of the most legible panels |
 | Labels | 4 subcategories under 2 categories. **Model-drafted, not human-verified** (`label_verified_by` is null on all 33) |
 | Class balance | `general-food` 16 texts / 7 products; `health-supplement` 5 / **1**; `cleaning-product` 7 / **1**; `cosmetics-and-toiletries` 5 / **1** |
@@ -1636,10 +1636,10 @@ the development machine, single process. `ml/product-classification.md`
 
 | | mean | median | p95 | max |
 |---|---|---|---|---|
-| Preprocessing + tokenising | 0.127 ms | 0.107 ms | 0.339 ms | 0.906 ms |
-| `classify_text`, end to end (includes preprocessing) | 0.818 ms | 0.705 ms | 2.256 ms | 5.812 ms |
+| Preprocessing + tokenising | 0.117 ms | 0.099 ms | 0.308 ms | 1.100 ms |
+| `classify_text`, end to end (includes preprocessing) | 0.748 ms | 0.624 ms | 2.025 ms | 4.406 ms |
 
-Artifact: 119,536 bytes of JSON; final fit 0.02 s; ten-fold cross-validation 12.4 s wall clock (an earlier run took 1.8 s; shared desktop).
+Artifact: 119,535 bytes of JSON; final fit 0.016 s; ten-fold cross-validation 15.0 s wall clock (earlier runs took 1.8-12.4 s; shared desktop).
 Against the 2,202 ms median OCR time of §3 the classifier is not a
 measurable share of a request.
 

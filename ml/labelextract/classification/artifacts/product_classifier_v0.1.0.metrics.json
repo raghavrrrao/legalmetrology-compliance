@@ -1,6 +1,6 @@
 {
   "artifact": {
-    "bytes": 119536,
+    "bytes": 119535,
     "classes": [
       "cleaning-product",
       "cosmetics-and-toiletries",
@@ -8,7 +8,7 @@
       "health-supplement"
     ],
     "excluded_examples": [],
-    "fit_seconds": 0.02,
+    "fit_seconds": 0.016,
     "model_version": "0.1.0",
     "n_features": 1035,
     "path": "D:\\projectWebsites\\legalmetrology-compliance\\ml\\labelextract\\classification\\artifacts\\product_classifier_v0.1.0.json"
@@ -825,7 +825,7 @@
         "true_subcategory": "general-food"
       }
     ],
-    "seconds": 12.352
+    "seconds": 15.017
   },
   "dataset": {
     "dataset_version": "product-classification-seed-v0.1",
@@ -849,16 +849,16 @@
     },
     "n_examples": 33,
     "n_products": 10,
-    "sha256": "4aa0343f837ee7d25bf886bdeecab0c9b66d77b07658e51a661eecd21a13c0cd",
+    "sha256": "d40c7751bd9baf265b4b0a4921947c3ee2c7d09c8433d9df1a069a2f0402ec5b",
     "unverified_labels": 33
   },
-  "generated_at": "2026-09-16T10:51:21+00:00",
+  "generated_at": "2026-09-16T12:17:14+00:00",
   "inference_latency": {
     "classify_ms_including_preprocessing": {
-      "max": 5.8122,
-      "mean": 0.8181,
-      "median": 0.7046,
-      "p95": 2.256
+      "max": 4.4059,
+      "mean": 0.7478,
+      "median": 0.6235,
+      "p95": 2.0246
     },
     "machine": {
       "platform": "Windows-10-10.0.26200-SP0",
@@ -867,10 +867,10 @@
     },
     "n_texts": 33,
     "preprocessing_ms": {
-      "max": 0.9059,
-      "mean": 0.1271,
-      "median": 0.1067,
-      "p95": 0.3388
+      "max": 1.0997,
+      "mean": 0.1172,
+      "median": 0.099,
+      "p95": 0.3084
     },
     "repeats": 50
   },
