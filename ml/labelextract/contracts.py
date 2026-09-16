@@ -223,6 +223,91 @@ class UnreadDeclaration:
         }
 
 
+#: The category a classifier reports when it could not establish one. It is
+#: a valid, expected outcome - not an error - and the only category value that
+#: is not a `ProductCategory` code.
+UNKNOWN_CATEGORY = "unknown"
+
+
+@dataclass(frozen=True)
+class ProductClassification:
+    """What kind of packaged product the text on this label suggests.
+
+    An *observation about the label*, in exactly the sense an `ExtractedField`
+    is one: "the text reads like a packaged food, with this much probability
+    mass behind that, for these reasons". It is produced by a model and it can
+    be wrong.
+
+    **It is not a legal determination and it must never become one.** The
+    category is an internal grouping used to decide which questions to ask
+    about a package; whether any requirement applies is decided by the
+    applicability engine from stated facts, and whether the package complies is
+    decided by verified rules. `confidence` here is the classifier's confidence
+    in its *category*. It says nothing about compliance, and no compliance
+    figure may be derived from it.
+
+    `category` is either a `ProductCategory` code the backend already knows
+    (`packaged-food`, `packaged-non-food`) or `UNKNOWN_CATEGORY`. UNKNOWN is a
+    first-class outcome: the classifier reports it whenever its evidence is
+    too weak, and a consumer must treat it as "ask a person", never as a
+    default. `subcategory` is a narrower code within the category, or None
+    when the classifier could not commit to one even though it could to the
+    category.
+
+    `confidence` is the probability mass behind `category`, in [0, 1], or None
+    when no prediction was attempted (no usable text) - never a fabricated
+    number. `subcategory_confidence` is the same for `subcategory`.
+
+    `evidence` carries short, human-readable reasons: label signals matched in
+    the text and the terms that weighed most in the model's decision. It is
+    what lets a reviewer see *why* the classifier said what it said.
+    """
+
+    category: str
+    subcategory: str | None = None
+    confidence: float | None = None
+    subcategory_confidence: float | None = None
+    evidence: tuple[str, ...] = ()
+    #: Probability mass per category, including the ones not chosen. Present
+    #: even when `category` is UNKNOWN so a reviewer can see how close it was.
+    category_scores: Mapping[str, float] = field(default_factory=dict)
+    subcategory_scores: Mapping[str, float] = field(default_factory=dict)
+    classifier_name: str = "unnamed"
+    classifier_version: str = "0.0.0"
+
+    def __post_init__(self) -> None:
+        if not self.category:
+            raise ValueError("ProductClassification.category must not be empty")
+        _check_unit_interval("confidence", self.confidence)
+        _check_unit_interval("subcategory_confidence", self.subcategory_confidence)
+        if self.category == UNKNOWN_CATEGORY and self.subcategory is not None:
+            # A subcategory without a category would be a claim about the
+            # product hanging off nothing.
+            raise ValueError(
+                "ProductClassification cannot carry a subcategory when the "
+                "category is unknown"
+            )
+
+    @property
+    def is_unknown(self) -> bool:
+        """True when no category was established. Treat as 'ask a person'."""
+        return self.category == UNKNOWN_CATEGORY
+
+    def as_dict(self) -> dict[str, Any]:
+        """JSON-safe form, as persisted in run metadata and returned by the API."""
+        return {
+            "category": self.category,
+            "subcategory": self.subcategory,
+            "confidence": self.confidence,
+            "subcategory_confidence": self.subcategory_confidence,
+            "evidence": list(self.evidence),
+            "category_scores": dict(self.category_scores),
+            "subcategory_scores": dict(self.subcategory_scores),
+            "classifier_name": self.classifier_name,
+            "classifier_version": self.classifier_version,
+        }
+
+
 @dataclass(frozen=True)
 class ExtractionResult:
     """The complete structured result the backend persists.

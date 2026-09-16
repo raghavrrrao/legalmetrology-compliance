@@ -69,13 +69,22 @@ logger = logging.getLogger(__name__)
 #: the Tesseract binary, whose version is recorded per run in `OcrResult.raw`.
 #: Bump it whenever a change would make two runs incomparable.
 NAME = "tesseract"
-#: 0.3.0 adds the empty-result page-segmentation retry
-#: (`TesseractOptions.fallback_page_segmentation_mode`). Nothing else about the
-#: engine or the preprocessing moved; the primary mode is still 3 and the
-#: preprocessing is still EXIF/grayscale/2x-upscale/autocontrast.
-VERSION = "0.3.0"
+#: 0.4.0 adds the product classifier as a fourth stage after field
+#: extraction (`labelextract.classification`, artifact 0.1.0). Nothing that
+#: produces the *reading* moved: preprocessing, the engine settings and the
+#: field patterns are exactly 0.3.0's, so `ocr` and `fields` are identical
+#: between the two and only `metadata["product_classification"]` differs.
+#: It is still a new version because the artifact is new weights, and a run
+#: recorded under 0.3.0 must stay reproducible without them.
+VERSION = "0.4.0"
 
-#: The configuration 0.3.0 supersedes: identical, minus the retry. Registered
+#: The configuration 0.4.0 adds the classifier to: 0.3.0, frozen. Registered
+#: so a deployment can keep producing readings without the classifier, and
+#: so the classifier's effect can be isolated on any image.
+EXTRACTION_ONLY_VERSION = "0.3.0"
+
+#: 0.3.0 added the empty-result page-segmentation retry
+#: (`TesseractOptions.fallback_page_segmentation_mode`) to 0.2.0. Registered
 #: so the retry can be isolated and re-measured on any image rather than taken
 #: on trust.
 PREVIOUS_VERSION = "0.2.0"
@@ -91,6 +100,7 @@ PREVIOUS_VERSION = "0.2.0"
 #:     python -m labelextract.cli LABEL.jpg --pipeline-version 0.1.0
 #:     python -m labelextract.cli LABEL.jpg --pipeline-version 0.2.0
 #:     python -m labelextract.cli LABEL.jpg --pipeline-version 0.3.0
+#:     python -m labelextract.cli LABEL.jpg --pipeline-version 0.4.0
 #:
 #: It is frozen. Nothing about it should be tuned again - that is what makes it
 #: a baseline.
@@ -690,14 +700,17 @@ def _int_at(data: Mapping[str, Sequence], key: str, index: int) -> int:
 def build_pipeline() -> ExtractionPipeline:
     """Factory registered in `labelextract.registry` under NAME/VERSION.
 
-    Wires the three stages that make up the first real extraction path:
-    Pillow preparation, Tesseract recognition, rule-based interpretation.
+    Wires the four stages that make up the current extraction path: Pillow
+    preparation, Tesseract recognition, rule-based interpretation, and the
+    product classifier over the recognised text.
 
     Imported lazily inside the function so that registering this pipeline at
     import time costs nothing and needs neither Pillow nor pytesseract present.
     A machine with no OCR stack installed can still import `labelextract`, list
-    the registry, and run the whole test suite.
+    the registry, and run the whole test suite. The classifier likewise loads
+    its artifact on `warmup()` or first use, not here.
     """
+    from labelextract.classification import build_classifier
     from labelextract.fields import RuleBasedFieldExtractor
     from labelextract.preprocessing import (
         UPSCALE_TO_DIMENSION,
@@ -714,6 +727,53 @@ def build_pipeline() -> ExtractionPipeline:
         # preprocessing plus this page-segmentation mode - that was measured.
         # A bare `PillowPreprocessor()` stays conservative for anyone building
         # something else out of these parts.
+        preprocessor=PillowPreprocessor(
+            PreprocessingConfig(min_dimension=UPSCALE_TO_DIMENSION)
+        ),
+        field_extractor=RuleBasedFieldExtractor(),
+        classifier=build_classifier(),
+    )
+
+
+def build_extraction_only_pipeline() -> ExtractionPipeline:
+    """The 0.3.0 configuration: 0.4.0 without the product classifier.
+
+    Everything that produces the reading is written out here, identically to
+    `build_pipeline`, for the reason every frozen factory in this module gives:
+    a factory that inherits a default stops reproducing the version it names
+    as soon as the default moves. The only difference is the absent
+    `classifier`, so a run under 0.3.0 and a run under 0.4.0 on the same image
+    carry the same `ocr` and `fields` and differ only in metadata.
+
+        python -m labelextract.cli LABEL.jpg --pipeline-version 0.3.0
+        python -m labelextract.cli LABEL.jpg --pipeline-version 0.4.0
+    """
+    from labelextract.fields import RuleBasedFieldExtractor
+    from labelextract.preprocessing import (
+        UPSCALE_TO_DIMENSION,
+        PillowPreprocessor,
+        PreprocessingConfig,
+    )
+
+    return ExtractionPipeline(
+        name=NAME,
+        version=EXTRACTION_ONLY_VERSION,
+        # The 0.3.0 engine settings, written out rather than taken from
+        # `TesseractOptions()` defaults, so that a later change to a default
+        # moves 0.4.0 and leaves this frozen - which is what a frozen version
+        # is for. These are the values the defaults held on the day 0.3.0
+        # shipped, and `test_classification_pipeline.py` asserts 0.4.0 still
+        # matches them.
+        ocr_engine=TesseractOcrEngine(
+            TesseractOptions(
+                languages=("eng",),
+                page_segmentation_mode=3,
+                fallback_page_segmentation_mode=11,
+                engine_mode=3,
+                timeout_seconds=30,
+                minimum_word_confidence=0.0,
+            )
+        ),
         preprocessor=PillowPreprocessor(
             PreprocessingConfig(min_dimension=UPSCALE_TO_DIMENSION)
         ),

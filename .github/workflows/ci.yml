@@ -183,6 +183,20 @@ jobs:
         working-directory: ml
         run: pytest -q
 
+      # The product classifier is *run* with no dependencies - the shipped
+      # artifact is JSON evaluated in plain Python, and the two steps above
+      # already exercise it that way. scikit-learn is needed only to *train*
+      # one, so it is installed last and separately: the tests it unlocks
+      # check that a freshly trained artifact reproduces scikit-learn's own
+      # probabilities and that the training command works end to end. They
+      # skip, not fail, in the two runs above.
+      - name: Install the optional classifier-training extra
+        run: pip install -e "./ml[classify-train]"
+
+      - name: ML tests with scikit-learn available
+        working-directory: ml
+        run: pytest -q
+
   frontend:
     name: Frontend (lint, test, build)
     runs-on: ubuntu-latest

@@ -34,8 +34,29 @@ ocr = [
     "Pillow>=11.3,<12",
 ]
 
+# Everything needed to *train* the product classifier
+# (ml/labelextract/classification/train.py). Not needed to run it: the
+# shipped artifact is JSON and is evaluated in plain Python, so neither the
+# backend nor a deployment installs this. Pinned to the minor that produced
+# the committed artifact - a different scikit-learn can fit slightly
+# different coefficients, and `training.library` in the artifact records
+# which one did.
+classify-train = [
+    "scikit-learn>=1.9,<1.10",
+]
+
 [tool.setuptools.packages.find]
 include = ["labelextract*"]
+
+# The classifier's artifact and the seed dataset it was trained on are data
+# files inside the package, and a non-editable install (the production image
+# does `pip install "./ml[ocr]"`) copies only what is listed here. Leaving
+# them out would build an image whose classifier reports itself unavailable.
+[tool.setuptools.package-data]
+labelextract = [
+    "classification/artifacts/*.json",
+    "classification/datasets/*.json",
+]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]

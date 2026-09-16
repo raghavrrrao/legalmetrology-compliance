@@ -91,7 +91,13 @@ def _register_builtin_pipelines() -> None:
     # Every superseded configuration stays resolvable rather than being
     # replaced: a run recorded under an older version stays re-runnable, and
     # each change can be compared against the one before it on the same image.
-    # See `tesseract.PREVIOUS_VERSION` and `tesseract.BASELINE_VERSION`.
+    # See `tesseract.EXTRACTION_ONLY_VERSION`, `tesseract.PREVIOUS_VERSION`
+    # and `tesseract.BASELINE_VERSION`.
+    register_pipeline(
+        tesseract.NAME,
+        tesseract.EXTRACTION_ONLY_VERSION,
+        tesseract.build_extraction_only_pipeline,
+    )
     register_pipeline(
         tesseract.NAME, tesseract.PREVIOUS_VERSION, tesseract.build_previous_pipeline
     )

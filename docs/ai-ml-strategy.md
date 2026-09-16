@@ -18,9 +18,15 @@ model deciding legality produces a confident legal claim nobody can audit.
 | Image preprocessing (deskew, perspective) | Not implemented; stated as a limitation | needs numpy/OpenCV |
 | OCR — recognise characters and their position | **Implemented** | `ml/labelextract/ocr/` — Tesseract 5 via pytesseract |
 | Field extraction — map recognised text to declarations | **Implemented, English, partial** | `ml/labelextract/fields/` — deterministic patterns |
-| Product/category classification | Not started; no interface yet | `feature/product-classification` |
+| Product/category classification | **Implemented, baseline** — TF-IDF + logistic regression over the recognised text, trained on a ten-product seed set; category / subcategory / confidence / evidence, or UNKNOWN | `ml/labelextract/classification/` — see [ml/product-classification.md](ml/product-classification.md) |
 
 These are **perception** tasks. They answer "what is printed here, and where?"
+— and, since the classifier, "what kind of product prints this?". The second
+question has the same standing as the first: an observation about the label,
+with a confidence that is about the *category* and nothing else, consumed by
+nobody in the decision path. Which rules apply is still answered from
+`Product.category` and stated facts; the classifier's answer reaches the
+client as a suggestion and stops there.
 
 The placeholder `null-engine` has not been removed and is still the shipped
 default. Switching to Tesseract is a deliberate two-line `.env` change made
@@ -40,13 +46,21 @@ that are **not** extracted.
 - **It does not interpret the law.** No LLM is asked "is this package legal?"
   There is no LLM in this system at all. The extraction layer is Tesseract plus
   deterministic regular expressions — every decision it makes is one a person
-  can read in the source and disagree with.
+  can read in the source and disagree with. The one trained model, the product
+  classifier, is a linear model whose coefficients are committed as readable
+  JSON and whose every answer lists the terms that produced it; it is never
+  given a rule and never asked about compliance.
 - **It does not fill in missing declarations.** A field extractor that did not
   find a declaration reports nothing. Inventing one to complete a set would
   silently turn a non-compliant package into a compliant one.
 - **It does not override `REVIEW_REQUIRED`.** When evidence is insufficient,
   the answer is "a human must look at this", and no confidence score changes
   that.
+- **It does not choose the rule set.** The product classifier can say a label
+  looks like packaged food at 0.72. That does not set `Product.category`, does
+  not answer `food-article`, and does not make any rule apply. A person
+  confirming the suggestion is what turns it into a fact the engine may use —
+  exactly as a person supplying `category_code` does today.
 
 ### If an LLM is added later
 
@@ -163,7 +177,7 @@ have not.** Published values, with their dataset, size and date, live in
 | OCR: character error rate, word error rate | **Not measured.** No hand transcription exists; the harness reports them unavailable rather than estimating them |
 | Field extraction: per-field precision, recall, F1 | **Measured** on `our-eval-v0.1-draft` (28 images, 10 products, 2026-08-29): micro precision 0.944, recall 0.205, F1 0.337 |
 | Uncertainty: uncertain rate, uncertainty precision, silent error rate | **Measured**: 0.500, 0.429, 0.455 |
-| Classification: per-category accuracy, confusion matrix | **Not measured.** No classifier exists |
+| Classification: per-category accuracy, confusion matrix | **Measured** on `product-classification-seed-v0.1` (33 texts, 10 products, 2026-09-16), leave-one-product-out: strict accuracy 0.364, unknown rate 0.333, `packaged-non-food` recall 0.000. A measurement of a seed set, not of a classifier — [evaluation-results.md §13](evaluation-results.md#13-product-classification--tfidf-logreg-010-on-product-classification-seed-v01) |
 | End-to-end: agreement with a human reviewer's compliance determination | **Not measured**, and out of reach until verified `ComplianceRule` rows exist. Nothing measured so far touches compliance |
 | Operational: processing time per image, failure rate, `REVIEW_REQUIRED` rate | **Partly measured**: median 2202 ms per image, 0 crashes in 28, 2 of 28 `empty`. `REVIEW_REQUIRED` is a compliance-engine outcome and is not measured |
 

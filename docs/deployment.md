@@ -133,7 +133,7 @@ rather than a copied string, so it follows the database if it is recreated.
 | `DATABASE_URL` | `${{Postgres.DATABASE_URL}}` | A service reference, not a literal. |
 | `CORS_ALLOWED_ORIGINS` | the frontend origin, e.g. `https://your-frontend.vercel.app` | Exact origins, comma-separated. No wildcards, ever. |
 | `DEFAULT_EXTRACTION_ENGINE_NAME` | `tesseract` | Otherwise the deployment runs the placeholder and reads nothing. |
-| `DEFAULT_EXTRACTION_ENGINE_VERSION` | `0.3.0` | The pipeline version, not the binary's. |
+| `DEFAULT_EXTRACTION_ENGINE_VERSION` | `0.4.0` | The pipeline version, not the binary's. `0.4.0` adds the product classifier; `0.3.0` is the same reading without it. |
 | `DEMO_PUBLIC_ANALYSIS_API` | `False` unless you mean it | See [Demonstration mode](#demonstration-mode). |
 | `DJANGO_SECURE_HSTS_SECONDS` | `0` for the first deploy | Browsers cache HSTS hard. Raise it once HTTPS is confirmed working. |
 
@@ -162,7 +162,7 @@ without it — either it will not start, or it will start and be quietly useless
 | `DJANGO_DEBUG` | `False`. Already the default, set explicitly so it is visible in the dashboard. Also switches cookies to HTTPS-only. |
 | `CORS_ALLOWED_ORIGINS` | Defaults to `localhost:5173`. Left alone, the deployed frontend is blocked by CORS and cannot call the API at all. |
 | `DEFAULT_EXTRACTION_ENGINE_NAME` | `tesseract`. Left alone, the deployment runs `null-engine` and reads nothing off any label while looking healthy. |
-| `DEFAULT_EXTRACTION_ENGINE_VERSION` | `0.3.0`. The pipeline's version, not the binary's. |
+| `DEFAULT_EXTRACTION_ENGINE_VERSION` | `0.4.0`. The pipeline's version, not the binary's. `0.4.0` is `0.3.0` plus the product classifier (see `docs/ml/product-classification.md`); a deployment left at `0.3.0` keeps working and returns `product_classification: null`. With `0.4.0`, the health check also warms the classifier, so an image whose classifier artifact is missing reports `available: false` — the artifact ships inside the `labelextract` package, so that indicates a broken build. |
 
 Alternative to `DATABASE_URL`, and only if you are not using a managed
 database: `DATABASE_NAME`, `DATABASE_USER`, `DATABASE_PASSWORD` (no defaults),

@@ -23,6 +23,9 @@ recorded here loads a rule or produces a verdict.
 > §11 measures an OCR-robustness change against §10's numbers, and §12 records a
 > Hindi language-data experiment that was **blocked by the local environment** and
 > therefore changed no measured figure. §11.6 remains the current numbers.
+> [§13](#13-product-classification--tfidf-logreg-010-on-product-classification-seed-v01)
+> is a different layer: the first product-classification measurement, on a
+> ten-product seed set, and it measures nothing about extraction.
 
 | | |
 |---|---|
@@ -1488,3 +1491,170 @@ language data** and names it. Installing the data, outside the repository:
 
 Confirm with `tesseract --list-langs` before re-running. **No language data,
 model weight or generated dataset belongs in Git.**
+
+
+---
+
+## 13. Product classification — `tfidf-logreg` 0.1.0 on `product-classification-seed-v0.1`
+
+**Run:** 2026-09-16, `python -m labelextract.classification.train`, on the
+development machine (Intel i5, 8 GB, Windows, Python 3.11.1, scikit-learn
+1.9.1). Every number below is copied from
+`ml/labelextract/classification/artifacts/product_classifier_v0.1.0.metrics.json`,
+which also carries every individual prediction; the method, the model and
+what these numbers may and may not be used for are in
+[`ml/product-classification.md`](ml/product-classification.md).
+
+**This is the first classification measurement in the repository, and it is a
+measurement of a seed set, not of a classifier.** §3 of
+[`evaluation-strategy.md`](evaluation-strategy.md) asks for per-category
+accuracy plus a confusion matrix, because a misclassification silently changes
+the whole rule set applied to a product. Both are below; read them with the
+dataset row first.
+
+| | |
+|---|---|
+| Dataset | `product-classification-seed-v0.1`, digest `d40c7751bd9baf26…` (SHA-256 of the file with CRLF normalised to LF, i.e. as Git stores it) |
+| Texts | **33**, from **10** products: 28 verbatim OCR readings (`tesseract` 0.3.0) of the 28 `our-eval-v0.1-draft` photographs, plus 5 model-drafted transcriptions of the most legible panels |
+| Labels | 4 subcategories under 2 categories. **Model-drafted, not human-verified** (`label_verified_by` is null on all 33) |
+| Class balance | `general-food` 16 texts / 7 products; `health-supplement` 5 / **1**; `cleaning-product` 7 / **1**; `cosmetics-and-toiletries` 5 / **1** |
+| Model | TF-IDF word uni+bigrams (`min_df=2`, 1,035 features) + multinomial logistic regression (`C=1.0`, `class_weight=balanced`, `lbfgs`) |
+| Thresholds | category ≥ 0.60, subcategory ≥ 0.50, ≥ 3 word tokens — uncalibrated baselines |
+| Method | Leave-one-product-out cross-validation, scored through the production classifier including its UNKNOWN path |
+
+### 13.1 Metric definitions
+
+The classifier abstains, so the ordinary four numbers need one more and need
+the four defined carefully (`ml/labelextract/classification/metrics.py`):
+
+| Metric | Definition |
+|---|---|
+| Unknown rate | texts answered UNKNOWN ÷ all texts |
+| Strict accuracy | correct ÷ all texts. **An abstention counts as wrong.** |
+| Accuracy on predicted | correct ÷ texts the classifier answered. Meaningless without the unknown rate beside it |
+| Per-class precision | over committed predictions only; an abstention predicts no class |
+| Per-class recall | abstentions count as misses for the true class |
+| Macro averages | over classes present in the ground truth; a class never predicted has precision 0.0 and is named, not dropped |
+
+### 13.2 Leave-one-product-out — category level
+
+N = 33 texts, 10 folds. In three folds (`product_001`, `product_002`,
+`product_003`) the held-out product's subcategory is absent from training
+entirely, which the report records per fold.
+
+| | |
+|---|---|
+| Unknown rate | **0.333** (11 / 33) |
+| Strict accuracy | **0.364** (12 / 33) |
+| Accuracy on predicted | 0.545 (12 / 22) |
+| Macro precision | 0.273 |
+| Macro recall | 0.286 |
+| Macro F1 | 0.279 |
+
+| Class | Precision | Recall | F1 | Support | Predicted |
+|---|---|---|---|---|---|
+| `packaged-food` | 0.545 | 0.571 | 0.558 | 21 | 22 |
+| `packaged-non-food` | **0.000** | **0.000** | **0.000** | 12 | **0** |
+
+Confusion (rows = truth, columns = prediction):
+
+| | `packaged-food` | `packaged-non-food` | `unknown` |
+|---|---|---|---|
+| `packaged-food` (21) | 12 | 0 | 9 |
+| `packaged-non-food` (12) | **10** | 0 | 2 |
+
+**Reading it.** `packaged-non-food` was never predicted for a held-out
+product. With one product per non-food class, holding it out leaves a training
+set whose only non-food examples are a different single product; the model
+learns nothing usable about "non-food" and calls every held-out non-food text
+food. Ten of those twelve texts were called food *above* the 0.60 threshold.
+
+**Confidence does not separate right from wrong.** Held-out category
+predictions that were correct carried confidences 0.62–0.72; the ones that
+were wrong carried 0.65–0.79. Wrong answers were, on average, *more*
+confident. No threshold on this artifact's probabilities improves the
+cross-validated outcome; it only trades correct answers for abstentions.
+
+### 13.3 Leave-one-product-out — subcategory level
+
+| | |
+|---|---|
+| Unknown rate | **1.000** (33 / 33) |
+| Strict accuracy | 0.000 |
+| Macro precision / recall / F1 | 0.000 / 0.000 / 0.000 |
+
+No held-out text reached the 0.50 subcategory threshold in any fold. Every
+row of the subcategory confusion matrix is entirely in the `unknown` column.
+There is nothing to learn a subcategory from when the only product in it is
+the one held out.
+
+### 13.4 Resubstitution — the shipped artifact on its own training data
+
+**Not a generalisation figure.** Reported because the regression tests pin
+it and because "can it fit the seed set at all" is a question worth
+answering. Quoting any number in this subsection as accuracy would be wrong.
+
+| | Category | Subcategory |
+|---|---|---|
+| Unknown rate | 0.061 (2 / 33) | 0.545 (18 / 33) |
+| Strict accuracy | 0.939 | 0.455 |
+| Accuracy on predicted | 1.000 | 1.000 |
+| Macro precision / recall / F1 | 1.000 / 0.935 / 0.966 | 1.000 / 0.610 / 0.701 |
+
+| Class | Precision | Recall | F1 | Support |
+|---|---|---|---|---|
+| `packaged-food` | 1.000 | 0.952 | 0.976 | 21 |
+| `packaged-non-food` | 1.000 | 0.917 | 0.957 | 12 |
+| `cleaning-product` | 1.000 | 0.714 | 0.833 | 7 |
+| `cosmetics-and-toiletries` | 1.000 | 1.000 | 1.000 | 5 |
+| `general-food` | 1.000 | 0.125 | 0.222 | 16 |
+| `health-supplement` | 1.000 | 0.600 | 0.750 | 5 |
+
+Subcategory confusion, resubstitution (rows = truth):
+
+| | `cleaning-product` | `cosmetics-and-toiletries` | `general-food` | `health-supplement` | `unknown` |
+|---|---|---|---|---|---|
+| `cleaning-product` (7) | 5 | 0 | 0 | 0 | 2 |
+| `cosmetics-and-toiletries` (5) | 0 | 5 | 0 | 0 | 0 |
+| `general-food` (16) | 0 | 0 | 2 | 0 | 14 |
+| `health-supplement` (5) | 0 | 0 | 0 | 3 | 2 |
+
+The model fits its ten products at the category level (no wrong category; two
+abstentions, both on near-empty front panels). At the subcategory level it
+abstains on 14 of 16 `general-food` texts: with balanced class weights the
+food mass is shared between `general-food` and `health-supplement`, and
+general food rarely reaches 0.50 alone. That is the threshold behaving as
+intended on the texts it was fitted to — "a food, kind unclear".
+
+### 13.5 Latency and size
+
+Measured by the training command (`measure_inference`) over the 33 seed
+texts, 50 repeats each, `perf_counter` wall clock around the classifier
+stage alone - no OCR, no HTTP, no database, artifact already loaded - on
+the development machine, single process. `ml/product-classification.md`
+§Performance states exactly which calls each row times.
+
+| | mean | median | p95 | max |
+|---|---|---|---|---|
+| Preprocessing + tokenising | 0.117 ms | 0.099 ms | 0.308 ms | 1.100 ms |
+| `classify_text`, end to end (includes preprocessing) | 0.748 ms | 0.624 ms | 2.025 ms | 4.406 ms |
+
+Artifact: 119,535 bytes of JSON; final fit 0.016 s; ten-fold cross-validation 15.0 s wall clock (earlier runs took 1.8-12.4 s; shared desktop).
+Against the 2,202 ms median OCR time of §3 the classifier is not a
+measurable share of a request.
+
+### 13.6 Verdict
+
+- **Category classification is not usable for an unfamiliar product** with
+  this artifact: strict accuracy 0.36, non-food recall 0.00, and wrong
+  answers as confident as right ones.
+- **The pipeline, the format and the honesty are usable.** The dataset schema
+  records provenance per text; evaluation splits by product; the report
+  records every prediction; the UNKNOWN path fires and is measured; the
+  artifact reproduces scikit-learn to 1e-9 and is inspectable JSON.
+- **What changes the numbers is data, not modelling.** Dozens of products per
+  class with human-verified labels, held out by product, before any
+  hyperparameter, threshold or model change is worth evaluating.
+- **Nothing here touches compliance.** No run in this section loaded a rule or
+  produced a verdict, and a backend test drives a classified run through the
+  analysis endpoint and asserts the verdict is unchanged.

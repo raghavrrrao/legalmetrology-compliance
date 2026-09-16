@@ -47,7 +47,11 @@ finding trace. No login screen (see *Known security limitations*).
 dependencies. A placeholder engine is configurable and is flagged to the UI so
 its output can never be shown as a real reading. Extraction covers 14
 declarations; common/generic name and address are **not attempted**, and their
-absence carries no information.
+absence carries no information. A first product classifier (TF-IDF + logistic
+regression, a 120 KB JSON artifact evaluated in plain Python) runs as the last
+pipeline stage in `tesseract` 0.4.0 and is honestly a baseline: ten training
+products, model-drafted labels, and cross-validated numbers that say it cannot
+yet recognise an unfamiliar non-food product. It decides nothing.
 
 **Compliance engine:** Working. Eleven active deterministic rules over seven
 registered check types; no LLM and no model output anywhere in the decision
@@ -65,7 +69,7 @@ trusting the claim. Compliance results are now scoped to the caller. Throttling
 30/min anonymous, 120/min authenticated. `manage.py check --deploy` reports zero
 issues with `DJANGO_DEBUG=False`.
 
-**Testing:** 819 backend, 575 ML, 202 frontend — all passing. Lint clean,
+**Testing:** 850 backend, 778 ML (plus 2 recorded expected failures and 2 unexpected passes of the same parametrised classifier-robustness test), 220 frontend — all passing. Lint clean,
 production build succeeds. Counts are stated so drift is noticeable, not as a
 quality claim: a passing suite bounds what is checked, not what is correct.
 
@@ -88,6 +92,7 @@ project has been created from this repository and there is no URL. See
 | OCR | Working with Tesseract 5. Orientation is **not** detected — see *Known limitations*. | `ml/labelextract/ocr/` |
 | Field extraction | Working for 14 declarations. Two — common/generic name and address — are **not attempted**. | `ml/labelextract/fields/` |
 | Normalisation | Working. Refuses to resolve an ambiguity: `03/04/2025` is emitted with both candidates and marked uncertain rather than guessed. | `ml/labelextract/fields/normalisation.py` |
+| Product classification | **Baseline.** TF-IDF + logistic regression over the recognised text (`tesseract` 0.4.0), answering `packaged-food` / `packaged-non-food` / `unknown` with a subcategory, a confidence and evidence. Trained on **ten products**; leave-one-product-out strict accuracy 0.36 and non-food never predicted for an unseen product. Reaches the API as `product_classification`; **feeds nothing downstream yet.** | `ml/labelextract/classification/`, `docs/ml/product-classification.md` |
 | Applicability | Working. Rules 3 and 26 scope gates, then each clause's own conditions, resolved from stated facts **before** any rule is evaluated. | `apps/compliance/services/applicability.py` |
 | Rule engine | Working. Seven registered deterministic checks; no LLM anywhere in the decision path. | `apps/rules/checks/` |
 | Findings & result | Working. One finding per rule examined, with clause, source, evidence, confidence and applicability. | `apps/compliance/services/engine.py` |

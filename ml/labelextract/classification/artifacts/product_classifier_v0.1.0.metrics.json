@@ -1,0 +1,1573 @@
+{
+  "artifact": {
+    "bytes": 119535,
+    "classes": [
+      "cleaning-product",
+      "cosmetics-and-toiletries",
+      "general-food",
+      "health-supplement"
+    ],
+    "excluded_examples": [],
+    "fit_seconds": 0.016,
+    "model_version": "0.1.0",
+    "n_features": 1035,
+    "path": "D:\\projectWebsites\\legalmetrology-compliance\\ml\\labelextract\\classification\\artifacts\\product_classifier_v0.1.0.json"
+  },
+  "classifier_config": {
+    "min_category_confidence": 0.6,
+    "min_subcategory_confidence": 0.5,
+    "min_tokens": 3
+  },
+  "cross_validation": {
+    "folds": [
+      {
+        "classes_in_training": [
+          "cosmetics-and-toiletries",
+          "general-food",
+          "health-supplement"
+        ],
+        "held_out_classes_absent_from_training": [
+          "cleaning-product"
+        ],
+        "held_out_product": "product_001",
+        "n_held_out": 7,
+        "n_train": 26
+      },
+      {
+        "classes_in_training": [
+          "cleaning-product",
+          "cosmetics-and-toiletries",
+          "general-food"
+        ],
+        "held_out_classes_absent_from_training": [
+          "health-supplement"
+        ],
+        "held_out_product": "product_002",
+        "n_held_out": 5,
+        "n_train": 28
+      },
+      {
+        "classes_in_training": [
+          "cleaning-product",
+          "general-food",
+          "health-supplement"
+        ],
+        "held_out_classes_absent_from_training": [
+          "cosmetics-and-toiletries"
+        ],
+        "held_out_product": "product_003",
+        "n_held_out": 5,
+        "n_train": 28
+      },
+      {
+        "classes_in_training": [
+          "cleaning-product",
+          "cosmetics-and-toiletries",
+          "general-food",
+          "health-supplement"
+        ],
+        "held_out_classes_absent_from_training": [],
+        "held_out_product": "product_004",
+        "n_held_out": 2,
+        "n_train": 31
+      },
+      {
+        "classes_in_training": [
+          "cleaning-product",
+          "cosmetics-and-toiletries",
+          "general-food",
+          "health-supplement"
+        ],
+        "held_out_classes_absent_from_training": [],
+        "held_out_product": "product_005",
+        "n_held_out": 2,
+        "n_train": 31
+      },
+      {
+        "classes_in_training": [
+          "cleaning-product",
+          "cosmetics-and-toiletries",
+          "general-food",
+          "health-supplement"
+        ],
+        "held_out_classes_absent_from_training": [],
+        "held_out_product": "product_006",
+        "n_held_out": 2,
+        "n_train": 31
+      },
+      {
+        "classes_in_training": [
+          "cleaning-product",
+          "cosmetics-and-toiletries",
+          "general-food",
+          "health-supplement"
+        ],
+        "held_out_classes_absent_from_training": [],
+        "held_out_product": "product_007",
+        "n_held_out": 3,
+        "n_train": 30
+      },
+      {
+        "classes_in_training": [
+          "cleaning-product",
+          "cosmetics-and-toiletries",
+          "general-food",
+          "health-supplement"
+        ],
+        "held_out_classes_absent_from_training": [],
+        "held_out_product": "product_008",
+        "n_held_out": 2,
+        "n_train": 31
+      },
+      {
+        "classes_in_training": [
+          "cleaning-product",
+          "cosmetics-and-toiletries",
+          "general-food",
+          "health-supplement"
+        ],
+        "held_out_classes_absent_from_training": [],
+        "held_out_product": "product_009",
+        "n_held_out": 3,
+        "n_train": 30
+      },
+      {
+        "classes_in_training": [
+          "cleaning-product",
+          "cosmetics-and-toiletries",
+          "general-food",
+          "health-supplement"
+        ],
+        "held_out_classes_absent_from_training": [],
+        "held_out_product": "product_010",
+        "n_held_out": 2,
+        "n_train": 31
+      }
+    ],
+    "method": "leave-one-product-out",
+    "metrics": {
+      "category": {
+        "accuracy_on_predicted": 0.5455,
+        "confusion": {
+          "packaged-food": {
+            "packaged-food": 12,
+            "packaged-non-food": 0,
+            "unknown": 9
+          },
+          "packaged-non-food": {
+            "packaged-food": 10,
+            "packaged-non-food": 0,
+            "unknown": 2
+          }
+        },
+        "macro_f1": 0.2791,
+        "macro_precision": 0.2727,
+        "macro_recall": 0.2857,
+        "n_correct": 12,
+        "n_predicted": 22,
+        "n_total": 33,
+        "n_unknown": 11,
+        "per_class": {
+          "packaged-food": {
+            "f1": 0.5581,
+            "precision": 0.5455,
+            "predicted": 22,
+            "recall": 0.5714,
+            "support": 21
+          },
+          "packaged-non-food": {
+            "f1": 0.0,
+            "precision": 0.0,
+            "predicted": 0,
+            "recall": 0.0,
+            "support": 12
+          }
+        },
+        "strict_accuracy": 0.3636,
+        "undefined_precision": [
+          "packaged-non-food"
+        ],
+        "unknown_rate": 0.3333
+      },
+      "subcategory": {
+        "accuracy_on_predicted": 0.0,
+        "confusion": {
+          "cleaning-product": {
+            "cleaning-product": 0,
+            "cosmetics-and-toiletries": 0,
+            "general-food": 0,
+            "health-supplement": 0,
+            "unknown": 7
+          },
+          "cosmetics-and-toiletries": {
+            "cleaning-product": 0,
+            "cosmetics-and-toiletries": 0,
+            "general-food": 0,
+            "health-supplement": 0,
+            "unknown": 5
+          },
+          "general-food": {
+            "cleaning-product": 0,
+            "cosmetics-and-toiletries": 0,
+            "general-food": 0,
+            "health-supplement": 0,
+            "unknown": 16
+          },
+          "health-supplement": {
+            "cleaning-product": 0,
+            "cosmetics-and-toiletries": 0,
+            "general-food": 0,
+            "health-supplement": 0,
+            "unknown": 5
+          }
+        },
+        "macro_f1": 0.0,
+        "macro_precision": 0.0,
+        "macro_recall": 0.0,
+        "n_correct": 0,
+        "n_predicted": 0,
+        "n_total": 33,
+        "n_unknown": 33,
+        "per_class": {
+          "cleaning-product": {
+            "f1": 0.0,
+            "precision": 0.0,
+            "predicted": 0,
+            "recall": 0.0,
+            "support": 7
+          },
+          "cosmetics-and-toiletries": {
+            "f1": 0.0,
+            "precision": 0.0,
+            "predicted": 0,
+            "recall": 0.0,
+            "support": 5
+          },
+          "general-food": {
+            "f1": 0.0,
+            "precision": 0.0,
+            "predicted": 0,
+            "recall": 0.0,
+            "support": 16
+          },
+          "health-supplement": {
+            "f1": 0.0,
+            "precision": 0.0,
+            "predicted": 0,
+            "recall": 0.0,
+            "support": 5
+          }
+        },
+        "strict_accuracy": 0.0,
+        "undefined_precision": [
+          "cleaning-product",
+          "cosmetics-and-toiletries",
+          "general-food",
+          "health-supplement"
+        ],
+        "unknown_rate": 1.0
+      }
+    },
+    "predictions": [
+      {
+        "category_correct": false,
+        "category_scores": {
+          "packaged-food": 0.6639,
+          "packaged-non-food": 0.3361
+        },
+        "confidence": 0.6639,
+        "example_id": "p001_01_front_clean/ocr",
+        "predicted_category": "packaged-food",
+        "predicted_subcategory": null,
+        "product_id": "product_001",
+        "subcategory_confidence": null,
+        "subcategory_correct": false,
+        "text_source": "ocr",
+        "true_category": "packaged-non-food",
+        "true_subcategory": "cleaning-product"
+      },
+      {
+        "category_correct": false,
+        "category_scores": {
+          "packaged-food": 0.7713,
+          "packaged-non-food": 0.2287
+        },
+        "confidence": 0.7713,
+        "example_id": "p001_02_back_clean/ocr",
+        "predicted_category": "packaged-food",
+        "predicted_subcategory": null,
+        "product_id": "product_001",
+        "subcategory_confidence": null,
+        "subcategory_correct": false,
+        "text_source": "ocr",
+        "true_category": "packaged-non-food",
+        "true_subcategory": "cleaning-product"
+      },
+      {
+        "category_correct": false,
+        "category_scores": {
+          "packaged-food": 0.7666,
+          "packaged-non-food": 0.2334
+        },
+        "confidence": 0.7666,
+        "example_id": "p001_03_left_clean/ocr",
+        "predicted_category": "packaged-food",
+        "predicted_subcategory": null,
+        "product_id": "product_001",
+        "subcategory_confidence": null,
+        "subcategory_correct": false,
+        "text_source": "ocr",
+        "true_category": "packaged-non-food",
+        "true_subcategory": "cleaning-product"
+      },
+      {
+        "category_correct": false,
+        "category_scores": {
+          "packaged-food": 0.6477,
+          "packaged-non-food": 0.3523
+        },
+        "confidence": 0.6477,
+        "example_id": "p001_04_right_clean/ocr",
+        "predicted_category": "packaged-food",
+        "predicted_subcategory": null,
+        "product_id": "product_001",
+        "subcategory_confidence": null,
+        "subcategory_correct": false,
+        "text_source": "ocr",
+        "true_category": "packaged-non-food",
+        "true_subcategory": "cleaning-product"
+      },
+      {
+        "category_correct": false,
+        "category_scores": {
+          "packaged-food": 0.7878,
+          "packaged-non-food": 0.2122
+        },
+        "confidence": 0.7878,
+        "example_id": "p001_05_declaration_closeup/ocr",
+        "predicted_category": "packaged-food",
+        "predicted_subcategory": null,
+        "product_id": "product_001",
+        "subcategory_confidence": null,
+        "subcategory_correct": false,
+        "text_source": "ocr",
+        "true_category": "packaged-non-food",
+        "true_subcategory": "cleaning-product"
+      },
+      {
+        "category_correct": false,
+        "category_scores": {
+          "packaged-food": 0.7556,
+          "packaged-non-food": 0.2444
+        },
+        "confidence": 0.7556,
+        "example_id": "p001_05_declaration_closeup/transcription",
+        "predicted_category": "packaged-food",
+        "predicted_subcategory": null,
+        "product_id": "product_001",
+        "subcategory_confidence": null,
+        "subcategory_correct": false,
+        "text_source": "manual_transcription",
+        "true_category": "packaged-non-food",
+        "true_subcategory": "cleaning-product"
+      },
+      {
+        "category_correct": false,
+        "category_scores": {
+          "packaged-food": 0.7655,
+          "packaged-non-food": 0.2345
+        },
+        "confidence": 0.7655,
+        "example_id": "p001_06_declaration_closeup_angled/ocr",
+        "predicted_category": "packaged-food",
+        "predicted_subcategory": null,
+        "product_id": "product_001",
+        "subcategory_confidence": null,
+        "subcategory_correct": false,
+        "text_source": "ocr",
+        "true_category": "packaged-non-food",
+        "true_subcategory": "cleaning-product"
+      },
+      {
+        "category_correct": false,
+        "category_scores": {
+          "packaged-food": 0.5379,
+          "packaged-non-food": 0.4621
+        },
+        "confidence": null,
+        "example_id": "p002_01_back/ocr",
+        "predicted_category": "unknown",
+        "predicted_subcategory": null,
+        "product_id": "product_002",
+        "subcategory_confidence": null,
+        "subcategory_correct": false,
+        "text_source": "ocr",
+        "true_category": "packaged-food",
+        "true_subcategory": "health-supplement"
+      },
+      {
+        "category_correct": false,
+        "category_scores": {
+          "packaged-food": 0.4153,
+          "packaged-non-food": 0.5847
+        },
+        "confidence": null,
+        "example_id": "p002_02_front/ocr",
+        "predicted_category": "unknown",
+        "predicted_subcategory": null,
+        "product_id": "product_002",
+        "subcategory_confidence": null,
+        "subcategory_correct": false,
+        "text_source": "ocr",
+        "true_category": "packaged-food",
+        "true_subcategory": "health-supplement"
+      },
+      {
+        "category_correct": false,
+        "category_scores": {
+          "packaged-food": 0.4855,
+          "packaged-non-food": 0.5145
+        },
+        "confidence": null,
+        "example_id": "p002_03_left/ocr",
+        "predicted_category": "unknown",
+        "predicted_subcategory": null,
+        "product_id": "product_002",
+        "subcategory_confidence": null,
+        "subcategory_correct": false,
+        "text_source": "ocr",
+        "true_category": "packaged-food",
+        "true_subcategory": "health-supplement"
+      },
+      {
+        "category_correct": false,
+        "category_scores": {
+          "packaged-food": 0.5309,
+          "packaged-non-food": 0.4691
+        },
+        "confidence": null,
+        "example_id": "p002_03_left/transcription",
+        "predicted_category": "unknown",
+        "predicted_subcategory": null,
+        "product_id": "product_002",
+        "subcategory_confidence": null,
+        "subcategory_correct": false,
+        "text_source": "manual_transcription",
+        "true_category": "packaged-food",
+        "true_subcategory": "health-supplement"
+      },
+      {
+        "category_correct": false,
+        "category_scores": {
+          "packaged-food": 0.5106,
+          "packaged-non-food": 0.4894
+        },
+        "confidence": null,
+        "example_id": "p002_04_right/ocr",
+        "predicted_category": "unknown",
+        "predicted_subcategory": null,
+        "product_id": "product_002",
+        "subcategory_confidence": null,
+        "subcategory_correct": false,
+        "text_source": "ocr",
+        "true_category": "packaged-food",
+        "true_subcategory": "health-supplement"
+      },
+      {
+        "category_correct": false,
+        "category_scores": {},
+        "confidence": null,
+        "example_id": "p003_01_front/ocr",
+        "predicted_category": "unknown",
+        "predicted_subcategory": null,
+        "product_id": "product_003",
+        "subcategory_confidence": null,
+        "subcategory_correct": false,
+        "text_source": "ocr",
+        "true_category": "packaged-non-food",
+        "true_subcategory": "cosmetics-and-toiletries"
+      },
+      {
+        "category_correct": false,
+        "category_scores": {
+          "packaged-food": 0.7324,
+          "packaged-non-food": 0.2676
+        },
+        "confidence": 0.7324,
+        "example_id": "p003_02_left/ocr",
+        "predicted_category": "packaged-food",
+        "predicted_subcategory": null,
+        "product_id": "product_003",
+        "subcategory_confidence": null,
+        "subcategory_correct": false,
+        "text_source": "ocr",
+        "true_category": "packaged-non-food",
+        "true_subcategory": "cosmetics-and-toiletries"
+      },
+      {
+        "category_correct": false,
+        "category_scores": {
+          "packaged-food": 0.7848,
+          "packaged-non-food": 0.2152
+        },
+        "confidence": 0.7848,
+        "example_id": "p003_03_right/ocr",
+        "predicted_category": "packaged-food",
+        "predicted_subcategory": null,
+        "product_id": "product_003",
+        "subcategory_confidence": null,
+        "subcategory_correct": false,
+        "text_source": "ocr",
+        "true_category": "packaged-non-food",
+        "true_subcategory": "cosmetics-and-toiletries"
+      },
+      {
+        "category_correct": false,
+        "category_scores": {
+          "packaged-food": 0.7795,
+          "packaged-non-food": 0.2205
+        },
+        "confidence": 0.7795,
+        "example_id": "p003_03_right/transcription",
+        "predicted_category": "packaged-food",
+        "predicted_subcategory": null,
+        "product_id": "product_003",
+        "subcategory_confidence": null,
+        "subcategory_correct": false,
+        "text_source": "manual_transcription",
+        "true_category": "packaged-non-food",
+        "true_subcategory": "cosmetics-and-toiletries"
+      },
+      {
+        "category_correct": false,
+        "category_scores": {},
+        "confidence": null,
+        "example_id": "p003_04_top/ocr",
+        "predicted_category": "unknown",
+        "predicted_subcategory": null,
+        "product_id": "product_003",
+        "subcategory_confidence": null,
+        "subcategory_correct": false,
+        "text_source": "ocr",
+        "true_category": "packaged-non-food",
+        "true_subcategory": "cosmetics-and-toiletries"
+      },
+      {
+        "category_correct": true,
+        "category_scores": {
+          "packaged-food": 0.6814,
+          "packaged-non-food": 0.3186
+        },
+        "confidence": 0.6814,
+        "example_id": "p004_01_back/ocr",
+        "predicted_category": "packaged-food",
+        "predicted_subcategory": null,
+        "product_id": "product_004",
+        "subcategory_confidence": null,
+        "subcategory_correct": false,
+        "text_source": "ocr",
+        "true_category": "packaged-food",
+        "true_subcategory": "general-food"
+      },
+      {
+        "category_correct": true,
+        "category_scores": {
+          "packaged-food": 0.6326,
+          "packaged-non-food": 0.3674
+        },
+        "confidence": 0.6326,
+        "example_id": "p004_02_front/ocr",
+        "predicted_category": "packaged-food",
+        "predicted_subcategory": null,
+        "product_id": "product_004",
+        "subcategory_confidence": null,
+        "subcategory_correct": false,
+        "text_source": "ocr",
+        "true_category": "packaged-food",
+        "true_subcategory": "general-food"
+      },
+      {
+        "category_correct": true,
+        "category_scores": {
+          "packaged-food": 0.6535,
+          "packaged-non-food": 0.3465
+        },
+        "confidence": 0.6535,
+        "example_id": "p005_01_back/ocr",
+        "predicted_category": "packaged-food",
+        "predicted_subcategory": null,
+        "product_id": "product_005",
+        "subcategory_confidence": null,
+        "subcategory_correct": false,
+        "text_source": "ocr",
+        "true_category": "packaged-food",
+        "true_subcategory": "general-food"
+      },
+      {
+        "category_correct": false,
+        "category_scores": {
+          "packaged-food": 0.4672,
+          "packaged-non-food": 0.5328
+        },
+        "confidence": null,
+        "example_id": "p005_02_front/ocr",
+        "predicted_category": "unknown",
+        "predicted_subcategory": null,
+        "product_id": "product_005",
+        "subcategory_confidence": null,
+        "subcategory_correct": false,
+        "text_source": "ocr",
+        "true_category": "packaged-food",
+        "true_subcategory": "general-food"
+      },
+      {
+        "category_correct": true,
+        "category_scores": {
+          "packaged-food": 0.6877,
+          "packaged-non-food": 0.3123
+        },
+        "confidence": 0.6877,
+        "example_id": "p006_01_back/ocr",
+        "predicted_category": "packaged-food",
+        "predicted_subcategory": null,
+        "product_id": "product_006",
+        "subcategory_confidence": null,
+        "subcategory_correct": false,
+        "text_source": "ocr",
+        "true_category": "packaged-food",
+        "true_subcategory": "general-food"
+      },
+      {
+        "category_correct": true,
+        "category_scores": {
+          "packaged-food": 0.6582,
+          "packaged-non-food": 0.3418
+        },
+        "confidence": 0.6582,
+        "example_id": "p006_02_front/ocr",
+        "predicted_category": "packaged-food",
+        "predicted_subcategory": null,
+        "product_id": "product_006",
+        "subcategory_confidence": null,
+        "subcategory_correct": false,
+        "text_source": "ocr",
+        "true_category": "packaged-food",
+        "true_subcategory": "general-food"
+      },
+      {
+        "category_correct": false,
+        "category_scores": {
+          "packaged-food": 0.5986,
+          "packaged-non-food": 0.4014
+        },
+        "confidence": null,
+        "example_id": "p007_01_back/ocr",
+        "predicted_category": "unknown",
+        "predicted_subcategory": null,
+        "product_id": "product_007",
+        "subcategory_confidence": null,
+        "subcategory_correct": false,
+        "text_source": "ocr",
+        "true_category": "packaged-food",
+        "true_subcategory": "general-food"
+      },
+      {
+        "category_correct": true,
+        "category_scores": {
+          "packaged-food": 0.6208,
+          "packaged-non-food": 0.3792
+        },
+        "confidence": 0.6208,
+        "example_id": "p007_01_back/transcription",
+        "predicted_category": "packaged-food",
+        "predicted_subcategory": null,
+        "product_id": "product_007",
+        "subcategory_confidence": null,
+        "subcategory_correct": false,
+        "text_source": "manual_transcription",
+        "true_category": "packaged-food",
+        "true_subcategory": "general-food"
+      },
+      {
+        "category_correct": false,
+        "category_scores": {
+          "packaged-food": 0.5462,
+          "packaged-non-food": 0.4538
+        },
+        "confidence": null,
+        "example_id": "p007_02_front/ocr",
+        "predicted_category": "unknown",
+        "predicted_subcategory": null,
+        "product_id": "product_007",
+        "subcategory_confidence": null,
+        "subcategory_correct": false,
+        "text_source": "ocr",
+        "true_category": "packaged-food",
+        "true_subcategory": "general-food"
+      },
+      {
+        "category_correct": true,
+        "category_scores": {
+          "packaged-food": 0.7155,
+          "packaged-non-food": 0.2845
+        },
+        "confidence": 0.7155,
+        "example_id": "p008_01_back/ocr",
+        "predicted_category": "packaged-food",
+        "predicted_subcategory": null,
+        "product_id": "product_008",
+        "subcategory_confidence": null,
+        "subcategory_correct": false,
+        "text_source": "ocr",
+        "true_category": "packaged-food",
+        "true_subcategory": "general-food"
+      },
+      {
+        "category_correct": true,
+        "category_scores": {
+          "packaged-food": 0.6418,
+          "packaged-non-food": 0.3582
+        },
+        "confidence": 0.6418,
+        "example_id": "p008_02_front/ocr",
+        "predicted_category": "packaged-food",
+        "predicted_subcategory": null,
+        "product_id": "product_008",
+        "subcategory_confidence": null,
+        "subcategory_correct": false,
+        "text_source": "ocr",
+        "true_category": "packaged-food",
+        "true_subcategory": "general-food"
+      },
+      {
+        "category_correct": true,
+        "category_scores": {
+          "packaged-food": 0.6917,
+          "packaged-non-food": 0.3083
+        },
+        "confidence": 0.6917,
+        "example_id": "p009_01_back/ocr",
+        "predicted_category": "packaged-food",
+        "predicted_subcategory": null,
+        "product_id": "product_009",
+        "subcategory_confidence": null,
+        "subcategory_correct": false,
+        "text_source": "ocr",
+        "true_category": "packaged-food",
+        "true_subcategory": "general-food"
+      },
+      {
+        "category_correct": true,
+        "category_scores": {
+          "packaged-food": 0.6719,
+          "packaged-non-food": 0.3281
+        },
+        "confidence": 0.6719,
+        "example_id": "p009_01_back/transcription",
+        "predicted_category": "packaged-food",
+        "predicted_subcategory": null,
+        "product_id": "product_009",
+        "subcategory_confidence": null,
+        "subcategory_correct": false,
+        "text_source": "manual_transcription",
+        "true_category": "packaged-food",
+        "true_subcategory": "general-food"
+      },
+      {
+        "category_correct": true,
+        "category_scores": {
+          "packaged-food": 0.6257,
+          "packaged-non-food": 0.3743
+        },
+        "confidence": 0.6257,
+        "example_id": "p009_02_front/ocr",
+        "predicted_category": "packaged-food",
+        "predicted_subcategory": null,
+        "product_id": "product_009",
+        "subcategory_confidence": null,
+        "subcategory_correct": false,
+        "text_source": "ocr",
+        "true_category": "packaged-food",
+        "true_subcategory": "general-food"
+      },
+      {
+        "category_correct": true,
+        "category_scores": {
+          "packaged-food": 0.7205,
+          "packaged-non-food": 0.2795
+        },
+        "confidence": 0.7205,
+        "example_id": "p010_01_back/ocr",
+        "predicted_category": "packaged-food",
+        "predicted_subcategory": null,
+        "product_id": "product_010",
+        "subcategory_confidence": null,
+        "subcategory_correct": false,
+        "text_source": "ocr",
+        "true_category": "packaged-food",
+        "true_subcategory": "general-food"
+      },
+      {
+        "category_correct": false,
+        "category_scores": {
+          "packaged-food": 0.5958,
+          "packaged-non-food": 0.4042
+        },
+        "confidence": null,
+        "example_id": "p010_02_front/ocr",
+        "predicted_category": "unknown",
+        "predicted_subcategory": null,
+        "product_id": "product_010",
+        "subcategory_confidence": null,
+        "subcategory_correct": false,
+        "text_source": "ocr",
+        "true_category": "packaged-food",
+        "true_subcategory": "general-food"
+      }
+    ],
+    "seconds": 15.017
+  },
+  "dataset": {
+    "dataset_version": "product-classification-seed-v0.1",
+    "label_counts": {
+      "cleaning-product": {
+        "examples": 7,
+        "products": 1
+      },
+      "cosmetics-and-toiletries": {
+        "examples": 5,
+        "products": 1
+      },
+      "general-food": {
+        "examples": 16,
+        "products": 7
+      },
+      "health-supplement": {
+        "examples": 5,
+        "products": 1
+      }
+    },
+    "n_examples": 33,
+    "n_products": 10,
+    "sha256": "d40c7751bd9baf265b4b0a4921947c3ee2c7d09c8433d9df1a069a2f0402ec5b",
+    "unverified_labels": 33
+  },
+  "generated_at": "2026-09-16T12:17:14+00:00",
+  "inference_latency": {
+    "classify_ms_including_preprocessing": {
+      "max": 4.4059,
+      "mean": 0.7478,
+      "median": 0.6235,
+      "p95": 2.0246
+    },
+    "machine": {
+      "platform": "Windows-10-10.0.26200-SP0",
+      "processor": "Intel64 Family 6 Model 140 Stepping 2, GenuineIntel",
+      "python": "3.11.1"
+    },
+    "n_texts": 33,
+    "preprocessing_ms": {
+      "max": 1.0997,
+      "mean": 0.1172,
+      "median": 0.099,
+      "p95": 0.3084
+    },
+    "repeats": 50
+  },
+  "resubstitution": {
+    "metrics": {
+      "category": {
+        "accuracy_on_predicted": 1.0,
+        "confusion": {
+          "packaged-food": {
+            "packaged-food": 20,
+            "packaged-non-food": 0,
+            "unknown": 1
+          },
+          "packaged-non-food": {
+            "packaged-food": 0,
+            "packaged-non-food": 11,
+            "unknown": 1
+          }
+        },
+        "macro_f1": 0.9661,
+        "macro_precision": 1.0,
+        "macro_recall": 0.9345,
+        "n_correct": 31,
+        "n_predicted": 31,
+        "n_total": 33,
+        "n_unknown": 2,
+        "per_class": {
+          "packaged-food": {
+            "f1": 0.9756,
+            "precision": 1.0,
+            "predicted": 20,
+            "recall": 0.9524,
+            "support": 21
+          },
+          "packaged-non-food": {
+            "f1": 0.9565,
+            "precision": 1.0,
+            "predicted": 11,
+            "recall": 0.9167,
+            "support": 12
+          }
+        },
+        "strict_accuracy": 0.9394,
+        "undefined_precision": [],
+        "unknown_rate": 0.0606
+      },
+      "subcategory": {
+        "accuracy_on_predicted": 1.0,
+        "confusion": {
+          "cleaning-product": {
+            "cleaning-product": 5,
+            "cosmetics-and-toiletries": 0,
+            "general-food": 0,
+            "health-supplement": 0,
+            "unknown": 2
+          },
+          "cosmetics-and-toiletries": {
+            "cleaning-product": 0,
+            "cosmetics-and-toiletries": 5,
+            "general-food": 0,
+            "health-supplement": 0,
+            "unknown": 0
+          },
+          "general-food": {
+            "cleaning-product": 0,
+            "cosmetics-and-toiletries": 0,
+            "general-food": 2,
+            "health-supplement": 0,
+            "unknown": 14
+          },
+          "health-supplement": {
+            "cleaning-product": 0,
+            "cosmetics-and-toiletries": 0,
+            "general-food": 0,
+            "health-supplement": 3,
+            "unknown": 2
+          }
+        },
+        "macro_f1": 0.7014,
+        "macro_precision": 1.0,
+        "macro_recall": 0.6098,
+        "n_correct": 15,
+        "n_predicted": 15,
+        "n_total": 33,
+        "n_unknown": 18,
+        "per_class": {
+          "cleaning-product": {
+            "f1": 0.8333,
+            "precision": 1.0,
+            "predicted": 5,
+            "recall": 0.7143,
+            "support": 7
+          },
+          "cosmetics-and-toiletries": {
+            "f1": 1.0,
+            "precision": 1.0,
+            "predicted": 5,
+            "recall": 1.0,
+            "support": 5
+          },
+          "general-food": {
+            "f1": 0.2222,
+            "precision": 1.0,
+            "predicted": 2,
+            "recall": 0.125,
+            "support": 16
+          },
+          "health-supplement": {
+            "f1": 0.75,
+            "precision": 1.0,
+            "predicted": 3,
+            "recall": 0.6,
+            "support": 5
+          }
+        },
+        "strict_accuracy": 0.4545,
+        "undefined_precision": [],
+        "unknown_rate": 0.5455
+      }
+    },
+    "note": "Resubstitution, NOT generalisation: the final model scored on the data it was trained on. Says whether it can fit the seed set; says nothing about labels it has not seen.",
+    "predictions": [
+      {
+        "category_correct": true,
+        "category_scores": {
+          "packaged-food": 0.2906,
+          "packaged-non-food": 0.7094
+        },
+        "confidence": 0.7094,
+        "example_id": "p001_01_front_clean/ocr",
+        "predicted_category": "packaged-non-food",
+        "predicted_subcategory": "cleaning-product",
+        "product_id": "product_001",
+        "subcategory_confidence": 0.5548,
+        "subcategory_correct": true,
+        "text_source": "ocr",
+        "true_category": "packaged-non-food",
+        "true_subcategory": "cleaning-product"
+      },
+      {
+        "category_correct": true,
+        "category_scores": {
+          "packaged-food": 0.3156,
+          "packaged-non-food": 0.6844
+        },
+        "confidence": 0.6844,
+        "example_id": "p001_02_back_clean/ocr",
+        "predicted_category": "packaged-non-food",
+        "predicted_subcategory": "cleaning-product",
+        "product_id": "product_001",
+        "subcategory_confidence": 0.5674,
+        "subcategory_correct": true,
+        "text_source": "ocr",
+        "true_category": "packaged-non-food",
+        "true_subcategory": "cleaning-product"
+      },
+      {
+        "category_correct": false,
+        "category_scores": {
+          "packaged-food": 0.4026,
+          "packaged-non-food": 0.5974
+        },
+        "confidence": null,
+        "example_id": "p001_03_left_clean/ocr",
+        "predicted_category": "unknown",
+        "predicted_subcategory": null,
+        "product_id": "product_001",
+        "subcategory_confidence": null,
+        "subcategory_correct": false,
+        "text_source": "ocr",
+        "true_category": "packaged-non-food",
+        "true_subcategory": "cleaning-product"
+      },
+      {
+        "category_correct": true,
+        "category_scores": {
+          "packaged-food": 0.2899,
+          "packaged-non-food": 0.7101
+        },
+        "confidence": 0.7101,
+        "example_id": "p001_04_right_clean/ocr",
+        "predicted_category": "packaged-non-food",
+        "predicted_subcategory": "cleaning-product",
+        "product_id": "product_001",
+        "subcategory_confidence": 0.5623,
+        "subcategory_correct": true,
+        "text_source": "ocr",
+        "true_category": "packaged-non-food",
+        "true_subcategory": "cleaning-product"
+      },
+      {
+        "category_correct": true,
+        "category_scores": {
+          "packaged-food": 0.3951,
+          "packaged-non-food": 0.6049
+        },
+        "confidence": 0.6049,
+        "example_id": "p001_05_declaration_closeup/ocr",
+        "predicted_category": "packaged-non-food",
+        "predicted_subcategory": null,
+        "product_id": "product_001",
+        "subcategory_confidence": null,
+        "subcategory_correct": false,
+        "text_source": "ocr",
+        "true_category": "packaged-non-food",
+        "true_subcategory": "cleaning-product"
+      },
+      {
+        "category_correct": true,
+        "category_scores": {
+          "packaged-food": 0.2355,
+          "packaged-non-food": 0.7645
+        },
+        "confidence": 0.7645,
+        "example_id": "p001_05_declaration_closeup/transcription",
+        "predicted_category": "packaged-non-food",
+        "predicted_subcategory": "cleaning-product",
+        "product_id": "product_001",
+        "subcategory_confidence": 0.6677,
+        "subcategory_correct": true,
+        "text_source": "manual_transcription",
+        "true_category": "packaged-non-food",
+        "true_subcategory": "cleaning-product"
+      },
+      {
+        "category_correct": true,
+        "category_scores": {
+          "packaged-food": 0.3232,
+          "packaged-non-food": 0.6768
+        },
+        "confidence": 0.6768,
+        "example_id": "p001_06_declaration_closeup_angled/ocr",
+        "predicted_category": "packaged-non-food",
+        "predicted_subcategory": "cleaning-product",
+        "product_id": "product_001",
+        "subcategory_confidence": 0.5499,
+        "subcategory_correct": true,
+        "text_source": "ocr",
+        "true_category": "packaged-non-food",
+        "true_subcategory": "cleaning-product"
+      },
+      {
+        "category_correct": true,
+        "category_scores": {
+          "packaged-food": 0.7228,
+          "packaged-non-food": 0.2772
+        },
+        "confidence": 0.7228,
+        "example_id": "p002_01_back/ocr",
+        "predicted_category": "packaged-food",
+        "predicted_subcategory": null,
+        "product_id": "product_002",
+        "subcategory_confidence": null,
+        "subcategory_correct": false,
+        "text_source": "ocr",
+        "true_category": "packaged-food",
+        "true_subcategory": "health-supplement"
+      },
+      {
+        "category_correct": true,
+        "category_scores": {
+          "packaged-food": 0.6973,
+          "packaged-non-food": 0.3027
+        },
+        "confidence": 0.6973,
+        "example_id": "p002_02_front/ocr",
+        "predicted_category": "packaged-food",
+        "predicted_subcategory": "health-supplement",
+        "product_id": "product_002",
+        "subcategory_confidence": 0.5331,
+        "subcategory_correct": true,
+        "text_source": "ocr",
+        "true_category": "packaged-food",
+        "true_subcategory": "health-supplement"
+      },
+      {
+        "category_correct": true,
+        "category_scores": {
+          "packaged-food": 0.7232,
+          "packaged-non-food": 0.2768
+        },
+        "confidence": 0.7232,
+        "example_id": "p002_03_left/ocr",
+        "predicted_category": "packaged-food",
+        "predicted_subcategory": "health-supplement",
+        "product_id": "product_002",
+        "subcategory_confidence": 0.5517,
+        "subcategory_correct": true,
+        "text_source": "ocr",
+        "true_category": "packaged-food",
+        "true_subcategory": "health-supplement"
+      },
+      {
+        "category_correct": true,
+        "category_scores": {
+          "packaged-food": 0.7367,
+          "packaged-non-food": 0.2633
+        },
+        "confidence": 0.7367,
+        "example_id": "p002_03_left/transcription",
+        "predicted_category": "packaged-food",
+        "predicted_subcategory": "health-supplement",
+        "product_id": "product_002",
+        "subcategory_confidence": 0.5094,
+        "subcategory_correct": true,
+        "text_source": "manual_transcription",
+        "true_category": "packaged-food",
+        "true_subcategory": "health-supplement"
+      },
+      {
+        "category_correct": true,
+        "category_scores": {
+          "packaged-food": 0.6901,
+          "packaged-non-food": 0.3099
+        },
+        "confidence": 0.6901,
+        "example_id": "p002_04_right/ocr",
+        "predicted_category": "packaged-food",
+        "predicted_subcategory": null,
+        "product_id": "product_002",
+        "subcategory_confidence": null,
+        "subcategory_correct": false,
+        "text_source": "ocr",
+        "true_category": "packaged-food",
+        "true_subcategory": "health-supplement"
+      },
+      {
+        "category_correct": true,
+        "category_scores": {
+          "packaged-food": 0.2482,
+          "packaged-non-food": 0.7518
+        },
+        "confidence": 0.7518,
+        "example_id": "p003_01_front/ocr",
+        "predicted_category": "packaged-non-food",
+        "predicted_subcategory": "cosmetics-and-toiletries",
+        "product_id": "product_003",
+        "subcategory_confidence": 0.6083,
+        "subcategory_correct": true,
+        "text_source": "ocr",
+        "true_category": "packaged-non-food",
+        "true_subcategory": "cosmetics-and-toiletries"
+      },
+      {
+        "category_correct": true,
+        "category_scores": {
+          "packaged-food": 0.3298,
+          "packaged-non-food": 0.6702
+        },
+        "confidence": 0.6702,
+        "example_id": "p003_02_left/ocr",
+        "predicted_category": "packaged-non-food",
+        "predicted_subcategory": "cosmetics-and-toiletries",
+        "product_id": "product_003",
+        "subcategory_confidence": 0.5367,
+        "subcategory_correct": true,
+        "text_source": "ocr",
+        "true_category": "packaged-non-food",
+        "true_subcategory": "cosmetics-and-toiletries"
+      },
+      {
+        "category_correct": true,
+        "category_scores": {
+          "packaged-food": 0.3165,
+          "packaged-non-food": 0.6835
+        },
+        "confidence": 0.6835,
+        "example_id": "p003_03_right/ocr",
+        "predicted_category": "packaged-non-food",
+        "predicted_subcategory": "cosmetics-and-toiletries",
+        "product_id": "product_003",
+        "subcategory_confidence": 0.5582,
+        "subcategory_correct": true,
+        "text_source": "ocr",
+        "true_category": "packaged-non-food",
+        "true_subcategory": "cosmetics-and-toiletries"
+      },
+      {
+        "category_correct": true,
+        "category_scores": {
+          "packaged-food": 0.2964,
+          "packaged-non-food": 0.7036
+        },
+        "confidence": 0.7036,
+        "example_id": "p003_03_right/transcription",
+        "predicted_category": "packaged-non-food",
+        "predicted_subcategory": "cosmetics-and-toiletries",
+        "product_id": "product_003",
+        "subcategory_confidence": 0.5811,
+        "subcategory_correct": true,
+        "text_source": "manual_transcription",
+        "true_category": "packaged-non-food",
+        "true_subcategory": "cosmetics-and-toiletries"
+      },
+      {
+        "category_correct": true,
+        "category_scores": {
+          "packaged-food": 0.2511,
+          "packaged-non-food": 0.7489
+        },
+        "confidence": 0.7489,
+        "example_id": "p003_04_top/ocr",
+        "predicted_category": "packaged-non-food",
+        "predicted_subcategory": "cosmetics-and-toiletries",
+        "product_id": "product_003",
+        "subcategory_confidence": 0.6044,
+        "subcategory_correct": true,
+        "text_source": "ocr",
+        "true_category": "packaged-non-food",
+        "true_subcategory": "cosmetics-and-toiletries"
+      },
+      {
+        "category_correct": true,
+        "category_scores": {
+          "packaged-food": 0.7065,
+          "packaged-non-food": 0.2935
+        },
+        "confidence": 0.7065,
+        "example_id": "p004_01_back/ocr",
+        "predicted_category": "packaged-food",
+        "predicted_subcategory": null,
+        "product_id": "product_004",
+        "subcategory_confidence": null,
+        "subcategory_correct": false,
+        "text_source": "ocr",
+        "true_category": "packaged-food",
+        "true_subcategory": "general-food"
+      },
+      {
+        "category_correct": true,
+        "category_scores": {
+          "packaged-food": 0.6537,
+          "packaged-non-food": 0.3463
+        },
+        "confidence": 0.6537,
+        "example_id": "p004_02_front/ocr",
+        "predicted_category": "packaged-food",
+        "predicted_subcategory": null,
+        "product_id": "product_004",
+        "subcategory_confidence": null,
+        "subcategory_correct": false,
+        "text_source": "ocr",
+        "true_category": "packaged-food",
+        "true_subcategory": "general-food"
+      },
+      {
+        "category_correct": true,
+        "category_scores": {
+          "packaged-food": 0.6792,
+          "packaged-non-food": 0.3208
+        },
+        "confidence": 0.6792,
+        "example_id": "p005_01_back/ocr",
+        "predicted_category": "packaged-food",
+        "predicted_subcategory": null,
+        "product_id": "product_005",
+        "subcategory_confidence": null,
+        "subcategory_correct": false,
+        "text_source": "ocr",
+        "true_category": "packaged-food",
+        "true_subcategory": "general-food"
+      },
+      {
+        "category_correct": false,
+        "category_scores": {
+          "packaged-food": 0.5513,
+          "packaged-non-food": 0.4487
+        },
+        "confidence": null,
+        "example_id": "p005_02_front/ocr",
+        "predicted_category": "unknown",
+        "predicted_subcategory": null,
+        "product_id": "product_005",
+        "subcategory_confidence": null,
+        "subcategory_correct": false,
+        "text_source": "ocr",
+        "true_category": "packaged-food",
+        "true_subcategory": "general-food"
+      },
+      {
+        "category_correct": true,
+        "category_scores": {
+          "packaged-food": 0.7114,
+          "packaged-non-food": 0.2886
+        },
+        "confidence": 0.7114,
+        "example_id": "p006_01_back/ocr",
+        "predicted_category": "packaged-food",
+        "predicted_subcategory": null,
+        "product_id": "product_006",
+        "subcategory_confidence": null,
+        "subcategory_correct": false,
+        "text_source": "ocr",
+        "true_category": "packaged-food",
+        "true_subcategory": "general-food"
+      },
+      {
+        "category_correct": true,
+        "category_scores": {
+          "packaged-food": 0.6945,
+          "packaged-non-food": 0.3055
+        },
+        "confidence": 0.6945,
+        "example_id": "p006_02_front/ocr",
+        "predicted_category": "packaged-food",
+        "predicted_subcategory": null,
+        "product_id": "product_006",
+        "subcategory_confidence": null,
+        "subcategory_correct": false,
+        "text_source": "ocr",
+        "true_category": "packaged-food",
+        "true_subcategory": "general-food"
+      },
+      {
+        "category_correct": true,
+        "category_scores": {
+          "packaged-food": 0.6528,
+          "packaged-non-food": 0.3472
+        },
+        "confidence": 0.6528,
+        "example_id": "p007_01_back/ocr",
+        "predicted_category": "packaged-food",
+        "predicted_subcategory": null,
+        "product_id": "product_007",
+        "subcategory_confidence": null,
+        "subcategory_correct": false,
+        "text_source": "ocr",
+        "true_category": "packaged-food",
+        "true_subcategory": "general-food"
+      },
+      {
+        "category_correct": true,
+        "category_scores": {
+          "packaged-food": 0.6708,
+          "packaged-non-food": 0.3292
+        },
+        "confidence": 0.6708,
+        "example_id": "p007_01_back/transcription",
+        "predicted_category": "packaged-food",
+        "predicted_subcategory": null,
+        "product_id": "product_007",
+        "subcategory_confidence": null,
+        "subcategory_correct": false,
+        "text_source": "manual_transcription",
+        "true_category": "packaged-food",
+        "true_subcategory": "general-food"
+      },
+      {
+        "category_correct": true,
+        "category_scores": {
+          "packaged-food": 0.6192,
+          "packaged-non-food": 0.3808
+        },
+        "confidence": 0.6192,
+        "example_id": "p007_02_front/ocr",
+        "predicted_category": "packaged-food",
+        "predicted_subcategory": null,
+        "product_id": "product_007",
+        "subcategory_confidence": null,
+        "subcategory_correct": false,
+        "text_source": "ocr",
+        "true_category": "packaged-food",
+        "true_subcategory": "general-food"
+      },
+      {
+        "category_correct": true,
+        "category_scores": {
+          "packaged-food": 0.7336,
+          "packaged-non-food": 0.2664
+        },
+        "confidence": 0.7336,
+        "example_id": "p008_01_back/ocr",
+        "predicted_category": "packaged-food",
+        "predicted_subcategory": null,
+        "product_id": "product_008",
+        "subcategory_confidence": null,
+        "subcategory_correct": false,
+        "text_source": "ocr",
+        "true_category": "packaged-food",
+        "true_subcategory": "general-food"
+      },
+      {
+        "category_correct": true,
+        "category_scores": {
+          "packaged-food": 0.6716,
+          "packaged-non-food": 0.3284
+        },
+        "confidence": 0.6716,
+        "example_id": "p008_02_front/ocr",
+        "predicted_category": "packaged-food",
+        "predicted_subcategory": null,
+        "product_id": "product_008",
+        "subcategory_confidence": null,
+        "subcategory_correct": false,
+        "text_source": "ocr",
+        "true_category": "packaged-food",
+        "true_subcategory": "general-food"
+      },
+      {
+        "category_correct": true,
+        "category_scores": {
+          "packaged-food": 0.7313,
+          "packaged-non-food": 0.2687
+        },
+        "confidence": 0.7313,
+        "example_id": "p009_01_back/ocr",
+        "predicted_category": "packaged-food",
+        "predicted_subcategory": "general-food",
+        "product_id": "product_009",
+        "subcategory_confidence": 0.5202,
+        "subcategory_correct": true,
+        "text_source": "ocr",
+        "true_category": "packaged-food",
+        "true_subcategory": "general-food"
+      },
+      {
+        "category_correct": true,
+        "category_scores": {
+          "packaged-food": 0.713,
+          "packaged-non-food": 0.287
+        },
+        "confidence": 0.713,
+        "example_id": "p009_01_back/transcription",
+        "predicted_category": "packaged-food",
+        "predicted_subcategory": null,
+        "product_id": "product_009",
+        "subcategory_confidence": null,
+        "subcategory_correct": false,
+        "text_source": "manual_transcription",
+        "true_category": "packaged-food",
+        "true_subcategory": "general-food"
+      },
+      {
+        "category_correct": true,
+        "category_scores": {
+          "packaged-food": 0.6453,
+          "packaged-non-food": 0.3547
+        },
+        "confidence": 0.6453,
+        "example_id": "p009_02_front/ocr",
+        "predicted_category": "packaged-food",
+        "predicted_subcategory": null,
+        "product_id": "product_009",
+        "subcategory_confidence": null,
+        "subcategory_correct": false,
+        "text_source": "ocr",
+        "true_category": "packaged-food",
+        "true_subcategory": "general-food"
+      },
+      {
+        "category_correct": true,
+        "category_scores": {
+          "packaged-food": 0.7346,
+          "packaged-non-food": 0.2654
+        },
+        "confidence": 0.7346,
+        "example_id": "p010_01_back/ocr",
+        "predicted_category": "packaged-food",
+        "predicted_subcategory": "general-food",
+        "product_id": "product_010",
+        "subcategory_confidence": 0.5161,
+        "subcategory_correct": true,
+        "text_source": "ocr",
+        "true_category": "packaged-food",
+        "true_subcategory": "general-food"
+      },
+      {
+        "category_correct": true,
+        "category_scores": {
+          "packaged-food": 0.6421,
+          "packaged-non-food": 0.3579
+        },
+        "confidence": 0.6421,
+        "example_id": "p010_02_front/ocr",
+        "predicted_category": "packaged-food",
+        "predicted_subcategory": null,
+        "product_id": "product_010",
+        "subcategory_confidence": null,
+        "subcategory_correct": false,
+        "text_source": "ocr",
+        "true_category": "packaged-food",
+        "true_subcategory": "general-food"
+      }
+    ]
+  },
+  "training_config": {
+    "C": 1.0,
+    "class_weight": "balanced",
+    "max_iter": 1000,
+    "min_df": 2,
+    "min_train_tokens": 3,
+    "ngram_range": [
+      1,
+      2
+    ],
+    "random_state": 0,
+    "solver": "lbfgs",
+    "sublinear_tf": false
+  }
+}
