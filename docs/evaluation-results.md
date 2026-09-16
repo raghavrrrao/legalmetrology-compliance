@@ -1628,15 +1628,18 @@ intended on the texts it was fitted to — "a food, kind unclear".
 
 ### 13.5 Latency and size
 
-Measured by the training command over the 33 texts, 50 repeats, wall clock,
-on the development machine:
+Measured by the training command (`measure_inference`) over the 33 seed
+texts, 50 repeats each, `perf_counter` wall clock around the classifier
+stage alone - no OCR, no HTTP, no database, artifact already loaded - on
+the development machine, single process. `ml/product-classification.md`
+§Performance states exactly which calls each row times.
 
 | | mean | median | p95 | max |
 |---|---|---|---|---|
-| Preprocessing + tokenising | 0.11 ms | 0.09 ms | 0.29 ms | 0.60 ms |
-| Classification including preprocessing | 0.72 ms | 0.60 ms | 1.86 ms | 3.67 ms |
+| Preprocessing + tokenising | 0.127 ms | 0.107 ms | 0.339 ms | 0.906 ms |
+| `classify_text`, end to end (includes preprocessing) | 0.818 ms | 0.705 ms | 2.256 ms | 5.812 ms |
 
-Artifact: 119,536 bytes of JSON; fit 0.018 s; full cross-validation 1.8 s.
+Artifact: 119,536 bytes of JSON; final fit 0.02 s; ten-fold cross-validation 12.4 s wall clock (an earlier run took 1.8 s; shared desktop).
 Against the 2,202 ms median OCR time of §3 the classifier is not a
 measurable share of a request.
 

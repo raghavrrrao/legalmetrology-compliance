@@ -69,7 +69,7 @@ trusting the claim. Compliance results are now scoped to the caller. Throttling
 30/min anonymous, 120/min authenticated. `manage.py check --deploy` reports zero
 issues with `DJANGO_DEBUG=False`.
 
-**Testing:** 819 backend, 575 ML, 202 frontend — all passing. Lint clean,
+**Testing:** 850 backend, 778 ML (plus 2 recorded expected failures and 2 unexpected passes of the same parametrised classifier-robustness test), 220 frontend — all passing. Lint clean,
 production build succeeds. Counts are stated so drift is noticeable, not as a
 quality claim: a passing suite bounds what is checked, not what is correct.
 

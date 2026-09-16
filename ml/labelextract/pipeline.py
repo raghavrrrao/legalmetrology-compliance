@@ -188,16 +188,30 @@ class ExtractionPipeline:
         was read perfectly well must not be reported as unreadable because a
         second, optional model was missing.
         """
+        name = getattr(self.classifier, "name", self.classifier)
         try:
-            return self.classifier.classify(ocr, fields, source)
+            classification = self.classifier.classify(ocr, fields, source)
         except Exception:
             logger.warning(
                 "Product classifier %r failed; continuing with the reading "
                 "and no classification",
-                getattr(self.classifier, "name", self.classifier),
+                name,
                 exc_info=True,
             )
             return None
+        if not isinstance(classification, ProductClassification):
+            # A contract breach, caught here rather than in `_metadata`, where
+            # the `as_dict` call would raise *outside* this guard and take the
+            # whole reading down with it. Same outcome as a raise: logged,
+            # and the classification is None.
+            logger.warning(
+                "Product classifier %r returned %s, not a ProductClassification; "
+                "continuing with the reading and no classification",
+                name,
+                type(classification).__name__,
+            )
+            return None
+        return classification
 
     def _unread_declarations(
         self, ocr: OcrResult, fields: tuple[ExtractedField, ...]

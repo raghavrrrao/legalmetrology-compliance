@@ -277,3 +277,27 @@ def test_build_classifier_points_at_the_shipped_artifact():
     assert instance.artifact_path.name == f"product_classifier_v{instance.version}.json"
     assert instance.artifact_path.parent.name == "artifacts"
     assert instance._model is None  # nothing loaded at build time
+
+
+# --- signals are explanatory only --------------------------------------------
+
+
+def test_signals_never_influence_the_decision(classifier, monkeypatch):
+    """Silence every signal: the category, subcategory, confidence and scores
+    must be exactly what they were. Signals are evidence *about* a decision
+    the model made from the text alone - they are not features, and they are
+    not a keyword rule that could quietly become a compliance rule."""
+    from labelextract.classification import classifier as module
+
+    text = "Nutritional Information. Ingredients: wheat. FSSAI. Energy 400 kcal. Supplement tablets."
+    with_signals = classifier.classify_text(text)
+    monkeypatch.setattr(module, "matched_signals", lambda cleaned: ())
+    without_signals = classifier.classify_text(text)
+
+    decision = lambda r: (  # noqa: E731
+        r.category, r.subcategory, r.confidence, r.subcategory_confidence,
+        r.category_scores, r.subcategory_scores,
+    )
+    assert decision(with_signals) == decision(without_signals)
+    assert any(item.startswith("signal:") for item in with_signals.evidence)
+    assert not any(item.startswith("signal:") for item in without_signals.evidence)

@@ -24,7 +24,7 @@ product prints this".
 | Trained on | `product-classification-seed-v0.1`: **33 texts from 10 products**, labels **model-drafted and unverified** |
 | Measured | Leave-one-product-out: category **strict accuracy 0.36**, unknown rate 0.33, `packaged-non-food` **never predicted** when its product is held out — see [Evaluation](#evaluation) |
 | Artifact | 119,536 bytes of JSON, committed, evaluated in plain Python; no scikit-learn at runtime |
-| Latency | median **0.6 ms** per text including preprocessing, on the development machine |
+| Latency | median **0.70 ms** per text for the whole `classify_text` call, on the development machine, artifact pre-loaded — see [Performance](#performance) for exactly what that covers |
 | Consumed by | `POST /api/v1/extraction/` and the `extraction` block of every compliance result, as `product_classification`. **Nothing in `apps.compliance` reads it.** |
 
 **What this is:** a reproducible, honestly measured baseline that establishes
@@ -92,16 +92,58 @@ is an observation *about* the reading, not a declaration read off the
 package, and a consumer iterating `fields` must never find one.
 
 It is guarded the same way too. A classifier that raises — a bug, a missing
-artifact — costs the classification and never the reading: the run completes,
-`product_classification` is `null`, and `classifier_name` in the metadata
-records that one was configured. A label that was read perfectly well must
-not be reported as unreadable because an optional second model failed.
+or malformed artifact, an `EngineNotAvailableError` — or that returns
+something other than a `ProductClassification`, costs the classification and
+never the reading: the run completes, `product_classification` is `null`, and
+`classifier_name` in the metadata records that one was configured. A label
+that was read perfectly well must not be reported as unreadable because an
+optional second model failed. Each of those cases is a test in
+`ml/tests/test_classification_pipeline.py`, with the shipped classifier class
+and not only a stub, and `backend/apps/extraction/tests/test_product_classification_api.py`
+drives the missing-artifact case through `run_extraction` to a stored,
+`completed` run.
+
+**One deliberate exception: the health check.** `GET /api/v1/health/` warms
+every stage of the configured pipeline, so a `tesseract` 0.4.0 deployment
+whose classifier artifact is absent or unreadable reports the pipeline
+`available: false` (503, `detail: engine_not_available`) even though uploads
+would still return a reading with a `null` classification. The artifact
+ships inside the package and a test checks a non-editable install carries
+it, so this can only happen with a broken build — and a broken build should
+fail its health check rather than run quietly degraded. The behaviour is
+pinned by a test so that changing it is a decision, not an accident.
 
 The backend changed in one place. `ExtractionRunSerializer` gained a
 `product_classification` method field that reads the stored metadata, exactly
 as `get_unread_declarations` does. No model, no migration, no new endpoint,
 no import of the ML runtime outside `extraction_service` — the boundary tests
 in `test_extraction_integration.py` still pass unchanged.
+
+### What `tesseract` 0.4.0 means, exactly
+
+| | 0.3.0 (`EXTRACTION_ONLY_VERSION`) | 0.4.0 (`VERSION`) |
+|---|---|---|
+| Preprocessing | `PillowPreprocessor(min_dimension=UPSCALE_TO_DIMENSION)` | identical |
+| Engine options | `eng`, psm 3 with fallback psm 11, OEM 3, 30 s timeout, min word confidence 0.0 — now written out explicitly so a later change to a default cannot move it | the same values, taken from `TesseractOptions()` defaults |
+| Field extraction | `RuleBasedFieldExtractor()` | identical |
+| Classifier | none | `tfidf-logreg` **0.1.0** |
+| `ocr`, `fields`, `status`, `unread_declarations` | — | **identical** to 0.3.0 on the same image (asserted with a stub engine in `test_classification_pipeline.py`) |
+| `metadata` | `product_classification: null`, `classifier_name: null`, `classifier_version: null` | the classification, `"tfidf-logreg"`, `"0.1.0"` |
+
+So 0.4.0 is a new version for one reason only: it carries new weights, and
+[`ml-integration.md`](../ml-integration.md) requires that a change which
+would make two runs incomparable gets its own version and leaves the old one
+registered. It is not a change to what is read. A run recorded under 0.3.0
+before this branch reproduces exactly under 0.3.0 after it; a deployment that
+stays on 0.3.0 sees no change at all; a deployment that moves to 0.4.0 gets
+one additional, nullable field. Retraining the classifier (a 0.2.0 artifact)
+would, by the same rule, be a 0.5.0 pipeline with 0.4.0 left registered.
+
+Two pre-existing caveats carry over unchanged. No pipeline version pins
+`fields/patterns.py`, which every version imports from one module — a pattern
+fixed today changes what 0.1.0 reads too, and the module docstring in
+`tesseract.py` says so. And the CLI picks "the newest registered version" by
+sorting version strings, which is correct up to `0.9.0`.
 
 ## Input and output
 
@@ -419,7 +461,7 @@ one pack share its brand, its address block and its licence numbers; a split
 that puts them on opposite sides measures memorisation and reports a number
 that predicts nothing.
 
-Training takes 0.02 s; the whole cross-validation 1.8 s.
+Fitting the final model took 0.02 s; the ten-fold cross-validation 12.4 s (as recorded in the committed report; an earlier run on the same machine took 1.8 s - the figure is wall clock on a shared desktop).
 
 ## Evaluation
 
@@ -578,20 +620,37 @@ Two kinds, both human-readable strings, both capped by configuration:
 
 ## Performance
 
-Measured by `train.py` on the development machine (Intel i5, 8 GB, Windows,
-Python 3.11.1, CPU only), 33 texts × 50 repeats, wall clock:
+**What was measured.** `train.py::measure_inference`, whose figures are in
+the committed metrics report under `inference_latency`. For each of the 33
+seed texts, 50 times over (1,650 timings per row), `time.perf_counter()`
+wall-clock around:
+
+- *preprocessing + tokenising*: `preprocess_text(text)` followed by
+  `word_tokens(cleaned)` — the deterministic clean-up and the token split;
+- *classification*: one `TfidfProductClassifier.classify_text(text)` call
+  end to end — which itself re-runs the preprocessing above, vectorises,
+  evaluates the linear model, aggregates categories, matches the evidence
+  signals and builds the `ProductClassification`.
+
+The artifact was loaded (`warmup()`) before timing started, so artifact
+parsing is not in these numbers; a single process, nothing concurrent; **no
+OCR, no HTTP, no database** — this is the classifier stage alone. Machine:
+Windows 11, Intel i5 (family 6 model 140), Python 3.11.1, CPU only, as
+recorded in the report's `machine` block.
 
 | | mean | median | p95 | max |
 |---|---|---|---|---|
-| Preprocessing + tokenising | 0.11 ms | 0.09 ms | 0.29 ms | 0.60 ms |
-| Classification incl. preprocessing | 0.72 ms | 0.60 ms | 1.86 ms | 3.67 ms |
+| Preprocessing + tokenising | 0.127 ms | 0.107 ms | 0.339 ms | 0.906 ms |
+| `classify_text`, end to end | 0.818 ms | 0.705 ms | 2.256 ms | 5.812 ms |
 
-Against a median extraction time of 2,202 ms for the OCR stage
-(`evaluation-results.md`), the classifier adds well under a tenth of a
-percent. Artifact load is a 120 KB JSON parse, once per process. No GPU
-path exists and none is needed. Memory is the parsed artifact: 1,035 × 4
-floats plus the vocabulary. This is comfortably inside the current Railway
-deployment and adds no dependency to its image.
+The maxima are single outliers over 1,650 timings on a shared desktop, not
+a tail worth engineering for. Against the 2,202 ms median OCR time in
+`evaluation-results.md` §3 the classifier is well under a tenth of a percent
+of a request. Artifact load is a 120 KB JSON parse once per process; memory
+is the parsed artifact - 1,035 × 4 coefficients plus the vocabulary. No GPU
+path exists and none is needed. This is comfortably inside the current
+Railway deployment and adds no dependency to its image. Nothing has been
+measured under concurrent load or inside the container.
 
 ## Integration with OCR
 
@@ -659,10 +718,16 @@ Because it cannot, structurally, and because it must not, by design.
 metadata and the API. `apps.compliance.services.engine` reads
 `ExtractedLabelField` rows, `Product.category` and declaration rows. There
 is no code path from the classification to a finding, a violation or a
-verdict, and a backend test drives a run whose classifier said
-`packaged-food` at 0.72 through `POST /api/v1/images/` and asserts the
-result is still REVIEW REQUIRED with `product_category_code: null` and zero
-rules evaluated.
+verdict. `backend/apps/compliance/tests/test_classification_isolation.py`
+makes that checkable against the real shipped rules and framework: the same
+reading is evaluated with a classification that contradicts the product's
+actual category at 0.99 and again with none, and the verdict, the counts,
+every finding's status and applicability note, every violation, and every
+manual YES / NO / UNKNOWN declaration are asserted identical; a product with
+no category stays "commodity not known"; and a source check asserts the
+engine, the applicability resolver and every validator never read
+`raw_output`. `test_product_classification_api.py` adds the HTTP view of the
+same fact through `POST /api/v1/images/`.
 
 *Must not:* a category is an internal grouping that selects which questions
 to ask. Compliance is a claim about a package under the Rules, made from
@@ -726,5 +791,6 @@ fact the engine may use — the same way it is today.
 | `ml/labelextract/pipeline.py` | The optional `classifier` stage |
 | `ml/labelextract/ocr/tesseract.py` | `tesseract` 0.4.0 with the classifier; 0.3.0 frozen without |
 | `backend/apps/extraction/api/serializers.py` | `product_classification` on the wire |
-| `ml/tests/test_classification_*.py` | 197 tests (4 of them the recorded expected failure, in four parametrisations): preprocessing, model, classifier, dataset, metrics, pipeline, regression, training |
-| `backend/apps/extraction/tests/test_product_classification_api.py` | The field over HTTP; inertness toward the verdict; vocabulary cross-checks |
+| `ml/tests/test_classification_*.py` | 202 tests (4 of them the recorded expected failure, in four parametrisations): preprocessing, model, classifier, dataset, metrics, pipeline, regression, training |
+| `backend/apps/extraction/tests/test_product_classification_api.py` | The field over HTTP; failure safety through the service and the health check; vocabulary cross-checks |
+| `backend/apps/compliance/tests/test_classification_isolation.py` | Same reading with and without a contradicting classification: identical verdicts, findings and declarations against the shipped rules |

@@ -758,7 +758,22 @@ def build_extraction_only_pipeline() -> ExtractionPipeline:
     return ExtractionPipeline(
         name=NAME,
         version=EXTRACTION_ONLY_VERSION,
-        ocr_engine=TesseractOcrEngine(),
+        # The 0.3.0 engine settings, written out rather than taken from
+        # `TesseractOptions()` defaults, so that a later change to a default
+        # moves 0.4.0 and leaves this frozen - which is what a frozen version
+        # is for. These are the values the defaults held on the day 0.3.0
+        # shipped, and `test_classification_pipeline.py` asserts 0.4.0 still
+        # matches them.
+        ocr_engine=TesseractOcrEngine(
+            TesseractOptions(
+                languages=("eng",),
+                page_segmentation_mode=3,
+                fallback_page_segmentation_mode=11,
+                engine_mode=3,
+                timeout_seconds=30,
+                minimum_word_confidence=0.0,
+            )
+        ),
         preprocessor=PillowPreprocessor(
             PreprocessingConfig(min_dimension=UPSCALE_TO_DIMENSION)
         ),

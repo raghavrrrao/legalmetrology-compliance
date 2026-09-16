@@ -294,3 +294,65 @@ def test_the_serializer_imports_no_ml_runtime():
     source = Path(serializers.__file__).read_text(encoding="utf-8")
     assert "import labelextract" not in source
     assert "from labelextract" not in source
+
+
+# --- failure safety through the service and the health check --------------
+
+
+_MISSING_ARTIFACT_PIPELINE = "classification-api-missing-artifact"
+
+
+@pytest.fixture
+def missing_artifact_pipeline(settings, tmp_path):
+    """The shipped classifier class, pointed at an artifact that is absent -
+    the failure a broken package build would produce - behind stubbed OCR."""
+    from labelextract.classification.classifier import TfidfProductClassifier
+
+    if (_MISSING_ARTIFACT_PIPELINE, _TEST_VERSION) not in set(registry.available_pipelines()):
+        registry.register_pipeline(
+            _MISSING_ARTIFACT_PIPELINE, _TEST_VERSION,
+            lambda: ExtractionPipeline(
+                name=_MISSING_ARTIFACT_PIPELINE, version=_TEST_VERSION,
+                ocr_engine=_LabelOcr(),
+                classifier=TfidfProductClassifier(
+                    tmp_path / "absent.json", version="0.0.0"
+                ),
+            ),
+        )
+    registry.clear_cache()
+    settings.DEFAULT_EXTRACTION_ENGINE_NAME = _MISSING_ARTIFACT_PIPELINE
+    settings.DEFAULT_EXTRACTION_ENGINE_VERSION = _TEST_VERSION
+
+
+def test_a_missing_artifact_still_stores_a_completed_reading(product_image, missing_artifact_pipeline):
+    run = extraction_service.run_extraction(product_image)
+
+    assert run.status == ExtractionRun.Status.COMPLETED
+    assert run.produced_usable_output is True
+    assert run.error_code == ""
+    assert run.recognised_text.startswith("Nutritional Information")
+    assert run.raw_output["metadata"]["product_classification"] is None
+    assert run.raw_output["metadata"]["classifier_name"] == "tfidf-logreg"
+
+
+def test_a_missing_artifact_is_reported_by_the_health_check(client, missing_artifact_pipeline):
+    """Deliberate, and worth stating: the health endpoint warms every stage,
+    so a 0.4.0 deployment whose classifier artifact is absent reports the
+    pipeline `available: false` - even though uploads would still produce a
+    reading with a null classification. The artifact ships inside the
+    package, so this can only happen with a broken build, and a broken build
+    should fail its health check rather than run quietly degraded. If that
+    trade-off is ever changed, this test is the place it is decided."""
+    body = client.get(reverse("v1:health")).json()
+
+    assert body["extraction_engine"]["available"] is False
+    assert body["extraction_engine"]["detail"] == "engine_not_available"
+    assert body["extraction_engine"]["is_placeholder"] is False
+
+
+def test_the_shipped_artifact_passes_the_health_check(client, classifying_pipeline):
+    """The counterpart: with the real artifact in place, warm-up succeeds."""
+    body = client.get(reverse("v1:health")).json()
+
+    assert body["extraction_engine"]["available"] is True
+    assert body["extraction_engine"]["detail"] == ""

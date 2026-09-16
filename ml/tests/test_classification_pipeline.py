@@ -233,3 +233,65 @@ def test_the_shipped_classifier_runs_inside_a_pipeline_over_stub_ocr(image_ref):
     assert body["subcategory"] == "health-supplement"
     assert body["classifier_version"] == "0.1.0"
     assert any("nutritional information" in item for item in body["evidence"])
+
+
+# --- failure safety with the real classifier class -------------------------
+
+
+def test_the_real_classifier_with_a_missing_artifact_never_fails_the_reading(image_ref, tmp_path, caplog):
+    """Not a stub raising the right exception: the shipped class, pointed at a
+    file that does not exist. The reading completes; the classification is
+    None; the log names the classifier."""
+    missing = TfidfProductClassifier(tmp_path / "absent.json", version="test")
+    result = pipeline(missing).run(image_ref)
+
+    assert result.status is ExtractionStatus.COMPLETED
+    assert result.error_code is None
+    assert {field.key.value for field in result.fields} == {"net_quantity", "retail_sale_price"}
+    assert result.metadata["product_classification"] is None
+    assert result.metadata["classifier_name"] == "tfidf-logreg"
+    assert any("tfidf-logreg" in record.message for record in caplog.records)
+
+
+def test_the_real_classifier_with_a_malformed_artifact_never_fails_the_reading(image_ref, classification_artifact):
+    """A JSON file that parses but fails validation - here, a coefficient
+    matrix of the wrong shape. Refused by the loader, absorbed by the run."""
+    broken = TfidfProductClassifier(classification_artifact(coef=[[0.0] * 3]), version="test")
+    result = pipeline(broken).run(image_ref)
+
+    assert result.status is ExtractionStatus.COMPLETED
+    assert result.metadata["product_classification"] is None
+    with pytest.raises(EngineNotAvailableError, match="artifact unavailable"):
+        broken.warmup()
+
+
+def test_a_classifier_that_returns_the_wrong_type_never_fails_the_reading(image_ref):
+    """A contract breach from the classifier is still only a lost
+    classification: the reading has its own contract check downstream."""
+
+    class WrongType(ProductClassifier):
+        name = "wrong-type"
+        version = "0"
+
+        def classify(self, ocr, fields, image):
+            return {"category": "packaged-food"}  # not a ProductClassification
+
+    result = pipeline(WrongType()).run(image_ref)
+    assert result.status is ExtractionStatus.COMPLETED
+    assert result.metadata["product_classification"] is None
+
+
+def test_an_unusable_confidence_is_reported_as_unknown_not_as_a_number(image_ref, classification_artifact):
+    """Thresholds set so nothing can pass: the answer is UNKNOWN with a null
+    confidence, never a low number presented as a category."""
+    from labelextract.classification.classifier import ClassifierConfig
+
+    strict = TfidfProductClassifier(
+        classification_artifact(), version="test",
+        config=ClassifierConfig(min_category_confidence=1.0),
+    )
+    body = pipeline(strict).run(image_ref).metadata["product_classification"]
+    assert body["category"] == UNKNOWN_CATEGORY
+    assert body["confidence"] is None
+    assert body["subcategory"] is None
+    assert body["category_scores"]  # the scores are still there for a reviewer

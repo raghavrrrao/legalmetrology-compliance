@@ -10,9 +10,10 @@ translation table that would drift:
 `packaged-commodity`, and they are already part of a reviewed data contract:
 every shipped rule file names one of them, and the applicability framework's
 one category-determined condition (`food-article`) is answered from
-`packaged-food`. A classifier that speaks those codes can, in a later step,
-feed `Product.category` directly. `unknown` is the third value and is not a
-category at all - it is the classifier declining to choose.
+`packaged-food`. A classifier that speaks those codes can, in a later step
+and once a person has confirmed the suggestion, be recorded as
+`Product.category` without translation. `unknown` is the third value and is
+not a category at all - it is the classifier declining to choose.
 
 **Subcategories reuse applicability-condition codes wherever one exists.**
 `rules/framework/applicability_conditions.json` defines `user_declared`
@@ -38,8 +39,9 @@ condition stays UNKNOWN exactly as it does today. See
 
 **Defined is not trained.** The shipped model knows only the subcategories the
 seed dataset contains. A code being listed here means the classifier is
-*allowed* to answer with it, not that it can. `TRAINED_SUBCATEGORIES` is read
-from the artifact, never from this file.
+*allowed* to answer with it, not that it can. The set of classes a model can
+produce is read from its artifact (`TfidfLinearModel.classes`), never from
+this file.
 """
 
 from __future__ import annotations
@@ -109,9 +111,12 @@ SUBCATEGORIES: tuple[Subcategory, ...] = (
         applicability_condition="alcoholic-beverage",
         description=(
             "Corresponds to the applicability condition of the same code. "
-            "Placed under packaged-food because alcoholic beverages are "
-            "regulated as food in India; the placement decides only which "
-            "questions are asked, not whether any rule applies."
+            "Placed under packaged-food for the classifier's grouping only, "
+            "because such labels read like food labels (ingredients, FSSAI "
+            "licence). Whether an alcoholic beverage is a 'food article' "
+            "within the meaning of the Rules is a legal question this "
+            "taxonomy does not answer, and the placement decides nothing "
+            "about applicability. The shipped model has no training example."
         ),
     ),
     Subcategory(
