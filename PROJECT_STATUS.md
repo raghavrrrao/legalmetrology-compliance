@@ -97,7 +97,7 @@ project has been created from this repository and there is no URL. See
 | Rule engine | Working. Seven registered deterministic checks; no LLM anywhere in the decision path. | `apps/rules/checks/` |
 | Findings & result | Working. One finding per rule examined, with clause, source, evidence, confidence and applicability. | `apps/compliance/services/engine.py` |
 | Frontend | Working. Scan, result, permalink and history screens against the real API. | `frontend/src/` |
-| Mobile client | **Not built.** The API is client-agnostic and intended to serve one. | — |
+| Mobile client | **Foundation.** React Native (Expo) app: camera or gallery → preview → upload to `POST /api/v1/extraction/` → `POST /api/v1/compliance/` → result with verdict, findings, reading and the classifier's suggestion when present. 196 Jest tests; Android project generated and a debug APK built with Gradle; iOS configured but not built; not yet run on hardware. No sign-in - relies on the demonstration switch. | `mobile/`, `docs/mobile.md` |
 | Authentication UI | **Not built.** Session auth and deny-by-default permissions exist; there is no login screen, so a demonstration switch (`DEMO_PUBLIC_ANALYSIS_API`, default off) opens the analysis endpoints. | — |
 | Deployment | Configured and verified, **not deployed**. Container image, Railway config, gunicorn, one-command initialisation. No Railway project exists. | `Dockerfile`, `railway.json`, `backend/gunicorn.conf.py` |
 

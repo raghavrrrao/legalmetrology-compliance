@@ -62,6 +62,7 @@ those limits are enforced by tests rather than only documented:
 | Layer | Technology |
 |---|---|
 | Frontend | React 19, Vite 7, React Router, Vitest |
+| Mobile | React Native 0.86 via Expo SDK 57, TypeScript, React Navigation, Jest — a second client of the same API ([docs/mobile.md](docs/mobile.md)) |
 | Backend | Python 3.11+, Django 5.2, Django REST Framework 3.16 |
 | Database | PostgreSQL 14+ |
 | Image handling | Pillow (upload validation, metadata, OCR preprocessing) |
@@ -87,6 +88,24 @@ those limits are enforced by tests rather than only documented:
 │       ├── services/    apiClient.js + one module per API area
 │       ├── styles/
 │       └── utils/
+│
+├── mobile/            React Native (Expo) application - docs/mobile.md
+│   ├── package.json         npm; package-lock.json committed
+│   ├── app.json             Expo config: ids, permission strings, plugins
+│   ├── .env.example         copy to .env.local for a LOCAL backend
+│   ├── .env.development     committed; `expo start` -> the deployed API
+│   ├── .env.production      committed; production builds -> the deployed API
+│   ├── tests/               Jest setup, wire-shape fixtures, screen-test helpers
+│   └── src/
+│       ├── api/         client.ts + one module per API area
+│       ├── config/      env.ts - the only reader of process.env
+│       ├── hooks/       the two-step analysis flow, image selection
+│       ├── navigation/  Home -> Preview -> Analysis -> Result
+│       ├── screens/     one file per screen
+│       ├── components/  presentational components
+│       ├── services/    camera / gallery / permissions, upload pre-checks
+│       ├── types/       the API contract
+│       └── utils/       messages, status tones, formatting
 │
 ├── backend/           Django project
 │   ├── manage.py
@@ -420,6 +439,14 @@ Check connectivity directly at any time:
 curl http://localhost:8000/api/v1/health/
 ```
 
+**Mobile app** (optional, a third terminal): `cd mobile && npm install && npx
+expo start`, then open it in Expo Go on a phone. By default the app talks to
+the **deployed Railway backend** (`mobile/.env.development`), so no local
+Django is needed; to use the one on your machine, create `mobile/.env.local`
+with its LAN address and run Django on `0.0.0.0:8000` with that address in
+`DJANGO_ALLOWED_HOSTS`. Setup, configuration and native builds are in
+[docs/mobile.md](docs/mobile.md).
+
 ---
 
 ## Running the tests
@@ -436,6 +463,10 @@ pytest
 # Frontend
 cd frontend
 npm test
+
+# Mobile (Jest via jest-expo; no device, emulator or backend needed)
+cd mobile
+npm test
 ```
 
 Lint and production build:
@@ -446,7 +477,15 @@ npm run lint      # ESLint; npm run lint:fix applies safe fixes
 npm run build
 ```
 
-All five commands run in CI on every pull request
+Mobile type check and lint:
+
+```bash
+cd mobile
+npm run typecheck
+npm run lint
+```
+
+All of these commands run in CI on every pull request
 (`.github/workflows/ci.yml`), against a real PostgreSQL service container. If
 CI needs a command that is not documented here, one of the two is wrong.
 
@@ -518,7 +557,7 @@ Gunicorn is POSIX-only and does not run on Windows; use the container or
    every responsibility to the app that owns it. Work inside your app's
    directory; changes to shared files need a heads-up to the team.
 4. **Write tests** alongside the code.
-5. **Run the full suite** before opening a PR — backend, ml and frontend.
+5. **Run the full suite** before opening a PR — backend, ml, frontend and mobile.
 6. **Update documentation** in the same commit as the behaviour it describes.
 7. **Open a pull request into `main`.** Never push to `main` directly.
 
@@ -531,6 +570,7 @@ Gunicorn is POSIX-only and does not run on Windows; use the container or
 | [rules/README.md](rules/README.md) | How compliance rules are authored and verified |
 | [ml/README.md](ml/README.md) | How to plug in a real OCR engine |
 | [docs/api.md](docs/api.md) | API conventions and the error envelope |
+| [docs/mobile.md](docs/mobile.md) | The React Native client: technology decision, setup, permissions, configuration, limitations |
 | [docs/deployment.md](docs/deployment.md) | Deploying to Railway, and what does not work yet |
 | [docs/security.md](docs/security.md) | Upload validation, secrets, threat notes |
 | [docs/ai-ml-strategy.md](docs/ai-ml-strategy.md) | What AI does and does not decide |

@@ -732,10 +732,20 @@ describe('unexpected data', () => {
  * wants to reach one opens them the way a user does. Safe to call when a result
  * is on screen as well, where the form is rendered a second time under "Help us
  * finish this check".
+ *
+ * Waits for the groups rather than asserting them: they exist only once the
+ * catalogue has been fetched and rendered, and the card's title ("Tell us
+ * about this package") is on screen from the first, loading render - so a test
+ * that has seen the title has not necessarily seen the groups. Which of the
+ * two commits first is a scheduling question the test must not depend on; it
+ * came out one way on a laptop and the other on a CI runner.
  */
-function openQuestionGroups() {
-  const summaries = document.querySelectorAll('.question-group > summary');
-  expect(summaries.length).toBeGreaterThan(0);
+async function openQuestionGroups() {
+  const summaries = await waitFor(() => {
+    const found = document.querySelectorAll('.question-group > summary');
+    expect(found.length).toBeGreaterThan(0);
+    return found;
+  });
   summaries.forEach((summary) => fireEvent.click(summary));
 }
 
@@ -746,8 +756,8 @@ function openQuestionGroups() {
  * under "Help us finish this check" once a result exists, and a bare
  * `getByRole` would then match two groups with the same name.
  */
-function answerFirstQuestion(name, answer) {
-  openQuestionGroups();
+async function answerFirstQuestion(name, answer) {
+  await openQuestionGroups();
   const [group] = screen.getAllByRole('group', { name });
   fireEvent.click(within(group).getByRole('radio', { name: answer }));
 }
@@ -758,7 +768,7 @@ describe('applicability declarations', () => {
     renderPage();
 
     await screen.findByText(/tell us about this package/i);
-    openQuestionGroups();
+    await openQuestionGroups();
 
     expect(
       screen.getByRole('group', { name: /imported product/i }),
@@ -769,7 +779,7 @@ describe('applicability declarations', () => {
     routeFetch();
     renderPage();
     await screen.findByText(/tell us about this package/i);
-    openQuestionGroups();
+    await openQuestionGroups();
     await uploadAndSubmit();
 
     await waitFor(() => expect(callsTo('/compliance/')).toHaveLength(1));
@@ -783,8 +793,8 @@ describe('applicability declarations', () => {
     routeFetch();
     renderPage();
     await screen.findByText(/tell us about this package/i);
-    openQuestionGroups();
-    answerFirstQuestion(/imported product/i, 'No');
+    await openQuestionGroups();
+    await answerFirstQuestion(/imported product/i, 'No');
     await uploadAndSubmit();
 
     await waitFor(() => expect(callsTo('/compliance/')).toHaveLength(1));
@@ -796,8 +806,8 @@ describe('applicability declarations', () => {
     routeFetch();
     renderPage();
     await screen.findByText(/tell us about this package/i);
-    openQuestionGroups();
-    answerFirstQuestion(/imported product/i, 'Not sure');
+    await openQuestionGroups();
+    await answerFirstQuestion(/imported product/i, 'Not sure');
     await uploadAndSubmit();
 
     await waitFor(() => expect(callsTo('/compliance/')).toHaveLength(1));
@@ -811,11 +821,11 @@ describe('applicability declarations', () => {
     routeFetch();
     renderPage();
     await screen.findByText(/tell us about this package/i);
-    openQuestionGroups();
+    await openQuestionGroups();
     await uploadAndSubmit();
     await screen.findByRole('button', { name: /check the rules again/i });
 
-    answerFirstQuestion(/imported product/i, 'No');
+    await answerFirstQuestion(/imported product/i, 'No');
     fireEvent.click(
       screen.getByRole('button', { name: /check the rules again/i }),
     );

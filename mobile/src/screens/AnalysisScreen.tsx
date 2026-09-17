@@ -1,0 +1,145 @@
+import { useEffect } from 'react';
+import { StyleSheet, Text } from 'react-native';
+
+import { Button } from '../components/Button';
+import { Callout } from '../components/Callout';
+import { Card } from '../components/Card';
+import { ProgressSteps, type ProgressStep } from '../components/ProgressSteps';
+import { Screen } from '../components/Screen';
+import { useAnalysis } from '../hooks/AnalysisContext';
+import type { AnalysisPhase } from '../hooks/useLabelAnalysis';
+import type { RootScreenProps } from '../navigation/types';
+import { colors, spacing, typography } from '../theme';
+import { describeError } from '../utils/errors';
+
+/**
+ * The steps as they really are: one per request. The first request uploads
+ * the photograph and returns what was read off it (OCR and field extraction
+ * happen inside it, on the server, and the client cannot see between them);
+ * the second asks the rule engine what that reading means. No step here is a
+ * timer or a guess.
+ */
+export function stepsForPhase(
+  phase: AnalysisPhase,
+  extractionFailed: boolean,
+  complianceFailed: boolean,
+): ProgressStep[] {
+  const reading: ProgressStep = { key: 'reading', label: 'Reading the label', state: 'pending' };
+  const checking: ProgressStep = { key: 'checking', label: 'Checking the requirements', state: 'pending' };
+
+  if (extractionFailed) {
+    reading.state = 'failed';
+    return [reading, checking];
+  }
+
+  switch (phase) {
+    case 'extracting':
+      reading.state = 'active';
+      break;
+    case 'extracted':
+      reading.state = 'done';
+      checking.state = complianceFailed ? 'failed' : 'pending';
+      break;
+    case 'evaluating':
+      reading.state = 'done';
+      checking.state = 'active';
+      break;
+    case 'complete':
+      reading.state = 'done';
+      checking.state = 'done';
+      break;
+    default:
+      break;
+  }
+  return [reading, checking];
+}
+
+export function AnalysisScreen({ navigation }: RootScreenProps<'Analysis'>) {
+  const analysis = useAnalysis();
+  const { phase, image, extractionError, complianceError, isBusy, retry, reset } = analysis;
+
+  useEffect(() => {
+    if (phase === 'complete') {
+      // Replace rather than push: going "back" from a result should not land
+      // on a spinner for an analysis that has already finished.
+      navigation.replace('Result');
+    }
+  }, [phase, navigation]);
+
+  useEffect(() => {
+    // The header has no back button, but Android's hardware back would still
+    // pop this screen while a request is in flight - and then nothing would
+    // be watching for the result. Hold the screen until the analysis has
+    // stopped; the buttons below are the way out.
+    const unsubscribe = navigation.addListener('beforeRemove', (event) => {
+      if (isBusy) {
+        event.preventDefault();
+      }
+    });
+    return unsubscribe;
+  }, [navigation, isBusy]);
+
+  const error = extractionError ?? complianceError;
+  const described = error ? describeError(error) : null;
+  const steps = stepsForPhase(phase, Boolean(extractionError), Boolean(complianceError));
+
+  const startOver = () => {
+    reset();
+    navigation.popToTop();
+  };
+
+  if (!image && !isBusy) {
+    return (
+      <Screen testID="analysis-screen">
+        <Callout title="Nothing to analyse" message="Choose a photo of a label to begin." tone="neutral">
+          <Button label="Scan a label" onPress={startOver} />
+        </Callout>
+      </Screen>
+    );
+  }
+
+  return (
+    <Screen testID="analysis-screen">
+      <Text accessibilityRole="header" style={styles.title} accessibilityLiveRegion="polite">
+        {described ? 'Analysis stopped' : 'Analysing label…'}
+      </Text>
+      <Text style={styles.lede}>
+        {described
+          ? 'The label could not be fully checked.'
+          : 'The photo is being read and checked on the analysis server. This usually takes a few seconds.'}
+      </Text>
+
+      <Card>
+        <ProgressSteps steps={steps} />
+      </Card>
+
+      {described ? (
+        <Callout title={described.title} message={described.message} tone="error" testID="analysis-error">
+          {described.retryable ? (
+            <Button label="Try again" onPress={() => void retry()} loading={isBusy} testID="retry" />
+          ) : null}
+          <Button
+            variant={described.retryable ? 'text' : 'primary'}
+            label="Choose another photo"
+            onPress={startOver}
+            disabled={isBusy}
+            testID="start-over"
+          />
+        </Callout>
+      ) : null}
+    </Screen>
+  );
+}
+
+const styles = StyleSheet.create({
+  title: {
+    ...typography.title,
+    color: colors.text,
+    marginBottom: spacing.xs,
+  },
+  lede: {
+    ...typography.body,
+    color: colors.textSecondary,
+    marginBottom: spacing.lg,
+  },
+});
