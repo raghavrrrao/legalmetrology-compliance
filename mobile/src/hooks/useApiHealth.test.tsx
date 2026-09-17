@@ -2,7 +2,7 @@
  * The server check the home screen shows, over a stubbed `fetch`.
  */
 
-import { renderHook, waitFor } from '@testing-library/react-native';
+import { act, renderHook, waitFor } from '@testing-library/react-native';
 
 import { useApiHealth } from './useApiHealth';
 import { errorEnvelope, jsonResponse } from '../../tests/fixtures';
@@ -48,7 +48,11 @@ describe('useApiHealth', () => {
 
     await waitFor(() => expect(result.current.phase).toBe('unreachable'));
 
-    result.current.check();
+    // `check` sets state synchronously (back to "checking"), so it is a
+    // state update the test must perform inside act.
+    await act(async () => {
+      result.current.check();
+    });
     await waitFor(() => expect(result.current.phase).toBe('ok'));
     expect(fetchMock).toHaveBeenCalledTimes(2);
   });

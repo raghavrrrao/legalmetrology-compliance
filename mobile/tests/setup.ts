@@ -3,6 +3,7 @@
  *
  * Three things are replaced here, each with the smallest surface the code
  * under test calls; individual tests override return values as they need.
+ * One thing is loaded early - see `warmReactNative` at the bottom.
  *
  * - `expo-image-picker` and `expo-constants` reach native modules that do not
  *   exist under Jest.
@@ -89,3 +90,38 @@ afterEach(() => {
   jest.restoreAllMocks();
   jest.clearAllMocks();
 });
+
+/**
+ * Load the React Native modules the app renders, before any test starts.
+ *
+ * `react-native`'s entry point exposes every component through a lazy getter,
+ * so nothing is required until the first `render()` touches it. That first
+ * render then pulls in - and, on a cold Jest cache, Babel-transforms - dozens
+ * of modules, and the whole cost lands inside whichever test happens to run
+ * first in the file: measured at 2 s with a warm cache and 4.8 s with a cold
+ * one on a fast laptop, which is over the 5 s per-test budget on a CI runner.
+ * That test was not slow; it was paying for module loading. Setup files are
+ * not subject to the test timeout, so the loading is done here instead, and
+ * every test - first or not - measures only itself.
+ */
+function warmReactNative(): void {
+  // Reading each export runs its getter; the values are not needed.
+  const rn = jest.requireActual('react-native') as Record<string, unknown>;
+  for (const name of [
+    'ActivityIndicator',
+    'Image',
+    'Linking',
+    'Platform',
+    'Pressable',
+    'ScrollView',
+    'StyleSheet',
+    'Text',
+    'TextInput',
+    'View',
+  ]) {
+    void rn[name];
+  }
+  jest.requireActual('react-native-safe-area-context');
+}
+
+warmReactNative();
