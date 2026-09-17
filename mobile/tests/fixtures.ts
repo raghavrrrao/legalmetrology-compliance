@@ -258,3 +258,43 @@ export function cameraPermission(granted: boolean, canAskAgain = true): ImagePic
 export function libraryPermission(granted: boolean, canAskAgain = true): ImagePicker.MediaLibraryPermissionResponse {
   return { ...cameraPermission(granted, canAskAgain), accessPrivileges: granted ? 'all' : 'none' };
 }
+
+/** The body of `GET /api/v1/health/` as the deployed backend returns it. */
+export function healthBody(overrides: Record<string, unknown> = {}) {
+  return {
+    status: 'ok',
+    api_version: 'v1',
+    dependencies: { database: 'ok', extraction_engine: 'ok' },
+    extraction_engine: { name: 'tesseract', version: '0.3.0', is_placeholder: false, available: true, detail: '' },
+    compliance_rules: { active_total: 11, verified: 11, unverified: 0, applicability_conditions: 39 },
+    ...overrides,
+  };
+}
+
+/**
+ * A `fetch` stub that answers `health/` from `health` and everything else from
+ * a queue, in order. The home screen checks the server on mount, so a screen
+ * test that also uploads needs the two kept apart.
+ */
+export function routedFetch({
+  health = jsonResponse(healthBody()),
+  queue = [],
+}: {
+  health?: Response | Error;
+  queue?: (Response | Error)[];
+} = {}) {
+  const pending = [...queue];
+  const calls: { url: string; init: RequestInit | undefined }[] = [];
+  const stub = jest.fn(async (url: string, init?: RequestInit) => {
+    calls.push({ url, init });
+    const answer = /\/health\/$/.test(url) ? health : pending.shift();
+    if (answer === undefined) {
+      throw new Error(`routedFetch: no response queued for ${url}`);
+    }
+    if (answer instanceof Error) {
+      throw answer;
+    }
+    return answer;
+  });
+  return Object.assign(stub, { calls });
+}

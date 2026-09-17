@@ -15,7 +15,7 @@
  */
 
 import { ApiError } from '../api/client';
-import { config } from '../config/env';
+import { config, describeApiTarget } from '../config/env';
 
 export interface UserFacingError {
   /** One short line. */
@@ -79,9 +79,15 @@ export function describeError(error: unknown): UserFacingError {
         retryable: true,
       };
     }
+    // Name the host that was tried. A development build pointed at a laptop
+    // that is not running the backend looks exactly like a phone with no
+    // signal otherwise, and the two have different fixes.
+    const { host } = describeApiTarget(config.apiBaseUrl);
     return {
       title: 'No connection',
-      message: `${OFFLINE_MESSAGE} Check your internet connection and try again.`,
+      message:
+        `${OFFLINE_MESSAGE} The app is configured to use ${host}. `
+        + 'Check your internet connection and that the server address is right, then try again.',
       retryable: true,
     };
   }
@@ -175,7 +181,11 @@ export function logError(context: string, error: unknown): void {
     return;
   }
   if (error instanceof ApiError) {
-    console.warn(`[${context}] ${error.code} (HTTP ${error.status}): ${error.message}`);
+    // The underlying error is the useful part of a status-0 failure: it is
+    // what separates "no route to host" from "fetch could not encode the
+    // body" - both of which the user sees as "unable to connect".
+    const cause = error.cause instanceof Error ? ` <- ${error.cause.name}: ${error.cause.message}` : '';
+    console.warn(`[${context}] ${error.code} (HTTP ${error.status}): ${error.message}${cause}`);
     return;
   }
   const message = error instanceof Error ? error.message : String(error);

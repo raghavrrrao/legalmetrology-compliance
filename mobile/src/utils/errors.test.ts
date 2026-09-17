@@ -2,8 +2,9 @@
  * What the user is told for each way a request can fail.
  */
 
-import { describeError, OFFLINE_MESSAGE } from './errors';
+import { describeError, logError, OFFLINE_MESSAGE } from './errors';
 import { ApiError } from '../api/client';
+import { config } from '../config/env';
 
 describe('describeError', () => {
   it('says the server could not be reached when there is no network', () => {
@@ -11,6 +12,12 @@ describe('describeError', () => {
 
     expect(described.message).toContain(OFFLINE_MESSAGE);
     expect(described.retryable).toBe(true);
+  });
+
+  it('names the host that was tried, so a wrong address does not look like no signal', () => {
+    const described = describeError(new ApiError('x', { status: 0, code: 'network_error' }));
+
+    expect(described.message).toContain(`configured to use ${new URL(config.apiBaseUrl).host}`);
   });
 
   it('describes a timeout as taking too long, and retryable', () => {
@@ -87,5 +94,18 @@ describe('describeError', () => {
     expect(described.title).toBe('Something went wrong');
     expect(described.message).not.toContain('undefined');
     expect(described.retryable).toBe(true);
+  });
+});
+
+describe('logError', () => {
+  it('logs the code, status and the underlying cause, never a body', () => {
+    const warn = console.warn as jest.Mock;
+    const cause = new Error('Unsupported FormDataPart implementation');
+
+    logError('extraction', new ApiError('Unable to connect to the analysis server.', { status: 0, code: 'network_error', cause }));
+
+    expect(warn).toHaveBeenCalledWith(
+      '[extraction] network_error (HTTP 0): Unable to connect to the analysis server. <- Error: Unsupported FormDataPart implementation',
+    );
   });
 });

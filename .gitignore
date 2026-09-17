@@ -11,7 +11,11 @@
 !frontend/.env.production
 # Same reasoning for the mobile client: EXPO_PUBLIC_ variables are inlined into
 # the app bundle, so the deployed API URL is public configuration there too.
+# `.env.development` is what `npx expo start` reads (it never reads
+# `.env.production`); a developer's local backend goes in the git-ignored
+# `mobile/.env.local`, which takes priority. See mobile/.env.example.
 !mobile/.env.production
+!mobile/.env.development
 *.pem
 *.key
 *.p12

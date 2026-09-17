@@ -5,7 +5,10 @@ import { Callout } from '../components/Callout';
 import { Card } from '../components/Card';
 import { PhotoTips } from '../components/PhotoTips';
 import { Screen } from '../components/Screen';
+import { ServerStatus } from '../components/ServerStatus';
+import { config } from '../config/env';
 import { useAnalysis } from '../hooks/AnalysisContext';
+import { useApiHealth } from '../hooks/useApiHealth';
 import { useImageSelection, type ImageSource, type SelectionIssue } from '../hooks/useImageSelection';
 import type { RootScreenProps } from '../navigation/types';
 import { colors, spacing, typography } from '../theme';
@@ -46,6 +49,9 @@ export function describeIssue(issue: SelectionIssue): { title: string; message: 
 export function HomeScreen({ navigation }: RootScreenProps<'Home'>) {
   const { select, issue, isPicking, clearIssue } = useImageSelection();
   const analysis = useAnalysis();
+  // The same client, the same base URL: if this says "connected", an upload
+  // that then fails is not a connectivity problem.
+  const { check, ...health } = useApiHealth();
 
   const choose = async (source: ImageSource) => {
     const image = await select(source);
@@ -69,6 +75,8 @@ export function HomeScreen({ navigation }: RootScreenProps<'Home'>) {
         Take a photo of the package label, or choose one from your gallery, and the label will be
         checked against the Legal Metrology (Packaged Commodities) Rules, 2011.
       </Text>
+
+      <ServerStatus state={health} source={config.apiBaseUrlSource} onCheckAgain={check} />
 
       {described ? (
         <Callout title={described.title} message={described.message} tone="warning" testID="selection-issue">

@@ -71,7 +71,15 @@ export function apiBaseUrlFromMetroHost(hostUri: string | undefined | null): str
 /**
  * Resolve the API base URL for the build that is actually running.
  *
- * The derived and localhost defaults are development conveniences and nothing
+ * Which value arrives here is decided by Expo's env-file precedence, and
+ * `expo start` never reads `.env.production`:
+ *
+ *     shell variable  >  .env.local (git-ignored: a local backend)
+ *                     >  .env.development (committed: Railway)   [expo start]
+ *                     >  .env.production  (committed: Railway)   [export / EAS]
+ *
+ * The derived and localhost defaults below are reached only when every file
+ * leaves the variable empty. They are development conveniences and nothing
  * more. A production app that fell back to either would ask the user's own
  * phone for the API - a failure that looks like the backend being down, on a
  * device the operator cannot see. So a production build refuses to start
@@ -105,6 +113,18 @@ export function resolveApiBaseUrl(
 
 declare const __DEV__: boolean;
 
+/**
+ * The API target in the terms a person debugging connectivity needs: where
+ * requests go and whether they are encrypted. Contains no secret - the base
+ * URL is public configuration - and is what the app shows and logs when the
+ * server cannot be reached, so "unable to connect" always names the host that
+ * was tried.
+ */
+export function describeApiTarget(baseUrl: string): { origin: string; host: string; path: string; https: boolean } {
+  const url = new URL(baseUrl);
+  return { origin: url.origin, host: url.host, path: url.pathname, https: url.protocol === 'https:' };
+}
+
 export const config = Object.freeze({
   /** Base URL of the Django REST API, always with a trailing slash. */
   apiBaseUrl: resolveApiBaseUrl(
@@ -117,4 +137,12 @@ export const config = Object.freeze({
 
   /** True in a development build. Use for developer affordances, never for auth. */
   isDevelopment: typeof __DEV__ === 'boolean' ? __DEV__ : true,
+
+  /**
+   * Whether the base URL was set explicitly (EXPO_PUBLIC_API_BASE_URL, from
+   * whichever env file or shell variable won) or guessed from the Metro host.
+   * Shown on the home screen and in the development log so a build that is
+   * talking to the wrong server says so, instead of looking offline.
+   */
+  apiBaseUrlSource: (process.env.EXPO_PUBLIC_API_BASE_URL ?? '').trim() ? ('configured' as const) : ('development-default' as const),
 });

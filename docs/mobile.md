@@ -31,13 +31,13 @@ than this:
 
 | Check | Evidence |
 |---|---|
-| Unit, hook, screen and navigation tests | `npm test` in `mobile/`: 14 suites, 181 tests |
+| Unit, hook, screen and navigation tests | `npm test` in `mobile/`: 16 suites, 196 tests |
 | Type check and lint | `npm run typecheck`, `npm run lint` |
 | Expo project configuration | `npx expo-doctor`: 21/21 checks |
 | API contract | The mappers were run over real responses from a local backend (`tesseract` 0.4.0) - extraction, compliance with and without a category, and the 400/404 error envelopes |
 | Android native project | `npx expo prebuild --platform android` generates it; the merged manifest carries `INTERNET` and `CAMERA` (from expo-image-picker), storage permissions only up to API 32, and no `RECORD_AUDIO`; cleartext HTTP is enabled in the **debug** manifest only. `gradlew assembleDebug` produced `app-debug.apk` on Windows (JDK 21, SDK 36, NDK 27; 35 minutes cold). Not installed anywhere - no device or emulator was attached |
 | iOS | Configured (`bundleIdentifier`, usage strings) and type-checked. **Not built and not run**: this needs a Mac with Xcode, which was not available |
-| On a device | **Not exercised in this branch.** No emulator or physical phone was attached |
+| On a device | An Android phone in Expo Go reported `[api] target http://192.168.29.172:8000/api/v1/ (https: false; development-default)` and `network_error (HTTP 0)` on upload while the same phone could open the Railway `health/` URL in Chrome. Two causes were found and fixed - see *Two things that looked like "no network"*. The fixes are verified by tests that run Expo's real env loader and multipart encoder; the re-run on the phone after the fix is the developer's to record |
 
 It is not production-ready and does not claim to be: it has no sign-in, it
 depends on the backend's demonstration switch (below), and it has not been run
@@ -212,53 +212,106 @@ npx expo start
 Then either scan the QR code with **Expo Go** on a phone on the same Wi-Fi,
 press `a` for an Android emulator, or `i` for the iOS simulator (Mac only).
 
-The backend must be reachable *from the phone*. For a local backend that means
-starting Django on all interfaces and allowing your machine's LAN address:
+Out of the box this talks to the **deployed Railway backend** - no local
+Django needed - because the committed `mobile/.env.development` says so. The
+home screen shows the host in use ("Analysis server connected · …railway.app")
+and the Metro console logs it once as `[api] target …`. Look there first when
+anything fails.
+
+To use a backend on **your own machine** instead, create the git-ignored
+`mobile/.env.local` (copy `.env.example`), set the address, and restart with
+`npx expo start --clear`. The backend must be reachable *from the phone*:
 
 ```bash
-# root .env
-DJANGO_ALLOWED_HOSTS=localhost,127.0.0.1,192.168.1.20      # your LAN address
-DEMO_PUBLIC_ANALYSIS_API=True                               # see "Authentication"
+# mobile/.env.local
+EXPO_PUBLIC_API_BASE_URL=http://192.168.1.20:8000/api/v1/   # your laptop's LAN address
 
-python backend/manage.py runserver 0.0.0.0:8000
+# root .env
+DJANGO_ALLOWED_HOSTS=localhost,127.0.0.1,192.168.1.20        # the same address
+DEMO_PUBLIC_ANALYSIS_API=True                                 # see "Authentication"
+
+python backend/manage.py runserver 0.0.0.0:8000                # all interfaces
 ```
+
+and your firewall must allow inbound connections to port 8000 (Windows
+prompts for this the first time Python listens; if it was dismissed, the phone
+gets no answer and the app reports the server unreachable at that host).
 
 ### Configuration
 
-One variable, read in exactly one file (`src/config/env.ts`):
+One variable controls where every request goes, and it is read in exactly one
+file, `src/config/env.ts`:
 
-| Variable | Where | Meaning |
-|---|---|---|
-| `EXPO_PUBLIC_API_BASE_URL` | `mobile/.env` (dev, git-ignored) or `mobile/.env.production` (committed) | Base URL of the API **including `/api/v1/` and a trailing slash** |
+| Variable | Meaning |
+|---|---|
+| `EXPO_PUBLIC_API_BASE_URL` | Base URL of the API **including `/api/v1/` and a trailing slash** |
 
-Resolution order:
+Three targets, each selected by a file - never by editing source:
 
-1. `EXPO_PUBLIC_API_BASE_URL`, if set (in a `.env` file or the shell).
-2. In development with nothing set: the machine serving Metro, on port 8000 -
-   `http://<metro-host>:8000/api/v1/`. On a phone running Expo Go this is the
-   laptop that ran `npx expo start`, which is usually where Django is too. This
-   is why the variable can be left unset for the common case.
-3. In development with no Metro host either: `http://localhost:8000/api/v1/`.
-4. In a **production build** with nothing set: the app refuses to start,
-   exactly as the web client's build refuses. `mobile/.env.production` supplies
-   the deployed URL so this only happens if it is deliberately blanked.
+| Target | File | Committed? | Used by |
+|---|---|---|---|
+| **Local backend** on your machine | `mobile/.env.local` | no (git-ignored; copy `.env.example`) | `npx expo start` |
+| **Railway, development / demo** | `mobile/.env.development` | yes | `npx expo start` - the default |
+| **Railway, production** | `mobile/.env.production` | yes | `npx expo export`, EAS builds |
 
-Set it explicitly when the default is wrong:
+**Why `.env.production` is not the development configuration.** Expo picks
+env files by `NODE_ENV`, which `expo start` sets to `development` and `expo
+export`/EAS set to `production` (`@expo/cli` `start/index.js`). In development
+the files read are, highest priority first:
 
-```bash
-# Android emulator, backend on the same machine (10.0.2.2 is the host):
-EXPO_PUBLIC_API_BASE_URL=http://10.0.2.2:8000/api/v1/
-# Physical phone, backend on a laptop at 192.168.1.20:
-EXPO_PUBLIC_API_BASE_URL=http://192.168.1.20:8000/api/v1/
-# Against the deployed backend, from a development build:
-EXPO_PUBLIC_API_BASE_URL=https://legalmetrology-compliance-production.up.railway.app/api/v1/
+```
+.env.development.local  >  .env.local  >  .env.development  >  .env
 ```
 
+and in production `.env.production.local > .env.local > .env.production >
+.env`. A higher-priority file overwrites a lower one (even with an empty
+value), and a variable already set in the shell wins over every file
+(`@expo/env`). So `.env.production` is never seen by `expo start`; before
+`.env.development` existed, a development build had no address at all and
+fell back to guessing - which is what the phone logged as
+`development-default`.
+
+What the app does with the value it receives (`resolveApiBaseUrl`):
+
+1. Set and non-blank → used as given (one trailing slash enforced).
+2. Blank in a **development** build → derived from the machine serving Metro,
+   on port 8000: `http://<metro-host>:8000/api/v1/`. A deliberate guess for
+   "Django is on the laptop I ran `expo start` on"; the home screen labels it
+   *(development default)*. Reached only by setting the variable empty in
+   `.env.local`.
+3. Blank with no Metro host → `http://localhost:8000/api/v1/`.
+4. Blank in a **production** build → the app refuses to start, as the web
+   client's build refuses. `.env.production` supplies the value, so this only
+   happens if it is deliberately blanked.
+
+Switching:
+
+```bash
+# Railway (the default) - nothing to create:
+npx expo start --lan --clear
+
+# Local backend - once:
+cp .env.example .env.local            # then edit the address inside
+npx expo start --lan --clear
+
+# Back to Railway - remove or rename the override:
+rm .env.local && npx expo start --lan --clear
+
+# One-off, any target, without touching files (shell wins over every file):
+EXPO_PUBLIC_API_BASE_URL="https://other-host/api/v1/" npx expo start --lan --clear
+```
+
+Always `--clear` after changing an env file: values are inlined into the
+bundle when Metro starts and cached. Expo prints what it loaded on startup
+(`env: load .env.development`, `env: export EXPO_PUBLIC_API_BASE_URL`), and
+the app logs the resolved target once in development.
+
 Every `EXPO_PUBLIC_` value is inlined into the bundle and readable by anyone
-who unpacks the app. It is public configuration. **No secret goes in any file
-under `mobile/`.** The upload size pre-check (`MAX_UPLOAD_SIZE_MB`, 10) is a
-constant in the same file, mirroring the backend's default; the backend's own
-limit is the one that counts.
+who unpacks the app. The Railway URL is **public configuration, not a
+secret** - the same address is committed in `frontend/.env.production`. **No
+secret goes in any file under `mobile/`.** The upload size pre-check
+(`MAX_UPLOAD_SIZE_MB`, 10) is a constant in `env.ts`, mirroring the backend's
+default; the backend's own limit is the one that counts.
 
 ### Android
 
@@ -353,8 +406,8 @@ non-envelope body - an HTML 502 page, a proxy's 413 - reaches the screen.
 
 | Situation | Shown |
 |---|---|
-| No network, DNS failure, connection refused | "Unable to connect to the analysis server. Check your internet connection and try again." + *Try again* |
-| Timeout (90 s for the upload, 15 s otherwise) | "The server took too long" + *Try again* |
+| No network, DNS failure, connection refused, or a request `fetch` could not build | "Unable to connect to the analysis server. The app is configured to use *host*. Check your internet connection and that the server address is right, then try again." + *Try again*. The underlying error is logged as the `cause` in development builds |
+| Timeout (90 s for the upload, 15 s otherwise) | "The server took too long" + *Try again*. Classified by the app's own abort, because `expo/fetch` reports it as `fetch failed: Fetch request has been canceled` rather than an `AbortError` |
 | 400 validation | "The photo was not accepted" + the backend's reason (e.g. "The file could not be read as an image.") |
 | 401 / 403 | Sign-in required / not allowed on this server |
 | 404 | Not found (service address, or a result that is gone) |
@@ -398,22 +451,24 @@ What is covered, and where:
 | Area | File |
 |---|---|
 | API base URL resolution, trailing slashes, production refusal | `src/config/env.test.ts` |
-| HTTP client: URL joining, JSON/multipart bodies, no credentials, error envelope for 400/401/403/404/413/429/500, non-JSON bodies, network vs timeout, abort | `src/api/client.test.ts` |
-| Upload construction (`image` part with name/type, `view_type`), extraction mapping, classification present / null / absent / malformed / "unknown" | `src/api/extraction.test.ts` |
+| HTTP client: URL joining, JSON/multipart bodies, no credentials, error envelope for 400/401/403/404/413/429/500, non-JSON bodies, network vs timeout (including `expo/fetch`'s cancellation shape), abort, the `cause` carried for logs | `src/api/client.test.ts` |
+| Upload construction (`image` part with name/type/`bytes()`, `view_type`), extraction mapping, classification present / null / absent / malformed / "unknown" | `src/api/extraction.test.ts` |
+| The upload part run through **Expo's real multipart encoder** (`expo/fetch`): encoded with the validated filename, type and the file's bytes; the legacy `{uri}` part rejected | `src/api/uploadPart.expoFetch.test.ts` |
+| Server check: `health/` through the same client, unreachable state, re-check, dev-only target log | `src/hooks/useApiHealth.test.tsx` |
 | Compliance request body (category sent only when given), result mapping, findings absent vs empty, malformed bodies rejected | `src/api/compliance.test.ts` |
 | Format detection, size/empty/too-small rejection, filename normalisation | `src/services/imageValidation.test.ts` |
 | Camera and library permission grant / denial / permanent denial, cancellation, unavailable camera, picker errors, platform differences | `src/services/imagePicker.test.ts` |
 | The two-step flow over a stubbed `fetch`: phases, network failure, HTTP failure, retry without re-upload, human-confirmed re-check, duplicate evaluate dropped | `src/hooks/useLabelAnalysis.test.tsx` |
 | User-facing messages per failure | `src/utils/errors.test.ts` |
 | Tones for known and unknown statuses, grouping order | `src/utils/status.test.ts` |
-| Home: both pickers, every outcome, Settings deep link | `src/screens/HomeScreen.test.tsx` |
+| Home: server status with the host it used, both pickers, every outcome, Settings deep link | `src/screens/HomeScreen.test.tsx` |
 | Preview: image, product type, use / retake | `src/screens/PreviewScreen.test.tsx` |
 | Analysis: loading steps, each error, retry, completion | `src/screens/AnalysisScreen.test.tsx` |
 | Result: each verdict, findings by status, extracted fields, classification present / absent / unknown, re-check confirmation, no percentage, technical details | `src/screens/ResultScreen.test.tsx` |
 | The whole flow through the real navigator: Home → Preview → Analysis → Result, offline stop, retry, start over | `src/navigation/RootNavigator.test.tsx` |
 
-Only two things are replaced in tests: `expo-image-picker` (a native module)
-and `fetch`. Fixtures are in the wire shape the backend sends
+Only three things are replaced in tests: `expo-image-picker` and
+`expo-file-system` (native modules) and `fetch`. Fixtures are in the wire shape the backend sends
 (`tests/fixtures.ts`), so the mapping layer is always under test.
 
 ## Gaps and limitations
@@ -439,11 +494,44 @@ faked:
   function for a stored result exists (`fetchComplianceResult`); no screen uses
   it.
 - **No sign-in.** See *Authentication*.
-- **Not run on a device or simulator in this branch**, and iOS not built.
+- **iOS not built**, and the post-fix run on the Android phone is not recorded here.
 - No offline analysis, by design: the engine and OCR are server-side, and the
   app says so instead of pretending.
 - No image preprocessing on the phone (deskew, contrast, crop). That belongs
   to the OCR workstream on the server.
+
+## Two things that looked like "no network"
+
+Recorded because both produced the same line on an Android phone in Expo Go -
+`[extraction] network_error (HTTP 0): Unable to connect...` - while the same
+phone could open the Railway `health/` URL in Chrome.
+
+1. **The development build was talking to the laptop, not to Railway.** The
+   device logged `[api] target http://192.168.29.172:8000/api/v1/ (https:
+   false; development-default)`. `expo start` never reads `.env.production`,
+   and no development env file existed, so the app derived the address from
+   the Metro host. Nothing was listening there (and Windows Firewall had no
+   inbound rule for Python), so every request hung until the client's timeout
+   - which `expo/fetch` reports as `fetch failed: Fetch request has been
+   canceled`. Fixed by committing `mobile/.env.development` (Railway) with
+   `.env.local` as the local override, by showing the host on the home screen
+   and in the offline message, and by classifying the app's own abort as a
+   timeout whatever `fetch` calls it. See *Configuration*.
+2. **The multipart body was one Expo's `fetch` cannot encode.** Expo SDK 57
+   replaces the global `fetch` with `expo/fetch` on native
+   (`expo/src/winter/runtime.native.ts`). Its multipart encoder does not read
+   React Native's legacy `{ uri, name, type }` file part - it throws
+   `Unsupported FormDataPart implementation` *before any request is made*,
+   and the client could only report that as a network failure. This would
+   have failed the upload even with the right address. The part is now a
+   File-like object (`name`, `type`, and `bytes()` from `expo-file-system`'s
+   `File`), which `expo/fetch` encodes with a boundary it generates itself;
+   `uri` is kept so React Native's own fetch (`EXPO_PUBLIC_USE_RN_FETCH=1`)
+   still works. `src/api/uploadPart.expoFetch.test.ts` runs the part through
+   Expo's actual encoder. The `cause` of a status-0 failure is now carried on
+   `ApiError` and logged in development, so this class of problem names itself.
+
+Neither involved the backend, CORS, TLS or Railway, and nothing there changed.
 
 ## What comes next
 

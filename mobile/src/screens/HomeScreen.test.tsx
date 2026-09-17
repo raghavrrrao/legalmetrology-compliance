@@ -12,8 +12,9 @@ import { Linking } from 'react-native';
 import { SafeAreaProvider } from 'react-native-safe-area-context';
 
 import { HomeScreen } from './HomeScreen';
-import { cameraPermission, libraryPermission } from '../../tests/fixtures';
+import { cameraPermission, healthBody, jsonResponse, libraryPermission, routedFetch } from '../../tests/fixtures';
 import { fakeAnalysis, PHONE_METRICS, stubNavigation } from '../../tests/render';
+import { config } from '../config/env';
 
 const mockUseAnalysis = jest.fn();
 jest.mock('../hooks/AnalysisContext', () => ({
@@ -32,6 +33,11 @@ const asset = {
   height: 4000,
 };
 
+beforeEach(() => {
+  (globalThis as unknown as { fetch: unknown }).fetch = routedFetch();
+  jest.spyOn(console, 'info').mockImplementation(() => undefined);
+});
+
 async function renderHome() {
   const analysis = fakeAnalysis();
   mockUseAnalysis.mockReturnValue(analysis);
@@ -45,6 +51,33 @@ async function renderHome() {
 }
 
 describe('HomeScreen', () => {
+  it('checks the analysis server through the API client and shows the host it used', async () => {
+    await renderHome();
+
+    const status = await screen.findByTestId('server-status-ok');
+    expect(status).toHaveTextContent('Analysis server connected', { exact: false });
+    expect(screen.getByTestId('server-status-detail')).toHaveTextContent(new URL(config.apiBaseUrl).host, { exact: false });
+    expect(screen.getByTestId('server-status-detail')).toHaveTextContent('tesseract 0.3.0', { exact: false });
+
+    const fetchStub = globalThis.fetch as unknown as ReturnType<typeof routedFetch>;
+    expect(fetchStub.calls[0].url).toBe(`${config.apiBaseUrl}health/`);
+  });
+
+  it('says the server is unreachable, at which address, and lets the user check again', async () => {
+    const fetchStub = routedFetch({ health: new TypeError('Network request failed') });
+    (globalThis as unknown as { fetch: unknown }).fetch = fetchStub;
+    await renderHome();
+
+    const status = await screen.findByTestId('server-status-unreachable');
+    expect(status).toHaveTextContent('Analysis server unreachable', { exact: false });
+    expect(screen.getByTestId('server-status-detail')).toHaveTextContent(new URL(config.apiBaseUrl).host, { exact: false });
+
+    (globalThis as unknown as { fetch: unknown }).fetch = routedFetch({ health: jsonResponse(healthBody()) });
+    await fireEvent.press(screen.getByTestId('server-status-retry'));
+
+    await screen.findByTestId('server-status-ok');
+  });
+
   it('offers the camera and the gallery, and some advice', async () => {
     await renderHome();
 

@@ -92,8 +92,9 @@ those limits are enforced by tests rather than only documented:
 ├── mobile/            React Native (Expo) application - docs/mobile.md
 │   ├── package.json         npm; package-lock.json committed
 │   ├── app.json             Expo config: ids, permission strings, plugins
-│   ├── .env.example         EXPO_PUBLIC_API_BASE_URL - the only variable
-│   ├── .env.production      committed; points at the deployed API
+│   ├── .env.example         copy to .env.local for a LOCAL backend
+│   ├── .env.development     committed; `expo start` -> the deployed API
+│   ├── .env.production      committed; production builds -> the deployed API
 │   ├── tests/               Jest setup, wire-shape fixtures, screen-test helpers
 │   └── src/
 │       ├── api/         client.ts + one module per API area
@@ -439,10 +440,12 @@ curl http://localhost:8000/api/v1/health/
 ```
 
 **Mobile app** (optional, a third terminal): `cd mobile && npm install && npx
-expo start`, then open it in Expo Go on a phone. The phone must be able to
-reach the backend, which means running Django on `0.0.0.0:8000` and adding
-your LAN address to `DJANGO_ALLOWED_HOSTS`. Setup, configuration and native
-builds are in [docs/mobile.md](docs/mobile.md).
+expo start`, then open it in Expo Go on a phone. By default the app talks to
+the **deployed Railway backend** (`mobile/.env.development`), so no local
+Django is needed; to use the one on your machine, create `mobile/.env.local`
+with its LAN address and run Django on `0.0.0.0:8000` with that address in
+`DJANGO_ALLOWED_HOSTS`. Setup, configuration and native builds are in
+[docs/mobile.md](docs/mobile.md).
 
 ---
 

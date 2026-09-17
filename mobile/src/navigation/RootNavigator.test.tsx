@@ -13,15 +13,26 @@ import * as ImagePicker from 'expo-image-picker';
 import { SafeAreaProvider } from 'react-native-safe-area-context';
 
 import { RootNavigator } from './RootNavigator';
-import { cameraPermission, complianceBody, extractionBody, jsonResponse, RUN_ID } from '../../tests/fixtures';
+import { cameraPermission, complianceBody, extractionBody, jsonResponse, routedFetch, RUN_ID } from '../../tests/fixtures';
 import { PHONE_METRICS } from '../../tests/render';
 import { AnalysisProvider } from '../hooks/AnalysisContext';
 
 const picker = ImagePicker as jest.Mocked<typeof ImagePicker>;
-const fetchMock = jest.fn();
+
+/** Answers health/ with "ok" and the analysis requests from the queue given. */
+function serve(...queue: (Response | Error)[]) {
+  const stub = routedFetch({ queue });
+  (globalThis as unknown as { fetch: unknown }).fetch = stub;
+  return stub;
+}
+
+/** The analysis requests only - the home screen's health check is not one. */
+function analysisCalls(stub: ReturnType<typeof routedFetch>) {
+  return stub.calls.filter((call) => !/\/health\/$/.test(call.url));
+}
 
 beforeEach(() => {
-  (globalThis as unknown as { fetch: unknown }).fetch = fetchMock;
+  jest.spyOn(console, 'info').mockImplementation(() => undefined);
   picker.requestCameraPermissionsAsync.mockResolvedValue(cameraPermission(true));
   picker.launchCameraAsync.mockResolvedValue({
     canceled: false,
@@ -43,9 +54,7 @@ async function renderApp() {
 
 describe('the scan flow', () => {
   it('goes Home -> Preview -> Analysis -> Result and shows the backend verdict', async () => {
-    fetchMock
-      .mockResolvedValueOnce(jsonResponse(extractionBody(), { status: 201 }))
-      .mockResolvedValueOnce(jsonResponse(complianceBody(), { status: 201 }));
+    const stub = serve(jsonResponse(extractionBody(), { status: 201 }), jsonResponse(complianceBody(), { status: 201 }));
     await renderApp();
 
     expect(screen.getByTestId('home-screen')).toBeOnTheScreen();
@@ -59,13 +68,14 @@ describe('the scan flow', () => {
     expect(screen.getByTestId('classification-category')).toHaveTextContent('Packaged food', { exact: false });
 
     // One upload, then one evaluation of the run it returned.
-    expect(fetchMock).toHaveBeenCalledTimes(2);
-    expect(fetchMock.mock.calls[0][0]).toMatch(/\/extraction\/$/);
-    expect(JSON.parse(fetchMock.mock.calls[1][1].body)).toEqual({ extraction_run_id: RUN_ID });
+    const calls = analysisCalls(stub);
+    expect(calls).toHaveLength(2);
+    expect(calls[0].url).toMatch(/\/extraction\/$/);
+    expect(JSON.parse(calls[1].init?.body as string)).toEqual({ extraction_run_id: RUN_ID });
   });
 
   it('stops on the progress screen with the offline message, and can start over', async () => {
-    fetchMock.mockRejectedValueOnce(new TypeError('Network request failed'));
+    serve(new TypeError('Network request failed'));
     await renderApp();
 
     await fireEvent.press(screen.getByTestId('take-photo'));
@@ -81,10 +91,11 @@ describe('the scan flow', () => {
   });
 
   it('retries a failed verdict without uploading the photo again', async () => {
-    fetchMock
-      .mockResolvedValueOnce(jsonResponse(extractionBody(), { status: 201 }))
-      .mockResolvedValueOnce(jsonResponse({ detail: 'Server Error (500)' }, { status: 500 }))
-      .mockResolvedValueOnce(jsonResponse(complianceBody(), { status: 201 }));
+    const stub = serve(
+      jsonResponse(extractionBody(), { status: 201 }),
+      jsonResponse({ detail: 'Server Error (500)' }, { status: 500 }),
+      jsonResponse(complianceBody(), { status: 201 }),
+    );
     await renderApp();
 
     await fireEvent.press(screen.getByTestId('take-photo'));
@@ -96,14 +107,13 @@ describe('the scan flow', () => {
     await fireEvent.press(screen.getByTestId('retry'));
 
     await screen.findByTestId('result-screen');
-    expect(fetchMock).toHaveBeenCalledTimes(3);
-    expect(fetchMock.mock.calls[2][0]).toMatch(/\/compliance\/$/);
+    const calls = analysisCalls(stub);
+    expect(calls).toHaveLength(3);
+    expect(calls[2].url).toMatch(/\/compliance\/$/);
   });
 
   it('starts a fresh analysis from the result screen', async () => {
-    fetchMock
-      .mockResolvedValueOnce(jsonResponse(extractionBody(), { status: 201 }))
-      .mockResolvedValueOnce(jsonResponse(complianceBody(), { status: 201 }));
+    serve(jsonResponse(extractionBody(), { status: 201 }), jsonResponse(complianceBody(), { status: 201 }));
     await renderApp();
 
     await fireEvent.press(screen.getByTestId('take-photo'));
