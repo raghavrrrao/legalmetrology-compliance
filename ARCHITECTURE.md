@@ -89,8 +89,8 @@ The end-to-end flow the whole system exists to serve:
 ```
 
 **One compliance engine, several clients.** The React web app is a client of
-that JSON, and a future React Native client is intended to be another one of the
-same endpoints. Nothing in the API is shaped for a browser: there is no
+that JSON, and the React Native client in `mobile/` (see
+[docs/mobile.md](docs/mobile.md)) is another one of the same endpoints. Nothing in the API is shaped for a browser: there is no
 server-rendered HTML, no session-only flow, and no web-only assumption in the
 request or response bodies. A second client that reimplemented a rule would be
 a second, unauditable answer, which is why the browser holds none.
@@ -377,10 +377,10 @@ as compliance.
 The layer diagram above is the code. This is where it runs.
 
 ```
-   React web client                        React Native client
-   static bundle, hosted separately        (not built - later phase)
+   React web client                        React Native client (mobile/)
+   static bundle, hosted separately        Expo app, API URL compiled in
           │                                        │
-          │  HTTPS, VITE_API_BASE_URL              │  same API, same verdicts
+          │  HTTPS, VITE_API_BASE_URL              │  HTTPS, EXPO_PUBLIC_API_BASE_URL
           └──────────────────┬─────────────────────┘
                              ▼
    ┌──────────────────────────────────────────────────────┐
@@ -399,12 +399,12 @@ Three properties of this shape are deliberate and worth stating, because each
 is a decision that could be undone by accident:
 
 **There is exactly one compliance engine, and it is on the server.** Every
-client - the React web app today, a React Native app later - asks the same API
+client - the React web app and the React Native app alike - asks the same API
 and gets the same verdict from the same rule rows. A rule evaluated on a device
 would be a second engine that could disagree with the first about what the law
 requires, which is the one kind of drift this project cannot tolerate. It is
-also why the mobile client is a later phase and not a parallel one: there is
-nothing to build against until the API is deployed and stable.
+also why the mobile client came after the API was deployed and stable rather
+than in parallel with it, and why it holds no rule, no OCR and no model.
 
 **OCR runs inside the same process as the API.** Extraction is a synchronous
 subprocess call to `tesseract`, so the container needs the binary and the

@@ -54,9 +54,10 @@ deploying, run the commands in [Building the image locally](#building-the-image-
         Railway PostgreSQL
 ```
 
-One backend, one compliance engine. A future React Native client uses the same
-API and changes nothing here — which is the reason the engine lives behind the
-API and not in a client.
+One backend, one compliance engine. The React Native client (`mobile/`,
+[mobile.md](mobile.md)) uses the same API and changes nothing here — which is
+the reason the engine lives behind the API and not in a client. Its production
+build compiles the same Railway URL in from `mobile/.env.production`.
 
 ---
 

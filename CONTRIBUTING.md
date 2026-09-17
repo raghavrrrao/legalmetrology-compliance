@@ -70,7 +70,7 @@ your app's directory.
 
 ## Testing before a PR
 
-All three must pass:
+All four must pass:
 
 ```bash
 cd backend  && pytest        # needs PostgreSQL running
@@ -78,6 +78,9 @@ cd ml       && pytest        # no database needed
 cd frontend && npm run lint
 cd frontend && npm test
 cd frontend && npm run build
+cd mobile   && npm run typecheck
+cd mobile   && npm run lint
+cd mobile   && npm test      # no device or emulator needed
 ```
 
 CI runs exactly these on every pull request (`.github/workflows/ci.yml`), plus
@@ -214,6 +217,7 @@ The problem this solves.
 - [ ] frontend: npm run lint
 - [ ] frontend: npm test
 - [ ] frontend: npm run build
+- [ ] mobile: npm run typecheck, npm run lint, npm test
 - [ ] Manually verified: <what you clicked>
 
 ## Notes for the reviewer

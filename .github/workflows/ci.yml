@@ -3,7 +3,7 @@
 # Runs the same commands the README tells a developer to run locally. If CI
 # ever needs a command that is not in the README, one of the two is wrong.
 #
-# Deliberately minimal: four jobs, no matrix across Python/Node versions, no
+# Deliberately minimal: five jobs, no matrix across Python/Node versions, no
 # caching beyond what setup-python and setup-node provide for free, and no
 # deployment - this workflow proves the image is deployable and stops there.
 # A six-person hackathon team needs "did I break main?" answered in a few
@@ -229,11 +229,45 @@ jobs:
       - name: Production build
         run: npm run build
 
+  mobile:
+    name: Mobile (typecheck, lint, test)
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: mobile
+
+    # No emulator, no device and no native build: those need an Android SDK
+    # or a Mac and take tens of minutes, and what they would prove (that the
+    # generated native project compiles) is Expo's contract rather than this
+    # repository's. What runs here is what a developer runs locally - the
+    # type check, the linter and the Jest suite - over the same lockfile.
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          # Matches the engines field in mobile/package.json.
+          node-version: "20.19.0"
+          cache: npm
+          cache-dependency-path: mobile/package-lock.json
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Type check
+        run: npm run typecheck
+
+      - name: Lint
+        run: npm run lint
+
+      - name: Tests
+        run: npm test -- --ci
+
   container:
     name: Production image (Docker + Tesseract)
     runs-on: ubuntu-latest
 
-    # This job exists for one thing the other three cannot check: that the
+    # This job exists for one thing the other four cannot check: that the
     # deployed image actually contains the Tesseract binary. `pip` cannot
     # install it, so a green `backend` job proves nothing about it - that suite
     # passes with the placeholder engine on a machine with no OCR stack at all.
