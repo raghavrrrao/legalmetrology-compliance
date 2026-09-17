@@ -442,6 +442,35 @@ DEMO_PUBLIC_ANALYSIS_API = env.bool("DEMO_PUBLIC_ANALYSIS_API", default=False)
 
 
 # ---------------------------------------------------------------------------
+# Automatic product applicability
+# ---------------------------------------------------------------------------
+
+# Which label-classifier artifacts may have their category recorded as
+# `Product.category` - and so decide which rules run - WITHOUT a person
+# confirming it. A JSON object keyed "<classifier_name>/<version>":
+#
+#     {"tfidf-logreg/0.2.0": {"min_confidence": 0.85,
+#                             "evaluation": "docs/ml/evaluations/2026-10-tfidf-0.2.0.md"}}
+#
+# Empty by default, and empty is the correct value for the shipped artifact:
+# its documented held-out evaluation (docs/ml/product-classification.md) shows
+# wrong answers as confident as right ones, so no threshold on its probability
+# would make automatic acceptance safe. An entry is added only for an artifact
+# whose held-out evaluation on verified labels established the operating point
+# it names, and the entry must cite that evaluation. A malformed entry is
+# ignored, with a warning - never treated as acceptance.
+#
+# Everything the classifier proposes that is NOT the category - the
+# subcategory-derived conditions that exempt clauses or withhold rule 26 - is
+# never accepted automatically under any entry; a person confirms those
+# through `applicability_declarations`. See docs/automatic-applicability.md
+# and apps/compliance/services/auto_applicability.py.
+AUTOMATIC_APPLICABILITY_ACCEPTED_CLASSIFIERS = env.json(
+    "AUTOMATIC_APPLICABILITY_ACCEPTED_CLASSIFIERS", default={}
+)
+
+
+# ---------------------------------------------------------------------------
 # Testing
 # ---------------------------------------------------------------------------
 

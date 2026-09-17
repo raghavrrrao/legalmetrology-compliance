@@ -168,6 +168,69 @@ export function applicabilityBody(overrides = {}) {
   };
 }
 
+/**
+ * `applicability_assessment` on a compliance result, as the backend's
+ * `auto_applicability.as_dict` shapes it. The default is the shipped
+ * situation: the classifier committed, the policy accepts nothing, so the
+ * category is a suggestion with one question open.
+ */
+export function assessmentBody(overrides = {}) {
+  return {
+    status: 'uncertain',
+    reason:
+      'The classifier tfidf-logreg 0.1.0 is not accepted for automatic use: no held-out evaluation on verified labels has established an operating point for it, so its category is a suggestion for a person to confirm.',
+    classifier: {
+      name: 'tfidf-logreg',
+      version: '0.1.0',
+      confidence: 0.72,
+      evidence: ['signal: soap / bathing bar (typical of cosmetics-and-toiletries)'],
+    },
+    policy: { accepted: false, min_confidence: null, evaluation: null },
+    category: {
+      proposed: 'packaged-non-food',
+      proposed_name: 'Packaged non-food',
+      confidence: 0.72,
+      in_effect: null,
+      in_effect_source: null,
+      disposition: 'needs_confirmation',
+      reason:
+        'The classifier tfidf-logreg 0.1.0 is not accepted for automatic use: no held-out evaluation on verified labels has established an operating point for it, so its category is a suggestion for a person to confirm.',
+    },
+    facts: [],
+    questions: [
+      {
+        kind: 'category',
+        code: 'packaged-non-food',
+        suggested: 'packaged-non-food',
+        prompt: 'The label reads like packaged non-food. Is that right?',
+        choices: [
+          { code: 'packaged-food', name: 'Packaged food' },
+          { code: 'packaged-non-food', name: 'Packaged non-food' },
+        ],
+      },
+    ],
+    ...overrides,
+  };
+}
+
+/** One entry of `applicability_assessment.facts[]`: a subcategory's suggested condition. */
+export function assessedFactBody(overrides = {}) {
+  return {
+    condition: 'cosmetics-and-toiletries',
+    name: 'Soaps, shampoos, toothpastes and other cosmetics and toiletries',
+    proposed_answer: 'yes',
+    confidence: 0.56,
+    basis: "The classifier's subcategory 'cosmetics-and-toiletries' corresponds to this condition.",
+    affects: ['6(1)(d): exempts', '6(8): requires'],
+    in_effect: 'unknown',
+    in_effect_source: null,
+    disposition: 'needs_confirmation',
+    reason:
+      'This fact exempts or triggers requirements, so it is never taken from the classifier. It stays unknown until a person confirms it.',
+    ...overrides,
+  };
+}
+
 /** The body of `POST /api/v1/compliance/` and `POST /api/v1/images/`. */
 export function complianceBody(overrides = {}) {
   return {
@@ -186,7 +249,9 @@ export function complianceBody(overrides = {}) {
     processing_ms: 12,
     completed_at: '2026-08-30T12:00:00Z',
     product_category_code: null,
+    product_category_source: null,
     applicability_declarations: [],
+    applicability_assessment: assessmentBody(),
     violations: [],
     findings: [],
     extraction: extractionRunBody(),

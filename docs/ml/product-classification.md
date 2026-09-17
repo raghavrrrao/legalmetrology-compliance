@@ -705,10 +705,10 @@ The path that is now prepared, and the rule for each step:
 |---|---|---|
 | Classifier produces a structured fact in the applicability layer's vocabulary | `category` ∈ `ProductCategory` codes; subcategories ∈ condition codes | **Done** |
 | The fact reaches the client beside the reading | `extraction.product_classification` on every result | **Done** |
-| A client shows it as a *suggestion* for `category_code` and for the matching declaration, pre-filled, for the person to confirm | Frontend | Not done — the React app is unchanged and ignores the field |
-| A confirmed suggestion is recorded as a declaration with `source` naming who confirmed it | `ProductApplicabilityDeclaration.Source` gains a value distinguishing "confirmed a suggestion" from "declared unprompted" | Not done |
-| An unconfirmed suggestion is recorded, if at all, as UNKNOWN | Preserves YES / NO / UNKNOWN semantics; UNKNOWN never becomes YES because a model predicted | Design rule, not code |
-| Auto-accept above a calibrated threshold, with the classifier named as source | Only after calibration on verified data, and only for `Product.category`, never for a scope gate | Not done, and not soon |
+| A client shows it as a *suggestion* for `category_code` and for the matching declaration, for the person to confirm | Web: the assessment card under the verdict; mobile: "Re-check as X" | **Done** — see [automatic-applicability.md](../automatic-applicability.md) |
+| A confirmed suggestion is distinguishable from an unprompted statement | Recorded as the person's declaration (`source = submitter`); the response's `applicability_assessment` reports `confirmed_by_submitter` vs `stated_by_submitter` vs `contradicted_by_submitter` by comparing the statement with the proposal | **Done** (as a derived disposition rather than a new `Source` value) |
+| An unconfirmed suggestion is never recorded as an answer | `auto_applicability` writes no declaration row under any policy; a suggested condition stays UNKNOWN until a person answers | **Done, and tested** |
+| Auto-accept above a calibrated threshold, with the classifier named as source | Only after calibration on verified data, and only for `Product.category`, never for a scope gate | **Mechanism done; no artifact licensed.** `AUTOMATIC_APPLICABILITY_ACCEPTED_CLASSIFIERS` names the artifact, its floor and the evaluation; it is empty, and stays empty for 0.1.0 |
 
 The last row is the one to be most careful with. `Product.category` today is
 a person's statement. Filling it from a model — even a confident one —

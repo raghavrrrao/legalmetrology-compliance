@@ -96,6 +96,21 @@ class Product(UUIDPrimaryKeyModel, TimeStampedModel):
     analysis, not a precondition for it.
     """
 
+    class CategorySource(models.TextChoices):
+        """Where `category` came from. Read beside every result it shaped.
+
+        The category selects which rules run and answers the one condition the
+        framework derives from it (`food-article`), so a reviewer has to be able
+        to see whether a person said what the commodity is or a model did. The
+        classifier value is written only by `apps.compliance.services
+        .auto_applicability`, and only under a policy that names the artifact
+        and the evaluation licensing it - see docs/automatic-applicability.md.
+        """
+
+        SUBMITTER = "submitter", "Stated by the submitter"
+        REVIEWER = "reviewer", "Recorded by a reviewer"
+        CLASSIFIER = "classifier", "Established automatically from the label classifier"
+
     name = models.CharField(
         max_length=255,
         blank=True,
@@ -112,6 +127,23 @@ class Product(UUIDPrimaryKeyModel, TimeStampedModel):
             "Determines which rules apply. Null means the category is not yet "
             "known, which the compliance engine treats as 'cannot determine "
             "applicability' rather than 'no rules apply'."
+        ),
+    )
+    category_source = models.CharField(
+        max_length=16,
+        choices=CategorySource.choices,
+        default=CategorySource.SUBMITTER,
+        help_text=(
+            "Who or what set `category`. Defaults to the submitter, which is "
+            "what every row written before this field existed was."
+        ),
+    )
+    category_basis = models.TextField(
+        blank=True,
+        help_text=(
+            "Why the category is what it is, when it was not simply stated: "
+            "the classifier, its version, its confidence and the policy entry "
+            "that accepted it. Blank when a person stated the category."
         ),
     )
     barcode = models.CharField(

@@ -143,6 +143,30 @@ export function ScanPage() {
     evaluate({ categoryCode: categoryCode.trim(), declarations });
   }
 
+  /**
+   * A person confirming (or correcting) the product type the classifier
+   * proposed. The chosen code becomes the stated category and the same
+   * reading is re-checked - exactly the manual path, one click shorter. The
+   * classifier's suggestion is never sent on its own; only what was chosen.
+   */
+  function handleConfirmCategory(code) {
+    setCopied(false);
+    setCategoryCode(code);
+    evaluate({ categoryCode: code, declarations });
+  }
+
+  /**
+   * A person answering a fact the label suggested - yes, no, or not sure.
+   * Recorded as their declaration, never as the classifier's, and the same
+   * reading is re-checked with it.
+   */
+  function handleConfirmFact(code, answer) {
+    setCopied(false);
+    const next = { ...declarations, [code]: answer };
+    setDeclarations(next);
+    evaluate({ categoryCode: categoryCode.trim(), declarations: next });
+  }
+
   async function handleCopyLink() {
     const url = `${window.location.origin}/result/${result.id}`;
     try {
@@ -352,7 +376,13 @@ export function ScanPage() {
 
       {result && (
         <>
-          <ComplianceResult result={result} imageUrl={previewUrl} />
+          <ComplianceResult
+            result={result}
+            imageUrl={previewUrl}
+            disabled={isBusy}
+            onConfirmCategory={handleConfirmCategory}
+            onConfirmFact={handleConfirmFact}
+          />
 
           {/*
             Offered after the verdict, not only before it. A user learns which

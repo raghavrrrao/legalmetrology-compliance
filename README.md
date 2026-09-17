@@ -575,6 +575,7 @@ Gunicorn is POSIX-only and does not run on Windows; use the container or
 | [docs/security.md](docs/security.md) | Upload validation, secrets, threat notes |
 | [docs/ai-ml-strategy.md](docs/ai-ml-strategy.md) | What AI does and does not decide |
 | [docs/ml/product-classification.md](docs/ml/product-classification.md) | The product category classifier: taxonomy, dataset, model, measured results, and why it decides nothing |
+| [docs/automatic-applicability.md](docs/automatic-applicability.md) | How a classification reaches applicability: the accepted-classifier policy, the states, precedence over human input, and what a person still confirms |
 | [docs/data-strategy.md](docs/data-strategy.md) | Training, evaluation, demo and legal reference data |
 | [docs/evaluation-strategy.md](docs/evaluation-strategy.md) | How performance will be measured |
 

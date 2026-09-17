@@ -1,3 +1,4 @@
+import { ApplicabilityAssessment } from './ApplicabilityAssessment.jsx';
 import { DeclarationsPanel } from './DeclarationsPanel.jsx';
 import { EvidencePanel } from './EvidencePanel.jsx';
 import { ExtractionPanel } from './ExtractionPanel.jsx';
@@ -37,10 +38,29 @@ import { ViolationsList } from './ViolationsList.jsx';
  * and a screen that listed it beside the extracted net quantity would present
  * it as one.
  */
-export function ComplianceResult({ result, imageUrl }) {
+export function ComplianceResult({
+  result,
+  imageUrl,
+  onConfirmCategory,
+  onConfirmFact,
+  disabled = false,
+}) {
   return (
     <div className="result">
       <VerdictBanner result={result} />
+
+      {/*
+        Directly under the verdict, because it says what chose the rule set.
+        A reader must not get to the findings without knowing whether a person
+        or the label classifier decided which requirements were checked - and,
+        when nothing decided it, that the type is still to be confirmed.
+      */}
+      <ApplicabilityAssessment
+        assessment={result.applicabilityAssessment}
+        disabled={disabled}
+        onConfirmCategory={onConfirmCategory}
+        onConfirmFact={onConfirmFact}
+      />
 
       {result.extraction?.isPlaceholder && (
         <p className="panel panel--warning">

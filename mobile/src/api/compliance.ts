@@ -143,6 +143,7 @@ export function mapResult(data: ComplianceCheckWire | null | undefined): Complia
     processingMs: asNumberOrNull(data.processing_ms),
     completedAt: data.completed_at ?? null,
     productCategoryCode: data.product_category_code ?? null,
+    productCategorySource: typeof data.product_category_source === 'string' ? data.product_category_source : null,
     applicabilityDeclarations: Array.isArray(data.applicability_declarations)
       ? data.applicability_declarations.map(mapDeclaration)
       : [],

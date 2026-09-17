@@ -146,6 +146,7 @@ export function complianceBody(overrides: Partial<ComplianceCheckWire> = {}): Co
     processing_ms: 41,
     completed_at: '2026-09-16T10:00:00Z',
     product_category_code: 'packaged-food',
+    product_category_source: 'submitter',
     applicability_declarations: [],
     violations: [
       {

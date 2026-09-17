@@ -25,6 +25,7 @@ validation, writes no rows itself, and opens no transaction - see
 from __future__ import annotations
 
 import logging
+from functools import partial
 
 from django.core.exceptions import ValidationError as DjangoValidationError
 from rest_framework import status
@@ -34,7 +35,7 @@ from rest_framework.views import APIView
 
 from apps.catalog.models import ProductCategory
 from apps.compliance.api.serializers import ComplianceCheckSerializer
-from apps.compliance.services import analysis_service
+from apps.compliance.services import analysis_service, auto_applicability
 from apps.core.api.permissions import IsAuthenticatedOrDemoPublic
 from apps.images.api.serializers import ImageAnalysisRequestSerializer
 
@@ -68,14 +69,18 @@ class ImageAnalysisView(APIView):
         validated = request_data.validated_data
 
         category = self._category(validated.get("category_code"))
+        uploaded_by = request.user if request.user.is_authenticated else None
 
         try:
             outcome = analysis_service.analyse_upload(
                 validated["image"],
                 category=category,
-                uploaded_by=(
-                    request.user if request.user.is_authenticated else None
+                # Consulted only when no category was stated: the accepted
+                # classification policy may establish one from the reading.
+                identify=partial(
+                    auto_applicability.establish_category, created_by=uploaded_by
                 ),
+                uploaded_by=uploaded_by,
                 view_type=validated["view_type"],
             )
         except DjangoValidationError as exc:

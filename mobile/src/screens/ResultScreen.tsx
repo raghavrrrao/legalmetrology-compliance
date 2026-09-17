@@ -82,7 +82,13 @@ export function ResultScreen({ navigation }: RootScreenProps<'Result'>) {
           label="Product type used"
           value={
             result.productCategoryCode
-              ? humaniseCode(result.productCategoryCode)
+              ? `${humaniseCode(result.productCategoryCode)}${
+                  // A model chose the rule set. Said here, beside the verdict, so
+                  // nobody reads the findings as if a person had stated the type.
+                  result.productCategorySource === 'classifier'
+                    ? ' — established automatically from the label by the classifier, under this server’s policy'
+                    : ''
+                }`
               : 'Not specified — the rules for a specific product type were not applied'
           }
           testID="product-type-used"

@@ -89,6 +89,16 @@ describe('ResultScreen', () => {
     expect(passed).toHaveTextContent('not a measure of compliance', { exact: false });
   });
 
+  it('says when the product type was chosen by the classifier rather than a person', async () => {
+    await renderResult(complianceBody({ product_category_source: 'classifier' }));
+    expect(screen.getByTestId('product-type-used')).toHaveTextContent('established automatically from the label', { exact: false });
+  });
+
+  it('does not describe a stated product type as automatic', async () => {
+    await renderResult(complianceBody({ product_category_source: 'submitter' }));
+    expect(screen.getByTestId('product-type-used')).not.toHaveTextContent('automatically', { exact: false });
+  });
+
   it('says when the product type was not known', async () => {
     await renderResult(complianceBody({ product_category_code: null, result: 'review_required', result_display: 'Review required' }));
     expect(screen.getByTestId('product-type-used')).toHaveTextContent('Not specified', { exact: false });

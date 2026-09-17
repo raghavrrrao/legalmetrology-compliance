@@ -35,6 +35,7 @@ from apps.compliance.models import (
     ComplianceFinding,
     ComplianceViolation,
 )
+from apps.compliance.services import auto_applicability
 from apps.extraction.api.serializers import (
     ExtractedFieldSerializer,
     ExtractionRunSerializer,
@@ -444,7 +445,13 @@ class ComplianceEvaluationRequestSerializer(serializers.Serializer):
         if not declarations:
             return attrs
         run = attrs["extraction_run_id"]
-        if run.image.product is None and not attrs.get("category_code"):
+        if (
+            run.image.product is None
+            and not attrs.get("category_code")
+            # A category the accepted classification policy will establish
+            # is a product to hang them on too - see auto_applicability.
+            and not auto_applicability.can_establish_category(run)
+        ):
             raise serializers.ValidationError(
                 {
                     "applicability_declarations": (
@@ -488,7 +495,9 @@ class ComplianceCheckSerializer(serializers.ModelSerializer):
     extraction = ExtractionRunSerializer(source="extraction_run", read_only=True)
     image = ProductImageSerializer(source="extraction_run.image", read_only=True)
     product_category_code = serializers.SerializerMethodField()
+    product_category_source = serializers.SerializerMethodField()
     applicability_declarations = serializers.SerializerMethodField()
+    applicability_assessment = serializers.SerializerMethodField()
 
     class Meta:
         model = ComplianceCheck
@@ -507,7 +516,9 @@ class ComplianceCheckSerializer(serializers.ModelSerializer):
             "processing_ms",
             "completed_at",
             "product_category_code",
+            "product_category_source",
             "applicability_declarations",
+            "applicability_assessment",
             "violations",
             "findings",
             "extraction",
@@ -543,6 +554,31 @@ class ComplianceCheckSerializer(serializers.ModelSerializer):
         See `_product_category_code`, which the list serializer shares.
         """
         return _product_category_code(check)
+
+    def get_product_category_source(self, check: ComplianceCheck) -> str | None:
+        """Who set the category: `submitter`, `reviewer` or `classifier`.
+
+        Null when there is no category. The one word that tells a reader
+        whether the rules that ran were chosen by a person or, under an
+        accepted policy, by the label classifier.
+        """
+        if _product_category_code(check) is None:
+            return None
+        return check.product.category_source
+
+    def get_applicability_assessment(self, check: ComplianceCheck) -> dict:
+        """What the label classification proposed, and what became of it.
+
+        The fourth kind of evidence on a result, and the one most easily
+        mistaken for the others: a *suggestion* from a model, with the model's
+        own confidence attached. It is kept in its own key so a client cannot
+        render it as a reading, a declaration or a finding by accident, and it
+        says in `status` whether the policy accepted it (`confident`), offered
+        it for confirmation (`uncertain`), or had nothing to offer (`unknown`,
+        `failed`). `questions` is what a person still has to answer; empty
+        means nothing. See docs/automatic-applicability.md.
+        """
+        return auto_applicability.as_dict(auto_applicability.assess(check))
 
 
 class ComplianceCheckListSerializer(serializers.ModelSerializer):

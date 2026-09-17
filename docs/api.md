@@ -667,6 +667,30 @@ Empty is the ordinary case, and it means something: nothing was stated, so any
 clause whose applicability turns on such a fact was reported as undetermined
 rather than decided either way.
 
+#### `product_category_source` and `applicability_assessment`
+
+Additive, on the same three bodies. Together they answer "who chose the rule
+set, and what did the label classifier have to do with it?" — see
+[automatic-applicability.md](automatic-applicability.md).
+
+| Field | Notes |
+|---|---|
+| `product_category_source` | `submitter`, `reviewer` or `classifier`; `null` when there is no category. `classifier` means the deployment's accepted policy (`AUTOMATIC_APPLICABILITY_ACCEPTED_CLASSIFIERS`) established the category from the label classification without a person — the rules that ran were chosen by a model, and every client must say so. |
+| `applicability_assessment.status` | The **policy's** verdict on the classification, not a compliance state: `confident` (accepted, category established automatically), `uncertain` (a suggestion for a person), `unknown` (the classifier declined), `failed` (none recorded, null, or malformed). |
+| `.reason` | Why, in plain words. |
+| `.classifier` | `name`, `version`, `confidence` (the model's own, about the product type — never a compliance figure), `evidence[]`. |
+| `.policy` | `accepted`, `min_confidence`, `evaluation` — the entry that licensed this artifact, or `false` / `null`. |
+| `.category` | `proposed`, `proposed_name`, `confidence`, `in_effect`, `in_effect_source`, `disposition` (`established_automatically`, `confirmed_by_submitter`, `stated_by_submitter`, `contradicted_by_submitter`, `needs_confirmation`, `not_proposed`), `reason`. |
+| `.facts[]` | Conditions a subcategory suggested — `condition`, `name`, `proposed_answer`, `confidence`, `basis`, `affects[]` (`"6(1)(d): exempts"`), `in_effect` (`yes`/`no`/`unknown`, from the declaration rows), `in_effect_source`, `disposition`, `reason`. **Never recorded from the classifier**; `in_effect` changes only when a person declares. |
+| `.questions[]` | What a person still has to answer, and nothing else: `kind` (`category` / `condition`), `code`, `suggested`, `prompt`, `choices[]` (`{code, name}` for a category question — the active categories, so a client need not hardcode them). Empty means nothing is open. |
+
+A confirmation is sent through the existing request fields — `category_code`
+for the type, `applicability_declarations` for a fact — and the response then
+reports `confirmed_by_submitter`. The classifier's suggestion is never sent by a
+client on its own behalf. One relaxation on the request: `applicability_declarations`
+without `category_code` is accepted when the policy will establish a category
+for the run; under the default (empty) policy the request is refused as before.
+
 #### There is no compliance score
 
 **No percentage, no grade, no aggregate confidence exists in this API, and none

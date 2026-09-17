@@ -96,7 +96,9 @@ import {
  * @property {string} resultDisplay
  * @property {string} summary
  * @property {string|null} productCategoryCode
+ * @property {string|null} productCategorySource  submitter | reviewer | classifier, or null
  * @property {AppliedDeclaration[]} applicabilityDeclarations
+ * @property {ApplicabilityAssessment|null} applicabilityAssessment
  * @property {Finding[]} findings
  * @property {boolean} findingsReported  false against a backend with no findings[]
  * @property {Violation[]} violations
@@ -202,6 +204,79 @@ function mapDeclaration(declaration) {
 }
 
 /**
+ * @typedef {object} ApplicabilityAssessment
+ * @property {'confident'|'uncertain'|'unknown'|'failed'|string} status  the policy's reliability verdict, NOT a compliance state
+ * @property {string} reason
+ * @property {{name: string, version: string, confidence: number|null, evidence: string[]}} classifier
+ * @property {{accepted: boolean, minConfidence: number|null, evaluation: string|null}} policy
+ * @property {{proposed: string|null, proposedName: string|null, confidence: number|null, inEffect: string|null, inEffectSource: string|null, disposition: string, reason: string}} category
+ * @property {{condition: string, name: string, proposedAnswer: string, confidence: number|null, basis: string, affects: string[], inEffect: string, inEffectSource: string|null, disposition: string, reason: string}[]} facts
+ * @property {{kind: string, code: string|null, suggested: string|null, prompt: string, choices: {code: string, name: string}[]}[]} questions
+ */
+
+/**
+ * The fourth kind of evidence on a result, and the one most easily mistaken
+ * for the other three: what the label *classifier* proposed, with the
+ * backend's verdict on how far that can be relied on. `status` is about the
+ * classification's reliability for applicability - `confident` means the
+ * backend's accepted policy established the category automatically,
+ * `uncertain` means it is a suggestion for a person - and it must never be
+ * shown as, or folded into, a compliance status. Null against a backend that
+ * predates the field, which the UI treats as "nothing to show".
+ *
+ * @returns {ApplicabilityAssessment|null}
+ */
+export function mapAssessment(data) {
+  if (!data || typeof data !== 'object' || typeof data.status !== 'string') {
+    return null;
+  }
+  const category = data.category ?? {};
+  return {
+    status: data.status,
+    reason: data.reason || '',
+    classifier: {
+      name: data.classifier?.name || '',
+      version: data.classifier?.version || '',
+      confidence: data.classifier?.confidence ?? null,
+      evidence: Array.isArray(data.classifier?.evidence) ? data.classifier.evidence : [],
+    },
+    policy: {
+      accepted: Boolean(data.policy?.accepted),
+      minConfidence: data.policy?.min_confidence ?? null,
+      evaluation: data.policy?.evaluation ?? null,
+    },
+    category: {
+      proposed: category.proposed ?? null,
+      proposedName: category.proposed_name ?? null,
+      confidence: category.confidence ?? null,
+      inEffect: category.in_effect ?? null,
+      inEffectSource: category.in_effect_source ?? null,
+      disposition: category.disposition || 'not_proposed',
+      reason: category.reason || '',
+    },
+    facts: (Array.isArray(data.facts) ? data.facts : []).map((fact) => ({
+      condition: fact.condition,
+      name: fact.name || fact.condition,
+      proposedAnswer: fact.proposed_answer || '',
+      confidence: fact.confidence ?? null,
+      basis: fact.basis || '',
+      affects: Array.isArray(fact.affects) ? fact.affects : [],
+      inEffect: fact.in_effect || 'unknown',
+      inEffectSource: fact.in_effect_source ?? null,
+      disposition: fact.disposition || 'not_proposed',
+      reason: fact.reason || '',
+    })),
+    questions: (Array.isArray(data.questions) ? data.questions : []).map((question) => ({
+      kind: question.kind,
+      code: question.code ?? null,
+      suggested: question.suggested ?? null,
+      prompt: question.prompt || '',
+      choices: Array.isArray(question.choices) ? question.choices : [],
+    })),
+  };
+}
+
+/**
  * @param {object} data the `ComplianceCheck` body
  * @returns {ComplianceResult}
  */
@@ -235,9 +310,13 @@ function mapResult(data) {
     processingMs: data.processing_ms ?? null,
     completedAt: data.completed_at ?? null,
     productCategoryCode: data.product_category_code ?? null,
+    // Who set the category - `submitter`, `reviewer` or `classifier`. Null
+    // when there is no category, and against a backend that predates it.
+    productCategorySource: data.product_category_source ?? null,
     applicabilityDeclarations: Array.isArray(data.applicability_declarations)
       ? data.applicability_declarations.map(mapDeclaration)
       : [],
+    applicabilityAssessment: mapAssessment(data.applicability_assessment),
     findingsReported,
     findings: findingsReported ? data.findings.map(mapFinding) : [],
     violations: (data.violations ?? []).map(mapViolation),
