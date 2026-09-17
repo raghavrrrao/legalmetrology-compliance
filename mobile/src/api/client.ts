@@ -44,6 +44,8 @@ export interface ApiErrorOptions {
   status?: number;
   code?: string;
   details?: unknown;
+  /** The underlying error, for development logs. Never shown to a user. */
+  cause?: unknown;
 }
 
 /**
@@ -59,8 +61,8 @@ export class ApiError extends Error {
   readonly code: string;
   readonly details: unknown;
 
-  constructor(message: string, { status = 0, code = 'network_error', details = null }: ApiErrorOptions = {}) {
-    super(message);
+  constructor(message: string, { status = 0, code = 'network_error', details = null, cause }: ApiErrorOptions = {}) {
+    super(message, cause === undefined ? undefined : { cause });
     this.name = 'ApiError';
     this.status = status;
     this.code = code;
@@ -74,9 +76,9 @@ export class ApiError extends Error {
 }
 
 /**
- * A file as React Native's `FormData` expects it: a local `uri` plus the
- * `name` and `type` the multipart part is sent with. There is no `File` or
- * `Blob` on the native side; the networking layer reads the uri itself.
+ * A photograph to upload: its local `uri`, and the `name` and `type` the
+ * multipart part is sent with. `extraction.ts` turns this into the part the
+ * runtime's fetch can encode; nothing here reads the file.
  */
 export interface UploadFile {
   uri: string;
@@ -198,14 +200,21 @@ export async function apiRequest<T = unknown>(path: string, options: RequestOpti
     });
   } catch (cause) {
     // fetch rejects for no network, DNS failure, TLS failure and abort alike,
-    // and does not reliably say which. The message stays general rather than
-    // guessing and misleading whoever is debugging.
-    const aborted = (cause as { name?: string } | null)?.name === 'AbortError';
+    // and does not reliably say which. It also rejects, before any request is
+    // made, when it cannot encode the body - expo/fetch does this for a
+    // multipart part it does not support. The user-facing message stays
+    // general rather than guessing; the underlying error travels as `cause`
+    // so a development log can say what actually happened.
+    // Our own controller is the authority on "was this aborted": React
+    // Native's fetch rejects with an AbortError, but expo/fetch rejects with
+    // a FetchError reading "Fetch request has been canceled", which by name
+    // alone looks like a network failure.
+    const aborted = controller.signal.aborted || (cause as { name?: string } | null)?.name === 'AbortError';
     throw new ApiError(
       aborted
         ? 'The request timed out or was cancelled.'
         : 'Unable to connect to the analysis server.',
-      { status: 0, code: aborted ? 'timeout' : 'network_error' },
+      { status: 0, code: aborted ? 'timeout' : 'network_error', cause },
     );
   } finally {
     clearTimeout(timeoutId);

@@ -11,7 +11,7 @@ import {
   mapProductClassification,
 } from './extraction';
 import { classificationBody, errorEnvelope, extractionBody, jsonResponse, RUN_ID } from '../../tests/fixtures';
-import type { RecordedPart } from '../../tests/setup';
+import { mockFileBytes, type RecordedPart } from '../../tests/setup';
 
 const fetchMock = jest.fn();
 
@@ -24,12 +24,24 @@ function parts(formData: FormData): RecordedPart[] {
 }
 
 describe('buildUploadFormData', () => {
-  it('sends the file under the field name the backend reads, with name and type', () => {
+  it('sends the file under the field name the backend reads, with name, type and a byte source', () => {
     const formData = buildUploadFormData({ uri: 'file:///tmp/a.jpg', name: 'label.jpg', type: 'image/jpeg' });
 
+    // `bytes()` is what expo/fetch reads; `uri` is what React Native's own
+    // fetch reads. See uploadPart.expoFetch.test.ts for the encoding itself.
     expect(parts(formData)).toEqual([
-      { fieldName: 'image', value: { uri: 'file:///tmp/a.jpg', name: 'label.jpg', type: 'image/jpeg' } },
+      {
+        fieldName: 'image',
+        value: { uri: 'file:///tmp/a.jpg', name: 'label.jpg', type: 'image/jpeg', bytes: expect.any(Function) },
+      },
     ]);
+  });
+
+  it('reads the bytes from the picked file, lazily', async () => {
+    const formData = buildUploadFormData({ uri: 'file:///cache/ImagePicker/x.jpeg', name: 'label.jpg', type: 'image/jpeg' });
+    const part = parts(formData)[0].value as { bytes: () => Promise<Uint8Array> };
+
+    await expect(part.bytes()).resolves.toEqual(mockFileBytes);
   });
 
   it('adds view_type only when given', () => {

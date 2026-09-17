@@ -29,6 +29,36 @@ jest.mock('expo-constants', () => ({
   default: { expoConfig: { hostUri: undefined } },
 }));
 
+/**
+ * `expo-file-system`'s `File` reads the picked photograph off disk through a
+ * native module. The double records the uri it was given and hands back a
+ * fixed byte sequence, so an upload test can see that the body was built
+ * from the file the user picked.
+ */
+/** The bytes the fake File hands back: the start of a JPEG header. */
+export const mockFileBytes = new Uint8Array([0xff, 0xd8, 0xff, 0xe0, 0x00, 0x10, 0x4a, 0x46]);
+
+jest.mock('expo-file-system', () => ({
+  File: class FakeFile {
+    readonly uri: string;
+    readonly exists = true;
+    readonly size = 8;
+    readonly type = 'image/jpeg';
+
+    constructor(...uris: string[]) {
+      this.uri = uris.join('/');
+    }
+
+    get name(): string {
+      return this.uri.split('/').pop() ?? '';
+    }
+
+    bytes(): Promise<Uint8Array> {
+      return Promise.resolve(mockFileBytes);
+    }
+  },
+}));
+
 export interface RecordedPart {
   fieldName: string;
   value: unknown;

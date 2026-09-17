@@ -11,6 +11,8 @@
  * propagate. It decides nothing.
  */
 
+import { File } from 'expo-file-system';
+
 import { ApiError, apiClient, type RequestOptions, type UploadFile } from './client';
 import type {
   ExtractedField,
@@ -130,17 +132,54 @@ export interface ExtractLabelOptions extends Pick<RequestOptions, 'signal'> {
 }
 
 /**
+ * A multipart file part in the one shape both fetch implementations accept.
+ *
+ * Expo replaces the global `fetch` with `expo/fetch` (expo/src/winter/
+ * runtime.native.ts), and its multipart encoder does not read React Native's
+ * legacy `{ uri }` part - it throws "Unsupported FormDataPart implementation"
+ * before any request is made, which the client could only report as a
+ * network failure. What it does encode is a File-like object: `name` and
+ * `type` become the part headers and `bytes()` supplies the content. React
+ * Native's own fetch (restored by EXPO_PUBLIC_USE_RN_FETCH=1) reads `uri`,
+ * `name` and `type` instead. Carrying all four keeps the upload working
+ * under either.
+ *
+ * `name` and `type` are the validated values from `imageValidation.ts`, not
+ * whatever the file on disk is called, because the backend checks the
+ * extension and declared type of the part it receives before decoding it.
+ */
+export interface UploadPart {
+  uri: string;
+  name: string;
+  type: string;
+  bytes: () => Promise<Uint8Array>;
+}
+
+export function toUploadPart(file: UploadFile): UploadPart {
+  // Read lazily, when the body is encoded, so building the form costs nothing
+  // and a file that has vanished from the cache fails at upload time with a
+  // real error rather than at selection time.
+  const handle = new File(file.uri);
+  return {
+    uri: file.uri,
+    name: file.name,
+    type: file.type,
+    bytes: () => handle.bytes(),
+  };
+}
+
+/**
  * Build the multipart body for an upload.
  *
  * Exported so a test can check what is sent without a server: the field name
  * the backend reads (`image`), and the file part's `name` and `type`, which
- * the backend's validators check before decoding the bytes.
+ * the backend's validators check before decoding the bytes. Content-Type is
+ * never set here: the fetch implementation generates the boundary.
  */
 export function buildUploadFormData(file: UploadFile, viewType?: string): FormData {
   const formData = new FormData();
-  // React Native's FormData accepts { uri, name, type } and reads the file
-  // itself. The DOM typings only know Blob, hence the cast.
-  formData.append('image', file as unknown as Blob);
+  // The DOM typings only know Blob; the runtime accepts the File-like part.
+  formData.append('image', toUploadPart(file) as unknown as Blob);
   if (viewType) {
     formData.append('view_type', viewType);
   }

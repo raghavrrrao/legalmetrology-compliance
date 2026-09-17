@@ -196,6 +196,19 @@ describe('network failures', () => {
     expect(error.message).toBe('Unable to connect to the analysis server.');
   });
 
+  it('keeps the underlying error as the cause, for development logs', async () => {
+    // expo/fetch rejects before any request when it cannot encode the body.
+    // The user still sees "unable to connect"; the log must say why.
+    fetchMock.mockRejectedValue(new Error('Unsupported FormDataPart implementation'));
+
+    const error = (await apiRequest('extraction/', { method: 'POST', formData: new FormData() }).catch((e: unknown) => e)) as ApiError;
+
+    expect(error.code).toBe('network_error');
+    expect(error.status).toBe(0);
+    expect(error.cause).toEqual(expect.objectContaining({ message: 'Unsupported FormDataPart implementation' }));
+    expect(error.message).not.toContain('FormDataPart');
+  });
+
   it('reports an abort as a timeout', async () => {
     const abort = new Error('Aborted');
     abort.name = 'AbortError';
@@ -205,6 +218,32 @@ describe('network failures', () => {
 
     expect(error.code).toBe('timeout');
     expect(error.isNetworkError).toBe(true);
+  });
+
+  it("classifies our own timeout as a timeout even when fetch calls it a cancellation", async () => {
+    // expo/fetch rejects an aborted request with a FetchError whose name is
+    // "Error" and whose message is "fetch failed: Fetch request has been
+    // canceled" - not an AbortError.
+    jest.useFakeTimers();
+    try {
+      fetchMock.mockImplementation(
+        (_url: string, init: { signal: AbortSignal }) =>
+          new Promise((_resolve, reject) => {
+            init.signal.addEventListener('abort', () => {
+              reject(new Error('fetch failed: Fetch request has been canceled'));
+            });
+          }),
+      );
+
+      const pending = apiRequest('health/', { timeoutMs: 1000 });
+      jest.advanceTimersByTime(1001);
+
+      const error = (await pending.catch((e: unknown) => e)) as ApiError;
+      expect(error.code).toBe('timeout');
+      expect(error.cause).toEqual(expect.objectContaining({ message: 'fetch failed: Fetch request has been canceled' }));
+    } finally {
+      jest.useRealTimers();
+    }
   });
 
   it('aborts the request when the timeout elapses', async () => {
