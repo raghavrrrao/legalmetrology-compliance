@@ -67,7 +67,14 @@ The end-to-end flow the whole system exists to serve:
         │  preprocess ──▶ OCR ──▶ field extraction
         ▼
   ExtractionRun + ExtractedLabelField rows
-        │                       readings, with confidence and bounding boxes
+        │                       readings, with confidence and bounding boxes,
+        │                       plus the classifier's category as METADATA
+        ▼
+  apps.compliance.services.auto_applicability   (API layer calls it; the
+        │   engine never reads the classification)
+        │   reads the classification, applies the accepted-classifier policy;
+        │   may create Product.category — nothing else — and only when no
+        │   person stated one and the policy names this artifact. Default: none
         ▼
   apps.compliance.services.engine   ◀── ProductApplicabilityDeclaration
         │                                   facts a PERSON stated, never
@@ -326,6 +333,17 @@ Product + ExtractionRun
 govern a package must not read its label at all — evaluating and discarding
 would still let a misread declaration reach a finding on a package the clause
 never covered.
+
+**The classifier reaches applicability through one door.** `Product.category`
+selects the rules and answers the one category-derived condition; it is set by
+a person, or — under `AUTOMATIC_APPLICABILITY_ACCEPTED_CLASSIFIERS`, per
+artifact, citing the evaluation that licensed it — by
+`auto_applicability.establish_category`. That module can write nothing else:
+no declaration, no scope gate, no finding. The default policy accepts no
+artifact, so today every classification is a suggestion the person confirms;
+`test_classification_isolation.py` still asserts the engine, the resolver and
+every validator never read a classification. See
+[docs/automatic-applicability.md](docs/automatic-applicability.md).
 
 Four guarantees, each covered by a test:
 

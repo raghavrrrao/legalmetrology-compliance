@@ -15,6 +15,8 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { ScanPage } from './ScanPage.jsx';
 import {
   applicabilityBody,
+  assessedFactBody,
+  assessmentBody,
   complianceBody,
   declarationBody,
   extractionBody,
@@ -1056,6 +1058,136 @@ describe('legal context and evidence', () => {
   });
 });
 
+describe('automatic applicability', () => {
+  it('shows the classifier suggestion as a question, not as the product type used', async () => {
+    routeFetch();
+    renderPage();
+    await uploadAndSubmit();
+
+    await screen.findByTestId('applicability-assessment');
+    expect(screen.getByText('Needs your confirmation')).toBeInTheDocument();
+    expect(screen.getByTestId('assessment-category')).toHaveTextContent(/not established/i);
+    expect(screen.getByTestId('category-question')).toHaveTextContent(/reads like packaged non-food/i);
+    // The suggestion was not sent: the evaluation request carried no category.
+    const body = JSON.parse(callsTo('/compliance/')[0][1].body);
+    expect(body.category_code).toBeUndefined();
+  });
+
+  it('confirming the suggested type re-checks the same reading with that category, without re-uploading', async () => {
+    routeFetch();
+    renderPage();
+    await uploadAndSubmit();
+    await screen.findByTestId('category-question');
+
+    fireEvent.click(screen.getByRole('button', { name: /yes, packaged non-food/i }));
+
+    await waitFor(() => expect(callsTo('/compliance/')).toHaveLength(2));
+    expect(callsTo('/extraction/')).toHaveLength(1);
+    const second = JSON.parse(callsTo('/compliance/')[1][1].body);
+    expect(second.extraction_run_id).toBe(extractionBody().id);
+    expect(second.category_code).toBe('packaged-non-food');
+    expect(second.applicability_declarations).toBeUndefined();
+  });
+
+  it("correcting the suggestion sends the type the person chose, not the classifier's", async () => {
+    routeFetch();
+    renderPage();
+    await uploadAndSubmit();
+    await screen.findByTestId('category-question');
+
+    fireEvent.click(screen.getByRole('button', { name: /^packaged food$/i }));
+
+    await waitFor(() => expect(callsTo('/compliance/')).toHaveLength(2));
+    expect(JSON.parse(callsTo('/compliance/')[1][1].body).category_code).toBe('packaged-food');
+  });
+
+  it("answering a suggested fact records it as the person's declaration", async () => {
+    routeFetch({
+      compliance: jsonResponse(
+        complianceBody({
+          product_category_code: 'packaged-non-food',
+          product_category_source: 'submitter',
+          applicability_assessment: assessmentBody({
+            category: {
+              proposed: 'packaged-non-food',
+              proposed_name: 'Packaged non-food',
+              confidence: 0.72,
+              in_effect: 'packaged-non-food',
+              in_effect_source: 'submitter',
+              disposition: 'confirmed_by_submitter',
+              reason: 'A person stated it.',
+            },
+            facts: [assessedFactBody()],
+            questions: [
+              {
+                kind: 'condition',
+                code: 'cosmetics-and-toiletries',
+                suggested: 'yes',
+                prompt: 'Is this package soaps, shampoos, toothpastes and other cosmetics and toiletries? The label suggests it may be.',
+                choices: [],
+              },
+            ],
+          }),
+        }),
+        201,
+      ),
+    });
+    renderPage();
+    await uploadAndSubmit();
+    const question = await screen.findByTestId('fact-question-cosmetics-and-toiletries');
+
+    fireEvent.click(within(question).getByRole('button', { name: 'No' }));
+
+    await waitFor(() => expect(callsTo('/compliance/')).toHaveLength(2));
+    expect(callsTo('/extraction/')).toHaveLength(1);
+    const second = JSON.parse(callsTo('/compliance/')[1][1].body);
+    expect(second.applicability_declarations).toEqual({ 'cosmetics-and-toiletries': 'no' });
+  });
+
+  it('says when the category was established automatically, and by what', async () => {
+    routeFetch({
+      compliance: jsonResponse(
+        complianceBody({
+          product_category_code: 'packaged-non-food',
+          product_category_source: 'classifier',
+          applicability_assessment: assessmentBody({
+            status: 'confident',
+            policy: { accepted: true, min_confidence: 0.85, evaluation: 'docs/ml/evaluations/example.md' },
+            category: {
+              proposed: 'packaged-non-food',
+              proposed_name: 'Packaged non-food',
+              confidence: 0.9,
+              in_effect: 'packaged-non-food',
+              in_effect_source: 'classifier',
+              disposition: 'established_automatically',
+              reason: 'Established automatically.',
+            },
+            questions: [],
+          }),
+        }),
+        201,
+      ),
+    });
+    renderPage();
+    await uploadAndSubmit();
+
+    const notice = await screen.findByTestId('assessment-automatic');
+    expect(notice).toHaveTextContent(/chosen by the label classifier/i);
+    expect(notice).toHaveTextContent(/tfidf-logreg 0.1.0/);
+    expect(screen.queryByTestId('category-question')).not.toBeInTheDocument();
+  });
+
+  it('renders a result from a backend that predates the assessment', async () => {
+    const { applicability_assessment: _omitted, ...older } = complianceBody();
+    routeFetch({ compliance: jsonResponse(older, 201) });
+    renderPage();
+    await uploadAndSubmit();
+
+    await screen.findByText(/review required/i);
+    expect(screen.queryByTestId('applicability-assessment')).not.toBeInTheDocument();
+  });
+});
+
 describe('no compliance score', () => {
   it('shows no percentage or score anywhere on the result', async () => {
     routeFetch({
@@ -1076,13 +1208,18 @@ describe('no compliance score', () => {
     await screen.findByText(/compliant/i);
     expect(screen.queryByText(/compliance score/i)).not.toBeInTheDocument();
     expect(screen.queryByText(/\b\d{1,3}\s*\/\s*100\b/)).not.toBeInTheDocument();
-    // The one percentage the screen may show is the OCR engine's own reported
-    // confidence in a reading, which is labelled as such and affects nothing.
-    // Asserted non-empty first, so this cannot pass by there being no numbers
-    // on the page at all.
+    // The only percentages the screen may show are two model confidences that
+    // are each labelled as such and affect nothing: the OCR engine's reported
+    // confidence in a reading (91%), and the label classifier's confidence in
+    // the *product type* (72%), which the card states is not a compliance
+    // figure. Asserted non-empty first, so this cannot pass by there being no
+    // numbers on the page at all.
     const percentages = container.textContent.match(/\d+%/g) ?? [];
     expect(percentages.length).toBeGreaterThan(0);
-    expect(new Set(percentages)).toEqual(new Set(['91%']));
+    expect(new Set(percentages)).toEqual(new Set(['91%', '72%']));
     expect(screen.getAllByText(/reading confidence/i).length).toBeGreaterThan(0);
+    expect(
+      screen.getByText(/confidence about the product type — this is not a compliance figure/i),
+    ).toBeInTheDocument();
   });
 });

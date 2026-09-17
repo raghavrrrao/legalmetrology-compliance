@@ -166,6 +166,8 @@ export interface ComplianceCheckWire {
   processing_ms?: number | null;
   completed_at?: string | null;
   product_category_code?: string | null;
+  /** Who set the category: submitter | reviewer | classifier. Absent on older backends. */
+  product_category_source?: string | null;
   applicability_declarations?: AppliedDeclarationWire[];
   violations?: ViolationWire[];
   findings?: FindingWire[];
@@ -338,6 +340,12 @@ export interface ComplianceResult {
   processingMs: number | null;
   completedAt: string | null;
   productCategoryCode: string | null;
+  /**
+   * `submitter`, `reviewer` or `classifier` - whether a person or, under the
+   * backend's accepted policy, the label classifier chose the rule set. Null
+   * when there is no category or the backend predates the field.
+   */
+  productCategorySource: string | null;
   applicabilityDeclarations: AppliedDeclaration[];
   /** False against a backend that sends no `findings` key at all. */
   findingsReported: boolean;

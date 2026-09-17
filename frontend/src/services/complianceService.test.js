@@ -16,6 +16,8 @@ import {
 } from './complianceService.js';
 import { extractLabel } from './extractionService.js';
 import {
+  assessedFactBody,
+  assessmentBody,
   complianceBody,
   extractionBody,
   findingBody,
@@ -373,5 +375,73 @@ describe('fetchComplianceHistory', () => {
       status: 404,
       code: 'not_found',
     });
+  });
+});
+
+describe('applicability assessment', () => {
+  it('maps the assessment field for field, into its own key', async () => {
+    fetch.mockResolvedValue(
+      jsonResponse(
+        complianceBody({
+          product_category_source: 'submitter',
+          applicability_assessment: assessmentBody({ facts: [assessedFactBody()] }),
+        }),
+        201,
+      ),
+    );
+
+    const result = await evaluateExtractionRun('run-1');
+
+    expect(result.productCategorySource).toBe('submitter');
+    const assessment = result.applicabilityAssessment;
+    expect(assessment.status).toBe('uncertain');
+    expect(assessment.classifier).toEqual({
+      name: 'tfidf-logreg',
+      version: '0.1.0',
+      confidence: 0.72,
+      evidence: ['signal: soap / bathing bar (typical of cosmetics-and-toiletries)'],
+    });
+    expect(assessment.policy).toEqual({ accepted: false, minConfidence: null, evaluation: null });
+    expect(assessment.category).toEqual(
+      expect.objectContaining({
+        proposed: 'packaged-non-food',
+        proposedName: 'Packaged non-food',
+        confidence: 0.72,
+        inEffect: null,
+        inEffectSource: null,
+        disposition: 'needs_confirmation',
+      }),
+    );
+    expect(assessment.facts).toEqual([
+      expect.objectContaining({
+        condition: 'cosmetics-and-toiletries',
+        proposedAnswer: 'yes',
+        confidence: 0.56,
+        affects: ['6(1)(d): exempts', '6(8): requires'],
+        inEffect: 'unknown',
+        inEffectSource: null,
+        disposition: 'needs_confirmation',
+      }),
+    ]);
+    expect(assessment.questions).toEqual([
+      expect.objectContaining({ kind: 'category', suggested: 'packaged-non-food' }),
+    ]);
+  });
+
+  it('is null against a backend that predates the field, not an empty assessment', async () => {
+    const { applicability_assessment: _omitted, product_category_source: _also, ...older } = complianceBody();
+    fetch.mockResolvedValue(jsonResponse(older, 201));
+
+    const result = await evaluateExtractionRun('run-1');
+
+    expect(result.applicabilityAssessment).toBeNull();
+    expect(result.productCategorySource).toBeNull();
+  });
+
+  it('treats a malformed assessment as absent', async () => {
+    fetch.mockResolvedValue(
+      jsonResponse(complianceBody({ applicability_assessment: 'uncertain' }), 201),
+    );
+    expect((await evaluateExtractionRun('run-1')).applicabilityAssessment).toBeNull();
   });
 });

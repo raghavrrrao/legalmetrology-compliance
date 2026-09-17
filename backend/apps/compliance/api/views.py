@@ -42,7 +42,7 @@ from apps.compliance.models import (
     ComplianceFinding,
     ComplianceViolation,
 )
-from apps.compliance.services import analysis_service
+from apps.compliance.services import analysis_service, auto_applicability
 from apps.core.api.pagination import DefaultPageNumberPagination
 
 logger = logging.getLogger(__name__)
@@ -91,14 +91,26 @@ class ComplianceEvaluationView(APIView):
         # Already resolved to a row by the serializer, so the run this
         # evaluates is the one whose existence was validated.
         run = validated["extraction_run_id"]
+        requested_by = request.user if request.user.is_authenticated else None
+
+        # Precedence, in this order and nowhere else: a category the caller
+        # stated; the product the image is already linked to (evaluate_run
+        # keeps it); then - only with neither - a category the accepted
+        # classification policy establishes, which is a product row carrying
+        # its provenance. The classifier never overrides a person.
+        category = self._category(validated.get("category_code"))
+        product = None
+        if category is None and run.image.product_id is None:
+            product = auto_applicability.establish_category(
+                run, created_by=requested_by
+            )
 
         check = analysis_service.evaluate_run(
             run,
-            category=self._category(validated.get("category_code")),
+            product=product,
+            category=category,
             declarations=validated.get("applicability_declarations") or {},
-            requested_by=(
-                request.user if request.user.is_authenticated else None
-            ),
+            requested_by=requested_by,
         )
 
         body = ComplianceCheckSerializer(

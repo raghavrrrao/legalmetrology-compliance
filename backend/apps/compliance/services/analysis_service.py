@@ -97,6 +97,7 @@ def analyse_upload(
     *,
     product: Product | None = None,
     category: ProductCategory | None = None,
+    identify=None,
     uploaded_by=None,
     view_type: str = ProductImage.ViewType.UNSPECIFIED,
     engine_name: str | None = None,
@@ -114,6 +115,14 @@ def analyse_upload(
             when `product` is given - that product's own category wins, and
             silently reassigning it would rewrite a record the user did not ask
             to change.
+        identify: Called with the stored run when neither `product` nor
+            `category` was given, and may return a `Product` to evaluate
+            against, or None to evaluate with the commodity unknown. The seam
+            through which the API layer offers an identification it made from
+            the reading; this module does not know how it was made, and the
+            engine treats the row exactly as one a caller supplied. A person
+            who states a category is never overridden through it, because it
+            is not consulted when one was stated.
         uploaded_by: The authenticated user, or None.
         view_type: Which panel of the package the photograph shows.
         engine_name: Override the configured pipeline. For comparing engines.
@@ -142,6 +151,9 @@ def analyse_upload(
         engine_name=engine_name,
         engine_version=engine_version,
     )
+
+    if product is None and identify is not None:
+        product = identify(outcome.run)
 
     check = engine.evaluate(
         outcome.run, product=product, requested_by=uploaded_by

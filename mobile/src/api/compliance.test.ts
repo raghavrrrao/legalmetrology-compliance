@@ -153,6 +153,13 @@ describe('mapResult', () => {
     expect(mapResult(body).rulesNotApplicable).toBeNull();
   });
 
+  it('carries who set the category, and null when the backend predates the field', () => {
+    expect(mapResult(complianceBody()).productCategorySource).toBe('submitter');
+    expect(mapResult(complianceBody({ product_category_source: 'classifier' })).productCategorySource).toBe('classifier');
+    const { product_category_source: _omitted, ...older } = complianceBody();
+    expect(mapResult(older).productCategorySource).toBeNull();
+  });
+
   it('keeps an unknown product category null', () => {
     const result = mapResult(complianceBody({ product_category_code: null, result: 'review_required' }));
     expect(result.productCategoryCode).toBeNull();
