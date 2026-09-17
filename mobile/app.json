@@ -1,0 +1,40 @@
+{
+  "expo": {
+    "name": "Label Check",
+    "slug": "legalmetrology-label-check",
+    "version": "0.1.0",
+    "orientation": "portrait",
+    "icon": "./assets/icon.png",
+    "userInterfaceStyle": "light",
+    "ios": {
+      "bundleIdentifier": "in.legalmetrology.labelcheck",
+      "supportsTablet": true,
+      "infoPlist": {
+        "ITSAppUsesNonExemptEncryption": false
+      }
+    },
+    "android": {
+      "package": "in.legalmetrology.labelcheck",
+      "adaptiveIcon": {
+        "backgroundColor": "#F6F7F9",
+        "foregroundImage": "./assets/android-icon-foreground.png",
+        "backgroundImage": "./assets/android-icon-background.png",
+        "monochromeImage": "./assets/android-icon-monochrome.png"
+      },
+      "predictiveBackGestureEnabled": false,
+      "blockedPermissions": [
+        "android.permission.RECORD_AUDIO"
+      ]
+    },
+    "plugins": [
+      [
+        "expo-image-picker",
+        {
+          "cameraPermission": "Label Check uses the camera to photograph a product label so it can be checked.",
+          "photosPermission": "Label Check lets you choose an existing photo of a product label to check.",
+          "microphonePermission": false
+        }
+      ]
+    ]
+  }
+}

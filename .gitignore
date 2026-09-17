@@ -9,6 +9,9 @@
 # committed so a production build is reproducible rather than depending on
 # whatever was in one person's shell. Nothing confidential goes in it.
 !frontend/.env.production
+# Same reasoning for the mobile client: EXPO_PUBLIC_ variables are inlined into
+# the app bundle, so the deployed API URL is public configuration there too.
+!mobile/.env.production
 *.pem
 *.key
 *.p12
@@ -56,6 +59,13 @@ node_modules/
 /frontend/dist/
 /frontend/build/
 /frontend/coverage/
+/mobile/coverage/
+# Expo's local cache and export output, and the native projects it generates
+# on demand (`npx expo prebuild`). Native code is generated, not authored.
+/mobile/.expo/
+/mobile/dist/
+/mobile/android/
+/mobile/ios/
 .vite/
 npm-debug.log*
 yarn-debug.log*
