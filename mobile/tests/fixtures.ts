@@ -129,6 +129,54 @@ export function findingBody(overrides: Partial<FindingWire> = {}): FindingWire {
   };
 }
 
+/**
+ * `applicability_assessment` as the backend's `auto_applicability.as_dict`
+ * shapes it, trimmed to the keys this app reads. The default is the shipped
+ * situation: the classifier committed, the policy accepts nothing, so the
+ * category is a suggestion with the label evidence behind it.
+ */
+export function assessmentBody(overrides: Record<string, unknown> = {}) {
+  return {
+    status: 'uncertain',
+    reason:
+      'The classifier tfidf-logreg 0.1.0 is not accepted for automatic use: no held-out evaluation on verified labels has established an operating point for it, so its category is a suggestion for a person to confirm.',
+    classifier: { name: 'tfidf-logreg', version: '0.1.0', confidence: 0.72 },
+    category: {
+      proposed: 'packaged-non-food',
+      proposed_name: 'Packaged non-food',
+      confidence: 0.72,
+      in_effect: null,
+      in_effect_source: null,
+      disposition: 'needs_confirmation',
+    },
+    evidence: {
+      has_supporting_evidence: true,
+      note: '',
+      label_signals: [
+        {
+          phrase: 'soap / bathing bar',
+          indicative_of: 'cosmetics-and-toiletries',
+          snippet: '…dove beauty bathing bar moisturising cream…',
+        },
+      ],
+      declared_fields: [{ field_key: 'net_quantity', value: 'Net Qty: 100 g' }],
+      model_terms: ['bathing'],
+    },
+    questions: [
+      {
+        kind: 'category',
+        code: 'packaged-non-food',
+        suggested: 'packaged-non-food',
+        prompt: 'The label reads like packaged non-food. Is that right?',
+        outcome:
+          'Answering selects the requirements loaded for that product type and checks them against this same reading. The photograph is not uploaded or read again, and the answer is recorded as yours.',
+        choices: [],
+      },
+    ],
+    ...overrides,
+  };
+}
+
 /** A `ComplianceCheck`, as `POST /api/v1/compliance/` returns it. */
 export function complianceBody(overrides: Partial<ComplianceCheckWire> = {}): ComplianceCheckWire {
   return {
@@ -147,6 +195,7 @@ export function complianceBody(overrides: Partial<ComplianceCheckWire> = {}): Co
     completed_at: '2026-09-16T10:00:00Z',
     product_category_code: 'packaged-food',
     product_category_source: 'submitter',
+    applicability_assessment: assessmentBody(),
     applicability_declarations: [],
     violations: [
       {

@@ -3,11 +3,17 @@ import { StyleSheet, Text, View } from 'react-native';
 import { Button } from './Button';
 import { Card } from './Card';
 import { colors, spacing, typography } from '../theme';
-import type { ProductClassification } from '../types/api';
+import type { ApplicabilityAssessment, ProductClassification } from '../types/api';
 import { formatConfidence, humaniseCode } from '../utils/format';
 
 interface ClassificationCardProps {
   classification: ProductClassification;
+  /**
+   * The backend's assessment of the same classification: why it was not acted
+   * on, what the label says, and what confirming would do. Absent against a
+   * backend that predates it, and the card then renders exactly as it did.
+   */
+  assessment?: ApplicabilityAssessment | null;
   /**
    * Offered when the result was produced without a product type and the
    * classifier named one. Confirming sends the category to the backend for
@@ -28,7 +34,12 @@ interface ClassificationCardProps {
  * combines it with the verdict. `category: "unknown"` means the classifier
  * ran and declined to choose, which is shown in those words.
  */
-export function ClassificationCard({ classification, onUseAsProductType, busy = false }: ClassificationCardProps) {
+export function ClassificationCard({
+  classification,
+  assessment = null,
+  onUseAsProductType,
+  busy = false,
+}: ClassificationCardProps) {
   const isUnknown = classification.category === 'unknown';
   const categoryLabel = isUnknown ? 'Could not tell' : humaniseCode(classification.category);
 
@@ -60,6 +71,51 @@ export function ClassificationCard({ classification, onUseAsProductType, busy = 
         This confidence is the classifier’s confidence in the product type. It says nothing about
         whether the label complies with the Rules.
       </Text>
+
+      {/*
+        Why the suggestion was not acted on. The backend's sentence, not one
+        written here: the policy is the server's and the two clients must not
+        describe it differently.
+      */}
+      {assessment?.reason ? (
+        <Text style={styles.note} testID="classification-reason">
+          {assessment.reason}
+        </Text>
+      ) : null}
+
+      {/*
+        What the photograph actually says. Phrases the reading contains, each
+        with the words around it, so the person confirming can check the label
+        rather than trust the number above. Capped for a small screen.
+      */}
+      {assessment ? (
+        <View style={styles.evidence} testID="classification-evidence">
+          <Text style={styles.label}>What the label says</Text>
+          {assessment.hasSupportingEvidence && assessment.labelSignals.length > 0 ? (
+            <>
+              {assessment.labelSignals.slice(0, MAX_SIGNALS).map((signal) => (
+                <View key={signal.phrase} style={styles.signal} testID={`signal-${signal.phrase}`}>
+                  <Text style={styles.signalPhrase}>{signal.phrase}</Text>
+                  {signal.snippet ? (
+                    <Text style={styles.signalSnippet} selectable>
+                      “{signal.snippet}”
+                    </Text>
+                  ) : null}
+                </View>
+              ))}
+              <Text style={styles.note}>
+                These phrases are typically found on this kind of product. They do not establish
+                what this product is.
+              </Text>
+            </>
+          ) : (
+            <Text style={styles.note} testID="classification-no-evidence">
+              {assessment.evidenceNote ||
+                'No supporting evidence from the label was reported for this suggestion.'}
+            </Text>
+          )}
+        </View>
+      ) : null}
       {onUseAsProductType && !isUnknown ? (
         <Button
           variant="secondary"
@@ -71,13 +127,40 @@ export function ClassificationCard({ classification, onUseAsProductType, busy = 
           testID="use-classification"
         />
       ) : null}
+      {onUseAsProductType && !isUnknown && assessment?.categoryQuestionOutcome ? (
+        <Text style={styles.note} testID="classification-outcome">
+          {assessment.categoryQuestionOutcome}
+        </Text>
+      ) : null}
     </Card>
   );
 }
 
+/** Enough for a person to recognise the label; short enough for a phone. */
+const MAX_SIGNALS = 3;
+
 const styles = StyleSheet.create({
   row: {
     marginBottom: spacing.sm,
+  },
+  evidence: {
+    marginTop: spacing.md,
+    paddingTop: spacing.md,
+    borderTopWidth: 1,
+    borderTopColor: colors.border,
+  },
+  signal: {
+    marginTop: spacing.sm,
+  },
+  signalPhrase: {
+    ...typography.small,
+    fontWeight: '600',
+    color: colors.text,
+  },
+  signalSnippet: {
+    ...typography.caption,
+    color: colors.textSecondary,
+    fontStyle: 'italic',
   },
   label: {
     ...typography.caption,

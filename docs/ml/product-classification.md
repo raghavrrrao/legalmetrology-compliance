@@ -616,11 +616,18 @@ Two kinds, both human-readable strings, both capped by configuration:
   cleaned text is reported: `signal: fssai (typical of packaged-food)`.
   **The model never reads this table.** It exists so a classification can
   be checked against the photograph in seconds, and so tests can assert what
-  a known label surfaces independently of what the model decides. An
+  a known label surfaces independently of what the model decides. The backend
+  re-matches it against a run's stored reading to build
+  `applicability_assessment.evidence`, which is how a person asked to confirm
+  a product type sees the phrases *and the words around them* rather than a
+  number — see [automatic-applicability.md](../automatic-applicability.md). An
   ingredient list appears on a soap as readily as on a biscuit; the signal
   says the phrase is there, the model weighs the whole text.
-- **Terms** — the n-grams present in the text whose coefficient contributed
-  most to the chosen subcategory's score, largest first:
+- **Terms** — model internals, and surfaced as such: the assessment parses
+  them out of these strings into `evidence.model_terms` for a technical
+  disclosure, never beside the suggestion. They are the n-grams present in the
+  text whose coefficient contributed most to the chosen subcategory's score,
+  largest first:
   `term: 'helmet' weighed for cleaning-product`. This is real: for a linear
   model the contribution of a term is exactly its weight times its
   coefficient. It is also revealing — on ten products the top terms include

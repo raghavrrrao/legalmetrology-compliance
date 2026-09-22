@@ -644,3 +644,78 @@ def _record_failure_best_effort(
             "follows",
             run.pk,
         )
+
+
+# --- explaining a reading ----------------------------------------------------
+
+
+@dataclass(frozen=True)
+class LabelPhrase:
+    """A phrase a reading contains, and what it is typically found on.
+
+    A plain value, deliberately: it crosses into `apps.compliance`, which must
+    not gain a dependency on an ML type to describe its own evidence.
+    """
+
+    phrase: str
+    #: A category or subcategory code this phrase is *typically* found with.
+    #: A display hint about the phrase, never a claim about this package.
+    indicative_of: str
+    #: The surrounding text, so the phrase can be found on the photograph.
+    snippet: str
+
+
+#: Characters of surrounding reading shown either side of a matched phrase.
+_SNIPPET_CONTEXT = 40
+
+
+def label_phrases(text: str | None, *, limit: int = 6) -> tuple[LabelPhrase, ...]:
+    """The signal-table phrases that occur in `text`, with their context.
+
+    **This lives here because of where the ML boundary is, not because it is
+    extraction.** `test_only_the_extraction_service_reaches_the_ml_runtime`
+    holds this module as the single place the backend may import anything under
+    `labelextract` beyond the shared contracts, and the phrase table lives
+    there. Its caller is `apps.compliance.services.auto_applicability`, which
+    shows a person what the label says when it has to ask them what kind of
+    product it is.
+
+    No engine runs. `labelextract.classification.signals` is a reviewed table
+    of about thirty-five label phrases whose own docstring records that the
+    model never reads it, and `preprocess_text` is a pure function that changes
+    encoding, case and whitespace and nothing else - `preprocessing.py`
+    documents its output as "the text a person reads to check a
+    classification", which is exactly what a snippet should be. So this is a
+    regex pass over text already in memory: no OCR, no model, no artifact load.
+
+    Returns an empty tuple for empty text, and on any import failure - a broken
+    ML install costs the snippets and nothing else.
+    """
+    if not text or not text.strip():
+        return ()
+    try:
+        from labelextract.classification.preprocessing import preprocess_text
+        from labelextract.classification.signals import matched_signals
+    except Exception:  # pragma: no cover - a broken ML install
+        logger.warning("Label phrase table unavailable; continuing without it")
+        return ()
+
+    cleaned = preprocess_text(text)
+    phrases: list[LabelPhrase] = []
+    for signal in matched_signals(cleaned):
+        match = signal.pattern.search(cleaned)
+        if match is None:  # pragma: no cover - matched_signals just said it does
+            continue
+        left = max(0, match.start() - _SNIPPET_CONTEXT)
+        right = min(len(cleaned), match.end() + _SNIPPET_CONTEXT)
+        body = cleaned[left:right].strip()
+        phrases.append(
+            LabelPhrase(
+                phrase=signal.label,
+                indicative_of=signal.indicative_of,
+                snippet=f"{'…' if left > 0 else ''}{body}{'…' if right < len(cleaned) else ''}",
+            )
+        )
+        if len(phrases) >= limit:
+            break
+    return tuple(phrases)

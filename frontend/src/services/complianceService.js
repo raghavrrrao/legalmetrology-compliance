@@ -211,7 +211,8 @@ function mapDeclaration(declaration) {
  * @property {{accepted: boolean, minConfidence: number|null, evaluation: string|null}} policy
  * @property {{proposed: string|null, proposedName: string|null, confidence: number|null, inEffect: string|null, inEffectSource: string|null, disposition: string, reason: string}} category
  * @property {{condition: string, name: string, proposedAnswer: string, confidence: number|null, basis: string, affects: string[], inEffect: string, inEffectSource: string|null, disposition: string, reason: string}[]} facts
- * @property {{kind: string, code: string|null, suggested: string|null, prompt: string, choices: {code: string, name: string}[]}[]} questions
+ * @property {{kind: string, code: string|null, suggested: string|null, prompt: string, outcome: string, choices: {code: string, name: string}[]}[]} questions
+ * @property {{hasSupportingEvidence: boolean, note: string, labelSignals: {phrase: string, indicativeOf: string, snippet: string}[], declaredFields: {fieldKey: string, value: string}[], modelTerms: string[]}} evidence
  */
 
 /**
@@ -271,8 +272,35 @@ export function mapAssessment(data) {
       code: question.code ?? null,
       suggested: question.suggested ?? null,
       prompt: question.prompt || '',
+      // What answering will do, in the backend's words, so the two clients
+      // cannot describe the same mechanism differently.
+      outcome: question.outcome || '',
       choices: Array.isArray(question.choices) ? question.choices : [],
     })),
+    // The reading behind the suggestion. Three kinds, kept apart: phrases
+    // found in this reading, declarations the extractor read, and the model's
+    // own terms. Absent against a backend that predates the field, which
+    // renders as "no evidence was reported" rather than as "no evidence".
+    evidence: mapEvidence(data.evidence),
+  };
+}
+
+/** @returns {ApplicabilityAssessment['evidence']} */
+function mapEvidence(data) {
+  const source = data && typeof data === 'object' ? data : {};
+  return {
+    hasSupportingEvidence: Boolean(source.has_supporting_evidence),
+    note: source.note || '',
+    labelSignals: (Array.isArray(source.label_signals) ? source.label_signals : []).map((signal) => ({
+      phrase: signal.phrase || '',
+      indicativeOf: signal.indicative_of || '',
+      snippet: signal.snippet || '',
+    })),
+    declaredFields: (Array.isArray(source.declared_fields) ? source.declared_fields : []).map((field) => ({
+      fieldKey: field.field_key || '',
+      value: field.value || '',
+    })),
+    modelTerms: Array.isArray(source.model_terms) ? source.model_terms : [],
   };
 }
 

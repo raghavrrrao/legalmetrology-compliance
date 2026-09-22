@@ -1,5 +1,6 @@
 import { StatusBadge } from './StatusBadge.jsx';
 import { formatConfidence } from '../utils/compliance.js';
+import { humaniseCode } from '../utils/format.js';
 
 /**
  * What the label classifier proposed, what became of it, and what is left to
@@ -23,6 +24,16 @@ import { formatConfidence } from '../utils/compliance.js';
  *    the backend's; this component renders them. The backend's `status` is
  *    the policy's reliability verdict (`confident`, `uncertain`, `unknown`,
  *    `failed`), and it is shown as that, never rounded to a compliance state.
+ * 5. **The evidence is the reading, not the model.** Phrases found in the
+ *    photograph's own text are shown with the surrounding words, so the person
+ *    being asked can check them against the label in seconds. When there is no
+ *    such evidence the card says so in a sentence rather than leaving an empty
+ *    space that reads as "nothing to worry about". The model's own terms stay
+ *    in the technical disclosure, labelled as internals - they explain how the
+ *    model weighed the text, and they are not facts about the product.
+ *
+ * Status is never carried by colour alone: every state has a word in the badge
+ * and a sentence in the body.
  */
 
 const STATUS_TONE = Object.freeze({
@@ -55,7 +66,7 @@ export function ApplicabilityAssessment({
     return null;
   }
 
-  const { status, category, facts, questions, classifier, policy } = assessment;
+  const { status, category, facts, questions, classifier, policy, evidence } = assessment;
   // Without handlers - a stored result reopened from a link - the questions
   // are shown as open, not as buttons that would lead nowhere.
   const canAnswer = Boolean(onConfirmCategory && onConfirmFact);
@@ -109,16 +120,39 @@ export function ApplicabilityAssessment({
         )}
 
         {category.proposed && category.disposition !== 'established_automatically' && (
-          <p className="hint" data-testid="assessment-proposal">
-            The label reads like <strong>{category.proposedName ?? category.proposed}</strong>{' '}
-            to the classifier ({formatConfidence(category.confidence)} confidence about the
-            product type — this is not a compliance figure).{' '}
-            {category.disposition === 'confirmed_by_submitter' && 'You confirmed it.'}
-            {category.disposition === 'contradicted_by_submitter' &&
-              `You stated ${category.inEffect} instead; your statement is what was checked.`}
-            {category.disposition === 'needs_confirmation' && category.reason}
-          </p>
+          <>
+            <dl className="suggestion" data-testid="assessment-proposal">
+              <dt>Suggested product type</dt>
+              <dd>
+                <strong>{category.proposedName ?? category.proposed}</strong>{' '}
+                <span className="hint">
+                  — a suggestion from the label classifier, not an established fact
+                </span>
+              </dd>
+              <dt>Classifier confidence</dt>
+              <dd>
+                {formatConfidence(category.confidence) ?? 'Not reported'}{' '}
+                <span className="hint">
+                  in the <em>product type</em>. This is not a compliance figure, and no
+                  compliance figure can be derived from it.
+                </span>
+              </dd>
+            </dl>
+            <p className="hint" data-testid="assessment-proposal-reason">
+              {category.disposition === 'confirmed_by_submitter' && 'You confirmed it.'}
+              {category.disposition === 'contradicted_by_submitter' &&
+                `You stated ${category.inEffect} instead; your statement is what was checked.`}
+              {category.disposition === 'needs_confirmation' && category.reason}
+            </p>
+          </>
         )}
+
+        {/*
+          What the photograph actually says. Shown whenever the card is asking
+          for something, and for a settled suggestion too - a person reading a
+          result later needs the same basis the answer was given on.
+        */}
+        <EvidencePanel evidence={evidence} />
 
         {!category.proposed && !category.inEffect && (
           <p className="hint" data-testid="assessment-no-proposal">{category.reason}</p>
@@ -153,10 +187,8 @@ export function ApplicabilityAssessment({
                 </button>
               ))}
             </div>
-            <p className="hint">
-              Choosing a type re-checks the same reading — the photo is not
-              uploaded again. Leave it if you are not sure: the result then
-              says the type was not known rather than guessing.
+            <p className="hint" data-testid="category-question-outcome">
+              {categoryQuestion.outcome}
             </p>
           </div>
         )}
@@ -212,6 +244,11 @@ export function ApplicabilityAssessment({
                 Not sure
               </button>
             </div>
+            {question.outcome && (
+              <p className="hint" data-testid={`fact-question-outcome-${question.code}`}>
+                {question.outcome}
+              </p>
+            )}
           </div>
         ))}
 
@@ -221,18 +258,108 @@ export function ApplicabilityAssessment({
           </p>
         )}
 
-        <details className="technical-details">
-          <summary>Why the classifier is not trusted on its own</summary>
+        <details className="technical-details" data-testid="assessment-technical">
+          <summary>How this suggestion was produced</summary>
           <p className="hint">{assessment.reason}</p>
-          {classifier.evidence.length > 0 && (
-            <ul className="hint">
-              {classifier.evidence.map((item) => (
-                <li key={item}>{item}</li>
-              ))}
-            </ul>
+          <p className="hint">
+            Classifier: {classifier.name} {classifier.version}
+            {policy.accepted
+              ? ` · accepted for automatic use above ${formatConfidence(policy.minConfidence)}${
+                  policy.evaluation ? ` (${policy.evaluation})` : ''
+                }`
+              : ' · not accepted for automatic use on this server'}
+          </p>
+          {evidence.modelTerms.length > 0 && (
+            <>
+              <p className="hint">
+                Terms the model weighed most in this text. These are the model&rsquo;s
+                internals, not statements about the product — on a small training set
+                they include ordinary words.
+              </p>
+              <ul className="hint" data-testid="assessment-model-terms">
+                {evidence.modelTerms.map((term) => (
+                  <li key={term}>
+                    <code>{term}</code>
+                  </li>
+                ))}
+              </ul>
+            </>
           )}
         </details>
       </div>
     </section>
+  );
+}
+
+/**
+ * The reading behind the suggestion: phrases this photograph's text contains,
+ * and the declarations the extractor read off it.
+ *
+ * Two rules, both of which are the point of the panel:
+ *
+ * - **Nothing is displayed that is not in the reading.** Every phrase comes
+ *   from the backend with the surrounding words it was found in, and the
+ *   declarations are what the extractor read. There is no generated
+ *   explanation of the model's reasoning here.
+ * - **"No evidence" is a state, stated.** An empty panel would read as
+ *   reassurance. The backend's own sentence says what was missing.
+ */
+function EvidencePanel({ evidence }) {
+  if (!evidence) {
+    return null;
+  }
+
+  if (!evidence.hasSupportingEvidence) {
+    return (
+      <div className="evidence-panel" data-testid="assessment-evidence-empty">
+        <h3 className="evidence-panel__title">What the label says</h3>
+        <p className="hint">
+          {evidence.note ||
+            'No supporting evidence from the label was reported for this suggestion.'}
+        </p>
+      </div>
+    );
+  }
+
+  return (
+    <div className="evidence-panel" data-testid="assessment-evidence">
+      <h3 className="evidence-panel__title">What the label says</h3>
+
+      {evidence.labelSignals.length > 0 && (
+        <>
+          <p className="hint">
+            Phrases found in the text read from this photograph. Each is shown with the
+            words around it so you can check it against the label. A phrase is
+            <em> typically</em> found on this kind of product — it does not establish
+            what the product is.
+          </p>
+          <ul className="evidence-list" data-testid="assessment-label-signals">
+            {evidence.labelSignals.map((signal) => (
+              <li key={signal.phrase}>
+                <strong>{signal.phrase}</strong>{' '}
+                <span className="hint">typically found on: {signal.indicativeOf}</span>
+                <q className="evidence-list__snippet">{signal.snippet}</q>
+              </li>
+            ))}
+          </ul>
+        </>
+      )}
+
+      {evidence.declaredFields.length > 0 && (
+        <>
+          <p className="hint">
+            Declarations the reader extracted from the same photograph. Context for
+            whether the label was understood — not evidence of the product type.
+          </p>
+          <ul className="evidence-list" data-testid="assessment-declared-fields">
+            {evidence.declaredFields.map((field) => (
+              <li key={field.fieldKey}>
+                <strong>{humaniseCode(field.fieldKey)}:</strong> {field.value}
+              </li>
+            ))}
+          </ul>
+        </>
+      )}
+    </div>
   );
 }
