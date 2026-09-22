@@ -339,6 +339,143 @@ def cross_validate(
     return predictions, {"method": "leave-one-product-out", "folds": folds}
 
 
+# --- is the model worth anything at all? ------------------------------------
+
+
+#: Confidence cuts the sweep reports. Spans the classifier's own floor (0.60)
+#: to near-certainty, so the question "would a higher bar make the committed
+#: predictions trustworthy?" is answered with numbers rather than an opinion.
+THRESHOLD_SWEEP = (0.60, 0.65, 0.70, 0.75, 0.80, 0.85, 0.90, 0.95)
+
+
+def trivial_baselines(dataset: ClassificationDataset) -> dict[str, Any]:
+    """What a classifier that never reads the text scores on this dataset.
+
+    **The comparison that decides whether a model is worth shipping**, and the
+    one an accuracy figure on its own hides. A constant "packaged-food" answer
+    scores whatever the majority class's share is - on a set that is two-thirds
+    food, that is a strict accuracy of 0.64 from a function with no features,
+    no training and no ability to be right about anything else.
+
+    A model whose leave-one-product-out score does not beat these has not
+    learned to read a label; it has learned the class balance. Reporting them
+    beside the cross-validation is what stops a tuned hyperparameter looking
+    like progress.
+    """
+    truths = [example.category for example in dataset.examples]
+    baselines: dict[str, Any] = {}
+    for label in (*taxonomy.CATEGORIES, taxonomy.UNKNOWN):
+        metrics = compute_metrics(
+            truths, [label] * len(truths), labels=list(taxonomy.CATEGORIES)
+        )
+        baselines[f"always-{label}"] = {
+            "strict_accuracy": metrics.strict_accuracy,
+            "accuracy_on_predicted": metrics.accuracy_on_predicted,
+            "unknown_rate": metrics.unknown_rate,
+            "macro_f1": metrics.macro_f1,
+        }
+    return baselines
+
+
+def threshold_sweep(predictions: Sequence[Prediction]) -> list[dict[str, Any]]:
+    """Accuracy among committed predictions as the confidence bar is raised.
+
+    The evidence an acceptance policy would have to rest on. A model fit to be
+    relied on above some confidence shows accuracy *rising* as the bar rises,
+    and keeps enough coverage to be useful. One whose accuracy falls has a
+    confidence that is not evidence of correctness, and no cut can be chosen
+    from it - see `docs/automatic-applicability.md` on why
+    `AUTOMATIC_APPLICABILITY_ACCEPTED_CLASSIFIERS` is empty.
+
+    `coverage` is over every prediction, abstentions included, because a
+    threshold that is only ever met by three readings is not an operating
+    point a review workflow can use.
+    """
+    committed = [
+        item for item in predictions
+        if item.category not in (None, taxonomy.UNKNOWN) and item.confidence is not None
+    ]
+    rows = []
+    for threshold in THRESHOLD_SWEEP:
+        kept = [item for item in committed if item.confidence >= threshold]
+        correct = sum(1 for item in kept if item.category == item.true_category)
+        rows.append(
+            {
+                "min_confidence": threshold,
+                "n_committed": len(kept),
+                "n_correct": correct,
+                "accuracy_on_predicted": round(correct / len(kept), 4) if kept else None,
+                "coverage": round(len(kept) / len(predictions), 4) if predictions else 0.0,
+            }
+        )
+    return rows
+
+
+def confidence_separation(predictions: Sequence[Prediction]) -> dict[str, Any]:
+    """Whether correct and wrong predictions can be told apart by confidence.
+
+    `separable` is the whole point: false when the most confident wrong answer
+    is at least as confident as the most confident right one, which means no
+    threshold divides them and a policy built on one would be arbitrary.
+    """
+    committed = [
+        item for item in predictions
+        if item.category not in (None, taxonomy.UNKNOWN) and item.confidence is not None
+    ]
+    correct = [item.confidence for item in committed if item.category == item.true_category]
+    wrong = [item.confidence for item in committed if item.category != item.true_category]
+
+    def summary(values: list[float]) -> dict[str, Any]:
+        if not values:
+            return {"n": 0, "min": None, "max": None, "mean": None}
+        return {
+            "n": len(values),
+            "min": round(min(values), 4),
+            "max": round(max(values), 4),
+            "mean": round(sum(values) / len(values), 4),
+        }
+
+    return {
+        "correct": summary(correct),
+        "wrong": summary(wrong),
+        #: True only when every correct prediction is more confident than every
+        #: wrong one. Anything else and the distributions overlap.
+        "separable": bool(correct and wrong and min(correct) > max(wrong)),
+    }
+
+
+def per_product(predictions: Sequence[Prediction]) -> list[dict[str, Any]]:
+    """Held-out results one product at a time.
+
+    Aggregates hide which *products* the model can read. With ten products and
+    a class it has one example of, an aggregate says "0.36" where the per-
+    product view says "it gets every general food right and every other
+    product wrong", which is a different problem with a different fix.
+    """
+    by_product: dict[str, list[Prediction]] = {}
+    for item in predictions:
+        by_product.setdefault(item.product_id, []).append(item)
+
+    rows = []
+    for product_id, items in sorted(by_product.items()):
+        correct = sum(1 for item in items if item.category == item.true_category)
+        unknown = sum(1 for item in items if item.category in (None, taxonomy.UNKNOWN))
+        rows.append(
+            {
+                "product_id": product_id,
+                "true_category": items[0].true_category,
+                "true_subcategory": items[0].true_subcategory,
+                "n_examples": len(items),
+                "n_correct": correct,
+                "n_unknown": unknown,
+                "predicted_categories": sorted(
+                    {item.category for item in items if item.category}
+                ),
+            }
+        )
+    return rows
+
+
 # --- timing -----------------------------------------------------------------
 
 
@@ -440,9 +577,17 @@ def run(
             **fold_notes,
             "seconds": round(time.perf_counter() - started, 3),
             "metrics": {level: item.as_dict() for level, item in cv_metrics.items()},
+            # Recorded beside the metrics, never derived from them later: a
+            # report that does not carry its own comparison invites the
+            # headline accuracy to be read on its own.
+            "trivial_baselines": trivial_baselines(dataset),
+            "threshold_sweep": threshold_sweep(cv_predictions),
+            "confidence_separation": confidence_separation(cv_predictions),
+            "per_product": per_product(cv_predictions),
             "predictions": [item.as_dict() for item in cv_predictions],
         }
         _log_metrics(log, "leave-one-product-out", cv_metrics)
+        _log_comparison(log, report["cross_validation"], cv_metrics["category"])
 
     training = trainable(dataset.examples, config)
     excluded = [e.example_id for e in dataset.examples if e not in training]
@@ -505,6 +650,34 @@ def run(
         )
         log(f"report written: {report_path}")
     return report
+
+
+def _log_comparison(log, cv: dict[str, Any], category: ClassificationMetrics) -> None:
+    """Say plainly whether the model beat a classifier with no features.
+
+    Printed during training rather than left in the JSON, because the moment a
+    person is most likely to over-read an accuracy figure is the moment they
+    have just produced one.
+    """
+    baselines = cv["trivial_baselines"]
+    best_name, best = max(
+        baselines.items(), key=lambda item: item[1]["macro_f1"]
+    )
+    log("")
+    log(f"  best trivial baseline: {best_name} "
+        f"strict={best['strict_accuracy']:.3f} macro-F1={best['macro_f1']:.3f}")
+    if category.macro_f1 <= best["macro_f1"]:
+        log(f"  *** this model does NOT beat it (macro-F1 {category.macro_f1:.3f}). It has "
+            f"learned the class balance, not the label. ***")
+    else:
+        log(f"  this model beats it (macro-F1 {category.macro_f1:.3f}).")
+
+    separation = cv["confidence_separation"]
+    if not separation["separable"]:
+        log("  confidence does NOT separate correct from wrong predictions "
+            f"(correct max {separation['correct']['max']}, "
+            f"wrong max {separation['wrong']['max']}): no acceptance threshold "
+            "can be chosen from this run.")
 
 
 def _log_metrics(log, title: str, metrics: dict[str, ClassificationMetrics]) -> None:

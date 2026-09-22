@@ -22,7 +22,7 @@ product prints this".
 | Pipeline | `tesseract` **0.4.0** = 0.3.0 + this classifier. 0.3.0 stays registered without it. |
 | Model | `tfidf-logreg` **0.1.0**: TF-IDF (word uni- and bigrams) + multinomial logistic regression |
 | Trained on | `product-classification-seed-v0.1`: **33 texts from 10 products**, labels **model-drafted and unverified** |
-| Measured | Leave-one-product-out: category **strict accuracy 0.36**, unknown rate 0.33, `packaged-non-food` **never predicted** when its product is held out — see [Evaluation](#evaluation) |
+| Measured | Leave-one-product-out: category **strict accuracy 0.36**, unknown rate 0.33, `packaged-non-food` **never predicted** when its product is held out — and **below a constant "always food" classifier** (macro F1 0.279 vs 0.389). See [Evaluation](#evaluation) |
 | Artifact | 119,535 bytes of JSON, committed, evaluated in plain Python; no scikit-learn at runtime |
 | Latency | median **0.62 ms** per text for the whole `classify_text` call, on the development machine, artifact pre-loaded — see [Performance](#performance) for exactly what that covers |
 | Consumed by | `POST /api/v1/extraction/` and the `extraction` block of every compliance result, as `product_classification`. **Nothing in `apps.compliance` reads it.** |
@@ -482,6 +482,29 @@ so this document can be read alone. Metric definitions are in
 abstention counts as wrong for *strict accuracy* and as a miss for *recall*,
 and does not count as a prediction of any class for *precision*.
 
+### The comparison that matters: a classifier with no features
+
+Added in the evaluation review of 2026-09-22 and now regenerated into every
+metrics report (`cross_validation.trivial_baselines`). A constant answer that
+never reads the text scores the majority class's share:
+
+| "Model" | Strict accuracy | Macro F1 |
+|---|---|---|
+| Always `packaged-food` | **0.636** | **0.389** |
+| Always `packaged-non-food` | 0.364 | 0.267 |
+| Always abstain | 0.000 | 0.000 |
+| **The shipped artifact, leave-one-product-out** | **0.364** | **0.279** |
+
+**The shipped classifier scores below a constant.** So does every
+configuration tried in the sweep below. That is the single most important
+number in this document: on unseen products this artifact has not learned to
+read a label, it has learned that two-thirds of the seed set is food — and it
+has learned that *worse* than simply saying "food" every time.
+
+`train.py` prints this comparison at the end of every training run and says
+so in those words, so the next person to tune a hyperparameter sees it at the
+moment they are most likely to over-read an accuracy figure.
+
 ### Leave-one-product-out, category level (N = 33 texts, 10 folds)
 
 | | |
@@ -517,6 +540,28 @@ raising `min_category_confidence` would not have made the cross-validated
 result safer — it would have made it abstain on more of the right answers.
 The probabilities are not calibrated and cannot be, from ten products.
 
+**It is worse than "does not help": raising the bar makes it worse.** The
+threshold sweep is now computed into every report
+(`cross_validation.threshold_sweep`), and on the shipped artifact accuracy
+among committed predictions *falls monotonically* as the confidence bar
+rises:
+
+| Minimum confidence | Committed | Correct | Accuracy on predicted | Coverage |
+|---|---|---|---|---|
+| 0.60 | 22 | 12 | 0.545 | 0.667 |
+| 0.65 | 17 | 8 | 0.471 | 0.515 |
+| 0.70 | 10 | 2 | **0.200** | 0.303 |
+| 0.75 | 7 | 0 | **0.000** | 0.212 |
+| ≥ 0.80 | 0 | — | — | 0.000 |
+
+Every prediction this model makes above 0.75 confidence is wrong. A
+confidence threshold is the mechanism an acceptance policy would be built
+from, and on this artifact confidence is evidence *against* correctness. That
+is why `AUTOMATIC_APPLICABILITY_ACCEPTED_CLASSIFIERS` is empty and why no
+number could be put in it honestly — see
+[automatic-applicability.md](../automatic-applicability.md).
+`test_classification_evaluation.py` pins both readings.
+
 ### Resubstitution — the shipped artifact on its own training data
 
 Not a generalisation figure. Reported because it is what the regression
@@ -535,6 +580,58 @@ three-word side panel. The subcategory abstentions are mostly `general-food`
 `general-food` and `health-supplement`, and general food rarely reaches 0.50
 on its own. That is the thresholds working as intended — "a food, kind
 unclear" — on the very texts the model was fitted to.
+
+### Per-product results, and what they say the problem is
+
+Also regenerated into every report (`cross_validation.per_product`). Held
+out one product at a time:
+
+| Product | Class | Correct | Unknown |
+|---|---|---|---|
+| product_001 | non-food / cleaning-product | 0 / 7 | 0 |
+| product_002 | food / health-supplement | 0 / 5 | 5 |
+| product_003 | non-food / cosmetics-and-toiletries | 0 / 5 | 2 |
+| product_004–010 | food / general-food | 12 / 16 | 4 |
+
+The model is right about `general-food` and about nothing else. Every product
+whose **subcategory it has only one example of** — the cleaner, the
+supplement, the toiletry — fails completely, and the report's own
+`held_out_classes_absent_from_training` says why: holding that product out
+leaves a training set with none of its class in it at all.
+
+That is not a modelling failure. With one product per non-food subcategory
+there is nothing for any model to generalise from, and no hyperparameter
+recovers it.
+
+### Model experiments (2026-09-22), and why none was shipped
+
+Fourteen configurations, all scored leave-one-product-out on the same seed
+set, none judged on resubstitution. Representative results:
+
+| Configuration | Strict | Acc. on predicted | Unknown | Macro F1 | Non-food ever predicted |
+|---|---|---|---|---|---|
+| **Shipped 0.1.0** (word 1–2, min_df 2, C 1.0, balanced) | 0.364 | 0.545 | 0.333 | 0.279 | 0 |
+| Unigrams only / word 1–3 / min_df 3 | 0.394 | 0.565 | 0.303 | 0.295 | 0 |
+| C = 3.0 | 0.515 | 0.630 | 0.182 | 0.354 | 0 |
+| C = 10.0 | **0.576** | 0.655 | 0.121 | **0.380** | 0 |
+| `class_weight=None` | 0.576 | 0.655 | 0.121 | 0.380 | 0 |
+| min_df = 1 | 0.333 | 0.458 | 0.273 | 0.250 | 1 |
+| C = 0.1 / C = 0.3 | **0.000** | 0.000 | 0.55–0.64 | 0.000 | 2–5 |
+
+**Nothing was shipped, and the apparent winner is the reason why.** C = 10.0
+looks like a 58 % relative improvement in strict accuracy. It is the model
+abstaining less and answering "food" more: it never predicts `packaged-non-food`
+for an unseen product even once, so its macro F1 of 0.380 is still **below the
+constant-"food" baseline's 0.389**. Shipping it would have been publishing a
+worse-than-constant classifier as a large accuracy gain.
+
+The configurations that *do* ever predict non-food (C ≤ 0.3, min_df = 1) score
+0.000–0.333 strict accuracy — they are wrong nearly everywhere.
+
+The artifact therefore remains **0.1.0, unchanged and bit-identical**. The
+experiment script is not committed: it is a sweep over `TrainingConfig`
+values that anyone can reproduce with `--C` and `--min-df`, and a committed
+copy would imply the sweep is part of the shipped pipeline.
 
 ### Regression anchors
 
@@ -787,6 +884,34 @@ fact the engine may use — the same way it is today.
 - **Not measured:** anything on a held-out set with verified labels; anything
   multilingual; any calibration statistic; agreement with a human reviewer's
   category.
+- **Below a constant.** On unseen products the artifact scores worse than a
+  function that always answers `packaged-food`. Every metric in this document
+  should be read against that floor.
+- **Two non-food products, one per non-food subcategory.** This is the binding
+  constraint, and it cannot be fixed by modelling. `ml/data/` contains 28
+  photographs of 10 products and nothing else; the three evaluation sets
+  (`our-`, `usp-`, `hv-`) are the *same* 28 images with successively corrected
+  annotations, and all 28 are already in the classifier's seed set. There is no
+  unused real product data in the repository.
+
+### What would actually move this
+
+In rough order of value, and none of it is a code change:
+
+1. **More products per class, photographed the same way.** The immediate need
+   is non-food: at minimum five to ten distinct products each for
+   `cleaning-product`, `cosmetics-and-toiletries` and any other non-food
+   subcategory that is to be predicted at all. Until a class has several
+   products, leave-one-product-out cannot measure it and no model can learn it.
+2. **Human-verified labels.** All 33 seed labels are `claude-opus-5-draft`
+   with `label_verified_by: null`. A metric computed against unverified labels
+   measures agreement with a drafting model.
+3. **A held-out set of verified labels, split by product**, kept apart from
+   whatever is used for tuning — the only basis on which a calibration and an
+   operating point could be chosen.
+4. Only then: calibration (reliability diagram, ECE, temperature scaling) and,
+   if and only if accuracy rises with confidence at usable coverage, a proposed
+   acceptance-policy entry.
 
 ## Files
 

@@ -80,6 +80,20 @@ AUTOMATIC_APPLICABILITY_ACCEPTED_CLASSIFIERS={}
 AUTOMATIC_APPLICABILITY_ACCEPTED_CLASSIFIERS={"tfidf-logreg/0.2.0": {"min_confidence": 0.85, "evaluation": "docs/ml/evaluations/2026-10-tfidf-0.2.0.md"}}
 ```
 
+**Re-examined 2026-09-22, and the evidence got stronger, not weaker.** The
+metrics report now computes the threshold sweep directly
+(`cross_validation.threshold_sweep`): on the shipped artifact, accuracy among
+committed predictions *falls* as the confidence bar is raised — 0.545 at 0.60,
+0.200 at 0.70, and **0.000 at 0.75**, where every remaining prediction is
+wrong. The same review found that the artifact scores below a classifier that
+always answers `packaged-food` (macro F1 0.279 against 0.389), as does every
+one of fourteen configurations tried. A threshold is the mechanism this policy
+would be built on, and on this artifact confidence is evidence *against*
+correctness. The policy therefore stays empty, and
+`ml/tests/test_classification_evaluation.py` fails if either reading ever
+stops holding — including if it improves, which is when this document should
+be revisited.
+
 Rules the code enforces (`auto_applicability.py`):
 
 1. **Empty by default.** Today every committed classification is `uncertain`.

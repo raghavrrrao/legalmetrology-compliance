@@ -19,6 +19,21 @@
     "min_tokens": 3
   },
   "cross_validation": {
+    "confidence_separation": {
+      "correct": {
+        "max": 0.7205,
+        "mean": 0.6668,
+        "min": 0.6208,
+        "n": 12
+      },
+      "separable": false,
+      "wrong": {
+        "max": 0.7878,
+        "mean": 0.7455,
+        "min": 0.6477,
+        "n": 10
+      }
+    },
     "folds": [
       {
         "classes_in_training": [
@@ -268,6 +283,122 @@
         "unknown_rate": 1.0
       }
     },
+    "per_product": [
+      {
+        "n_correct": 0,
+        "n_examples": 7,
+        "n_unknown": 0,
+        "predicted_categories": [
+          "packaged-food"
+        ],
+        "product_id": "product_001",
+        "true_category": "packaged-non-food",
+        "true_subcategory": "cleaning-product"
+      },
+      {
+        "n_correct": 0,
+        "n_examples": 5,
+        "n_unknown": 5,
+        "predicted_categories": [
+          "unknown"
+        ],
+        "product_id": "product_002",
+        "true_category": "packaged-food",
+        "true_subcategory": "health-supplement"
+      },
+      {
+        "n_correct": 0,
+        "n_examples": 5,
+        "n_unknown": 2,
+        "predicted_categories": [
+          "packaged-food",
+          "unknown"
+        ],
+        "product_id": "product_003",
+        "true_category": "packaged-non-food",
+        "true_subcategory": "cosmetics-and-toiletries"
+      },
+      {
+        "n_correct": 2,
+        "n_examples": 2,
+        "n_unknown": 0,
+        "predicted_categories": [
+          "packaged-food"
+        ],
+        "product_id": "product_004",
+        "true_category": "packaged-food",
+        "true_subcategory": "general-food"
+      },
+      {
+        "n_correct": 1,
+        "n_examples": 2,
+        "n_unknown": 1,
+        "predicted_categories": [
+          "packaged-food",
+          "unknown"
+        ],
+        "product_id": "product_005",
+        "true_category": "packaged-food",
+        "true_subcategory": "general-food"
+      },
+      {
+        "n_correct": 2,
+        "n_examples": 2,
+        "n_unknown": 0,
+        "predicted_categories": [
+          "packaged-food"
+        ],
+        "product_id": "product_006",
+        "true_category": "packaged-food",
+        "true_subcategory": "general-food"
+      },
+      {
+        "n_correct": 1,
+        "n_examples": 3,
+        "n_unknown": 2,
+        "predicted_categories": [
+          "packaged-food",
+          "unknown"
+        ],
+        "product_id": "product_007",
+        "true_category": "packaged-food",
+        "true_subcategory": "general-food"
+      },
+      {
+        "n_correct": 2,
+        "n_examples": 2,
+        "n_unknown": 0,
+        "predicted_categories": [
+          "packaged-food"
+        ],
+        "product_id": "product_008",
+        "true_category": "packaged-food",
+        "true_subcategory": "general-food"
+      },
+      {
+        "n_correct": 3,
+        "n_examples": 3,
+        "n_unknown": 0,
+        "predicted_categories": [
+          "packaged-food"
+        ],
+        "product_id": "product_009",
+        "true_category": "packaged-food",
+        "true_subcategory": "general-food"
+      },
+      {
+        "n_correct": 1,
+        "n_examples": 2,
+        "n_unknown": 1,
+        "predicted_categories": [
+          "packaged-food",
+          "unknown"
+        ],
+        "product_id": "product_010",
+        "true_category": "packaged-food",
+        "true_subcategory": "general-food"
+      }
+    ],
     "predictions": [
       {
         "category_correct": false,
@@ -825,7 +956,85 @@
         "true_subcategory": "general-food"
       }
     ],
-    "seconds": 15.017
+    "seconds": 1.6,
+    "threshold_sweep": [
+      {
+        "accuracy_on_predicted": 0.5455,
+        "coverage": 0.6667,
+        "min_confidence": 0.6,
+        "n_committed": 22,
+        "n_correct": 12
+      },
+      {
+        "accuracy_on_predicted": 0.4706,
+        "coverage": 0.5152,
+        "min_confidence": 0.65,
+        "n_committed": 17,
+        "n_correct": 8
+      },
+      {
+        "accuracy_on_predicted": 0.2,
+        "coverage": 0.303,
+        "min_confidence": 0.7,
+        "n_committed": 10,
+        "n_correct": 2
+      },
+      {
+        "accuracy_on_predicted": 0.0,
+        "coverage": 0.2121,
+        "min_confidence": 0.75,
+        "n_committed": 7,
+        "n_correct": 0
+      },
+      {
+        "accuracy_on_predicted": null,
+        "coverage": 0.0,
+        "min_confidence": 0.8,
+        "n_committed": 0,
+        "n_correct": 0
+      },
+      {
+        "accuracy_on_predicted": null,
+        "coverage": 0.0,
+        "min_confidence": 0.85,
+        "n_committed": 0,
+        "n_correct": 0
+      },
+      {
+        "accuracy_on_predicted": null,
+        "coverage": 0.0,
+        "min_confidence": 0.9,
+        "n_committed": 0,
+        "n_correct": 0
+      },
+      {
+        "accuracy_on_predicted": null,
+        "coverage": 0.0,
+        "min_confidence": 0.95,
+        "n_committed": 0,
+        "n_correct": 0
+      }
+    ],
+    "trivial_baselines": {
+      "always-packaged-food": {
+        "accuracy_on_predicted": 0.6363636363636364,
+        "macro_f1": 0.3888888888888889,
+        "strict_accuracy": 0.6363636363636364,
+        "unknown_rate": 0.0
+      },
+      "always-packaged-non-food": {
+        "accuracy_on_predicted": 0.36363636363636365,
+        "macro_f1": 0.26666666666666666,
+        "strict_accuracy": 0.36363636363636365,
+        "unknown_rate": 0.0
+      },
+      "always-unknown": {
+        "accuracy_on_predicted": 0.0,
+        "macro_f1": 0.0,
+        "strict_accuracy": 0.0,
+        "unknown_rate": 1.0
+      }
+    }
   },
   "dataset": {
     "dataset_version": "product-classification-seed-v0.1",
@@ -852,13 +1061,13 @@
     "sha256": "d40c7751bd9baf265b4b0a4921947c3ee2c7d09c8433d9df1a069a2f0402ec5b",
     "unverified_labels": 33
   },
-  "generated_at": "2026-09-16T12:17:14+00:00",
+  "generated_at": "2026-09-22T17:47:04+00:00",
   "inference_latency": {
     "classify_ms_including_preprocessing": {
-      "max": 4.4059,
-      "mean": 0.7478,
-      "median": 0.6235,
-      "p95": 2.0246
+      "max": 24.5426,
+      "mean": 0.747,
+      "median": 0.6249,
+      "p95": 1.9126
     },
     "machine": {
       "platform": "Windows-10-10.0.26200-SP0",
@@ -867,10 +1076,10 @@
     },
     "n_texts": 33,
     "preprocessing_ms": {
-      "max": 1.0997,
-      "mean": 0.1172,
-      "median": 0.099,
-      "p95": 0.3084
+      "max": 20.8964,
+      "mean": 0.1265,
+      "median": 0.101,
+      "p95": 0.2921
     },
     "repeats": 50
   },
