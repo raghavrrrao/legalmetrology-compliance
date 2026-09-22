@@ -3353,3 +3353,51 @@ body {
 .card--assessment .question + .question {
   margin-top: var(--space-3);
 }
+
+/* --- classification evidence: what the label actually says ---------------- */
+
+.suggestion {
+  display: grid;
+  grid-template-columns: minmax(10rem, auto) 1fr;
+  gap: var(--space-1) var(--space-3);
+  margin: var(--space-3) 0;
+}
+
+.suggestion dt {
+  font-weight: 600;
+  color: var(--colour-muted);
+}
+
+.suggestion dd {
+  margin: 0;
+}
+
+.evidence-panel {
+  margin: var(--space-4) 0;
+  padding: var(--space-3) var(--space-4);
+  border: 1px solid var(--colour-border);
+  border-radius: var(--radius-2);
+  background: var(--colour-surface-sunken, transparent);
+}
+
+.evidence-panel__title {
+  margin: 0 0 var(--space-2);
+  font-size: 1rem;
+}
+
+.evidence-list {
+  margin: var(--space-2) 0 var(--space-3);
+  padding-left: 1.25rem;
+}
+
+.evidence-list li {
+  margin-bottom: var(--space-2);
+}
+
+.evidence-list__snippet {
+  display: block;
+  margin-top: var(--space-1);
+  font-family: var(--font-mono, monospace);
+  font-size: 0.85rem;
+  color: var(--colour-muted);
+}

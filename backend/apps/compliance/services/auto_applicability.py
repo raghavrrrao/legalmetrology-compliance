@@ -33,7 +33,10 @@ What this module is allowed to do, exhaustively
    then evaluated exactly as a row a person created would be. Nothing else is
    written: no declaration row is ever created from a classification.
 3. Describe, for a finished check, what the classification proposed, what is in
-   effect and from whom, and which questions a person still has to answer.
+   effect and from whom, which questions a person still has to answer, and the
+   **evidence from the reading** behind the suggestion - so that a person asked
+   to confirm a product type can see what the label actually says rather than
+   being handed a number.
 
 What it must never do
 ---------------------
@@ -77,15 +80,25 @@ from apps.catalog.models import Product, ProductApplicabilityDeclaration, Produc
 from apps.compliance.models import ComplianceCheck
 from apps.compliance.services import applicability
 from apps.extraction.models import ExtractionRun
+from apps.extraction.services import extraction_service
 from apps.rules.models import ApplicabilityCondition, RequirementApplicability
 
 logger = logging.getLogger(__name__)
 
 #: The value the classifier uses to say "I could not tell". Mirrors
 #: `labelextract.contracts.UNKNOWN_CATEGORY`; restated rather than imported
-#: because the backend reads the classifier's *recorded output*, which is JSON,
-#: and must not import the ML package to interpret it.
+#: because the *decision* below reads the classifier's recorded output, which is
+#: JSON. Nothing about the category, the policy or the applicability outcome is
+#: decided by importing the ML package. (Evidence gathering does import one
+#: module from it - see `_label_signals` - and that import decides nothing.)
 UNKNOWN_CATEGORY = "unknown"
+
+#: How many of each kind of evidence reaches a client. Enough for a person to
+#: recognise the label; short enough that the card stays readable on a phone.
+MAX_LABEL_SIGNALS = 6
+MAX_DECLARED_FIELDS = 6
+MAX_MODEL_TERMS = 5
+
 
 #: Subcategory code -> the applicability condition it corresponds to. Mirrors
 #: `labelextract.classification.taxonomy` for the same reason as above: the
@@ -418,6 +431,161 @@ def can_establish_category(run: ExtractionRun) -> bool:
 
 
 @dataclass(frozen=True)
+class LabelSignal:
+    """A phrase the reading actually contains, and what it usually indicates.
+
+    `phrase` and `indicative_of` come from `labelextract.classification.signals`
+    - a reviewed table of about thirty-five label phrases, which the model
+      never reads. `snippet` is the surrounding text from **this run's stored
+      reading**, so the person confirming can find it on the photograph.
+
+    "Typically found with" is the whole claim. An ingredients list appears on a
+    soap as readily as on a biscuit; the signal says the phrase is there, not
+    what the product is.
+    """
+
+    phrase: str
+    indicative_of: str
+    snippet: str
+
+
+@dataclass(frozen=True)
+class DeclaredField:
+    """One declaration the extractor read, offered as context for the suggestion.
+
+    Not evidence *for* a category - a net quantity says nothing about whether a
+    package is food - but it is what the pipeline actually read, and a person
+    deciding whether the system has understood the label at all needs to see it.
+    """
+
+    field_key: str
+    value: str
+
+
+@dataclass(frozen=True)
+class Evidence:
+    """What the reading offers in support of the classifier's suggestion.
+
+    Three lists, kept apart because they are three different kinds of thing:
+
+    - `label_signals` - phrases **in this reading**, checkable against the
+      photograph. The evidence a person can act on.
+    - `declared_fields` - what the extractor read off the label. Context.
+    - `model_terms` - n-grams the model weighed, as the classifier recorded
+      them. Model internals, not statements about the product: on a ten-product
+      training set these include function words. Reported for a developer
+      reading the technical detail, never as a reason the product is anything.
+
+    `has_supporting_evidence` is false when the first two are empty, and the
+    client must then say so plainly rather than implying the suggestion is
+    unsupported-but-probably-right. Nothing here is generated: every string is
+    either a phrase found in the reading, a value the extractor read, or a
+    term the classifier itself recorded.
+    """
+
+    label_signals: list[LabelSignal]
+    declared_fields: list[DeclaredField]
+    model_terms: list[str]
+    has_supporting_evidence: bool
+    note: str
+
+
+def _label_signals(run: ExtractionRun | None) -> list[LabelSignal]:
+    """Phrases the signal table finds in this run's stored reading.
+
+    Asked of `apps.extraction`, which owns the ML seam - see
+    `extraction_service.label_phrases` for why the lookup lives there and why
+    it runs no engine. Matched against the reading rather than read out of the
+    classification's recorded evidence strings, because matching gives the
+    position and so the snippet: "signal: soap / bathing bar" says a phrase was
+    seen and gives no way to see it, and the snippet is the whole point.
+
+    It decides nothing. No category, no policy outcome and no applicability
+    answer depends on the result.
+    """
+    text = (run.recognised_text or "") if run is not None else ""
+    return [
+        LabelSignal(
+            phrase=found.phrase,
+            indicative_of=found.indicative_of,
+            snippet=found.snippet,
+        )
+        for found in extraction_service.label_phrases(text, limit=MAX_LABEL_SIGNALS)
+    ]
+
+
+def _declared_fields(run: ExtractionRun | None) -> list[DeclaredField]:
+    """The declarations the extractor read, as it read them.
+
+    `run.fields.all()` reads the prefetch the result serializer already loads
+    for the embedded reading, so this costs no query on the response path.
+    """
+    if run is None:
+        return []
+    fields: list[DeclaredField] = []
+    for field in run.fields.all():
+        value = (field.raw_value or "").strip()
+        if not value:
+            continue
+        fields.append(DeclaredField(field_key=field.field_key, value=value))
+        if len(fields) >= MAX_DECLARED_FIELDS:
+            break
+    return fields
+
+
+def _model_terms(classification: Classification) -> list[str]:
+    """The n-grams the classifier recorded as having weighed most.
+
+    Parsed out of the evidence strings the classifier wrote - `term: 'x'
+    weighed for y` - so a client can keep them apart from the label phrases in
+    the same list. The quoted term is returned on its own; the subcategory it
+    was weighed for is not, because a term's contribution to a class the
+    classifier did not choose is not something to show beside a suggestion.
+    """
+    terms: list[str] = []
+    for item in classification.evidence:
+        if not item.startswith("term: "):
+            continue
+        quoted = item[len("term: ") :]
+        end = quoted.find("' weighed for ")
+        term = quoted[1:end] if quoted.startswith("'") and end > 0 else ""
+        if term:
+            terms.append(term)
+        if len(terms) >= MAX_MODEL_TERMS:
+            break
+    return terms
+
+
+def gather_evidence(run: ExtractionRun | None, classification: Classification) -> Evidence:
+    """What this reading offers in support of the classifier's suggestion."""
+    label_signals = _label_signals(run)
+    declared_fields = _declared_fields(run)
+    supporting = bool(label_signals or declared_fields)
+
+    if supporting:
+        note = ""
+    elif run is not None and (run.recognised_text or "").strip():
+        note = (
+            "The label was read, but none of the phrases this system recognises as "
+            "indicating a kind of product was found in it, and no declaration was "
+            "extracted. There is no evidence from the label behind this suggestion."
+        )
+    else:
+        note = (
+            "No text was read from this photograph, so there is no evidence from the "
+            "label to support any suggestion about what kind of product this is."
+        )
+
+    return Evidence(
+        label_signals=label_signals,
+        declared_fields=declared_fields,
+        model_terms=_model_terms(classification),
+        has_supporting_evidence=supporting,
+        note=note,
+    )
+
+
+@dataclass(frozen=True)
 class CategoryAssessment:
     proposed: str | None
     proposed_name: str | None
@@ -445,12 +613,20 @@ class FactAssessment:
 
 @dataclass(frozen=True)
 class Question:
-    """One thing a person still has to answer. Empty list means nothing."""
+    """One thing a person still has to answer. Empty list means nothing.
+
+    `outcome` says what answering does, in the terms the system can actually
+    promise: which requirements the answer selects, and that the same stored
+    reading is re-checked rather than the photograph read again. It is written
+    here rather than in each client so the two cannot describe the same
+    mechanism differently.
+    """
 
     kind: str  # "category" | "condition"
     code: str | None
     suggested: str | None
     prompt: str
+    outcome: str = ""
     #: For a category question: the categories a person may choose from.
     choices: list[dict[str, str]] = field(default_factory=list)
 
@@ -462,13 +638,17 @@ class Assessment:
     classifier_name: str
     classifier_version: str
     classifier_confidence: float | None
-    evidence: tuple[str, ...]
+    #: The classifier's own evidence strings, verbatim. Serialised under
+    #: `classifier.evidence`, where it has always been. The structured view a
+    #: person reads is `evidence` below.
+    classifier_evidence: tuple[str, ...]
     policy_accepted: bool
     policy_min_confidence: float | None
     policy_evaluation: str | None
     category: CategoryAssessment
     facts: list[FactAssessment]
     questions: list[Question]
+    evidence: Evidence
 
 
 def _category_choices() -> list[dict[str, str]]:
@@ -625,27 +805,47 @@ def assess(check: ComplianceCheck) -> Assessment:
                 code=category.proposed,
                 suggested=category.proposed,
                 prompt=prompt,
+                outcome=(
+                    "Answering selects the requirements loaded for that product type and "
+                    "checks them against this same reading. The photograph is not uploaded "
+                    "or read again, and the answer is recorded as yours. Leaving it "
+                    "unanswered is a supported choice: the result then says the product "
+                    "type was not known rather than assuming one."
+                ),
                 choices=_category_choices(),
             )
         )
     for fact in facts:
         if fact.disposition is Disposition.NEEDS_CONFIRMATION:
+            clauses = ", ".join(sorted({entry.split(":")[0] for entry in fact.affects}))
             questions.append(
                 Question(
                     kind="condition",
                     code=fact.condition,
                     suggested=fact.proposed_answer,
                     prompt=f"Is this package {fact.name.lower()}? The label suggests it may be.",
+                    outcome=(
+                        (
+                            f"Answering decides whether clause {clauses} is checked against "
+                            f"this package, on this same reading. "
+                            if clauses
+                            else "Answering is recorded against this package, on this same reading. "
+                        )
+                        + "The answer is recorded as yours, not as the classifier's. "
+                        "Left unanswered, the requirements that turn on it stay undecided "
+                        "and are reported as needing review."
+                    ),
                 )
             )
 
     return Assessment(
+        evidence=gather_evidence(run, classification),
         status=status,
         reason=reason,
         classifier_name=classification.classifier_name,
         classifier_version=classification.classifier_version,
         classifier_confidence=classification.confidence if classification.usable else None,
-        evidence=classification.evidence,
+        classifier_evidence=classification.evidence,
         policy_accepted=policy is not None,
         policy_min_confidence=policy.min_confidence if policy else None,
         policy_evaluation=policy.evaluation if policy else None,
@@ -664,7 +864,7 @@ def as_dict(assessment: Assessment) -> dict[str, Any]:
             "name": assessment.classifier_name,
             "version": assessment.classifier_version,
             "confidence": assessment.classifier_confidence,
-            "evidence": list(assessment.evidence),
+            "evidence": list(assessment.classifier_evidence),
         },
         "policy": {
             "accepted": assessment.policy_accepted,
@@ -701,8 +901,26 @@ def as_dict(assessment: Assessment) -> dict[str, Any]:
                 "code": question.code,
                 "suggested": question.suggested,
                 "prompt": question.prompt,
+                "outcome": question.outcome,
                 "choices": question.choices,
             }
             for question in assessment.questions
         ],
+        "evidence": {
+            "has_supporting_evidence": assessment.evidence.has_supporting_evidence,
+            "note": assessment.evidence.note,
+            "label_signals": [
+                {
+                    "phrase": signal.phrase,
+                    "indicative_of": signal.indicative_of,
+                    "snippet": signal.snippet,
+                }
+                for signal in assessment.evidence.label_signals
+            ],
+            "declared_fields": [
+                {"field_key": field_.field_key, "value": field_.value}
+                for field_ in assessment.evidence.declared_fields
+            ],
+            "model_terms": list(assessment.evidence.model_terms),
+        },
     }

@@ -415,8 +415,14 @@ class TestUncertainClassificationAsksAPerson:
             "code": "cosmetics-and-toiletries",
             "suggested": "yes",
             "prompt": question["prompt"],
+            "outcome": question["outcome"],
             "choices": [],
         }
+        # The outcome names the clauses the answer decides, and whose answer it
+        # will be recorded as.
+        assert "6(1)(d)" in question["outcome"] and "6(8)" in question["outcome"]
+        assert "recorded as yours, not as the classifier" in question["outcome"]
+        assert "same reading" in question["outcome"]
         # The clauses that turn on it stay undetermined.
         by_code = {f["rule_code"]: f for f in body["findings"]}
         assert any("cosmetics" in f["applicability_note"].lower() for f in by_code.values())

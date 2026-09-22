@@ -932,3 +932,49 @@ def test_no_backend_module_outside_extraction_imports_an_engine():
     # ...and the seam really is one, so this test cannot pass by the pattern
     # simply never matching anything.
     assert imports_engine.search(seam.read_text(encoding="utf-8"))
+
+
+# --- explaining a reading ----------------------------------------------------
+
+
+def test_label_phrases_reports_only_phrases_the_text_contains():
+    """The lookup behind `applicability_assessment.evidence`.
+
+    It lives in this module because the ML boundary above holds this as the one
+    place the backend may import the phrase table. What it must be is honest:
+    every phrase returned occurs in the text it was given, with the surrounding
+    words, and a text containing none returns none.
+    """
+    text = (
+        "DOVE BEAUTY BATHING BAR\n"
+        "For external use only. Keep out of reach of children.\n"
+    )
+
+    found = extraction_service.label_phrases(text)
+
+    by_phrase = {item.phrase: item for item in found}
+    assert "soap / bathing bar" in by_phrase
+    assert "for external use only" in by_phrase
+    for item in found:
+        assert item.indicative_of
+        # The snippet is really from this text, so it can be checked against
+        # the photograph rather than taken on trust.
+        assert item.snippet.strip("…") in " ".join(text.lower().split())
+
+    assert extraction_service.label_phrases("lorem ipsum dolor sit amet") == ()
+    assert extraction_service.label_phrases("") == ()
+    assert extraction_service.label_phrases(None) == ()
+
+
+def test_label_phrases_is_capped_and_runs_no_engine(monkeypatch):
+    """A regex pass over text already in memory - no pipeline is built."""
+    monkeypatch.setattr(
+        extraction_service.registry,
+        "get_pipeline",
+        lambda *args, **kwargs: pytest.fail("label_phrases must not build a pipeline"),
+    )
+    text = "ingredients nutritional information protein energy fssai serving size vegetarian milk"
+
+    found = extraction_service.label_phrases(text, limit=3)
+
+    assert len(found) == 3

@@ -263,12 +263,12 @@ describe('showing the result', () => {
     renderPage();
     await uploadAndSubmit();
 
-    expect(await screen.findByText(/net quantity/i)).toBeInTheDocument();
+    await screen.findByRole('list', { name: /what we read/i });
 
     // Scoped to the read-fields list: the same string also appears in the
-    // recognised-text block behind the disclosure, which is the point - the
-    // reading is shown beside the text it came from - so an unscoped query is
-    // legitimately ambiguous.
+    // recognised-text block behind the disclosure and in the evidence panel of
+    // the assessment card, which is the point - the reading is shown beside the
+    // text it came from - so an unscoped query is legitimately ambiguous.
     const read = within(screen.getByRole('list', { name: /what we read/i }));
     expect(read.getByText('Net Qty: 500 g')).toBeInTheDocument();
     expect(read.getByText(/"value":500/)).toBeInTheDocument();
@@ -1218,8 +1218,11 @@ describe('no compliance score', () => {
     expect(percentages.length).toBeGreaterThan(0);
     expect(new Set(percentages)).toEqual(new Set(['91%', '72%']));
     expect(screen.getAllByText(/reading confidence/i).length).toBeGreaterThan(0);
+    // The classifier's percentage sits under a term that names it as the
+    // classifier's, with the separation from compliance stated beside it.
+    expect(screen.getByText('Classifier confidence')).toBeInTheDocument();
     expect(
-      screen.getByText(/confidence about the product type — this is not a compliance figure/i),
+      screen.getByText(/not a compliance figure, and no compliance figure can be derived from it/i),
     ).toBeInTheDocument();
   });
 });

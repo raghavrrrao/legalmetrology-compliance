@@ -121,6 +121,7 @@ export function ResultScreen({ navigation }: RootScreenProps<'Result'>) {
       {classification ? (
         <ClassificationCard
           classification={classification}
+          assessment={result.applicabilityAssessment}
           onUseAsProductType={
             result.productCategoryCode ? undefined : (code) => void evaluate({ categoryCode: code })
           }

@@ -21,7 +21,8 @@ IMAGE → OCR → FIELD EXTRACTION → PRODUCT CLASSIFICATION
                                         │
                                         ▼
                      applicability_assessment on the result: what was proposed,
-                     what is in effect and by whom, what a person must still answer
+                     what is in effect and by whom, the evidence from the reading,
+                     and what a person must still answer - with what answering does
 ```
 
 The one-sentence version: **a classification can reach the rule engine only
@@ -154,6 +155,43 @@ rows and the response:
 | Which condition a suggestion bears on and which clauses that affects | `applicability_assessment.facts[].condition`, `.affects` (e.g. `6(1)(d): exempts`) |
 | What each rule concluded and why it applied | the findings, unchanged: `applicability_note` on every one |
 
+## The evidence behind a suggestion
+
+A person asked to confirm a product type needs to see what the label says, not
+a number. `applicability_assessment.evidence` carries three lists, kept apart
+because they are three different kinds of thing:
+
+| Key | What it is | Where it comes from |
+|---|---|---|
+| `label_signals[]` | Phrases **this reading contains** — `{phrase, indicative_of, snippet}` | `labelextract.classification.signals`, re-matched against the run's stored `recognised_text`. The snippet is the surrounding words, so the phrase can be found on the photograph. |
+| `declared_fields[]` | Declarations the extractor read — `{field_key, value}` | The run's `ExtractedLabelField` rows, from the prefetch the result already loads. |
+| `model_terms[]` | n-grams the model weighed | Parsed out of the classifier's own `evidence` strings (`term: 'x' weighed for y`). **Model internals**, reported for a developer in the technical disclosure — never as a statement about the product. |
+
+Two properties, both load-bearing:
+
+- **Nothing is generated.** Every string is a phrase found in the reading, a
+  value the extractor read, or a term the classifier recorded. There is no
+  narrated explanation of the model's reasoning, and nothing an LLM wrote.
+- **"No evidence" is a state, stated.** `has_supporting_evidence` is false when
+  the first two lists are empty, and `note` says which case it was — the label
+  was read but contained no recognised phrase and no extractable declaration,
+  or nothing was read at all. A client must show that sentence; an empty panel
+  reads as reassurance.
+
+`signals.py` is an explainability table of about thirty-five reviewed label
+phrases which the model never reads, so matching it is not running the
+classifier a second time. It is a regex pass over text already in memory: no
+second OCR, no second model, no artifact load. A phrase is *typically* found
+on a kind of product — an ingredients list appears on a soap as readily as on
+a biscuit — and both clients say so next to the list.
+
+Each open question also carries `outcome`: what answering does, in the terms
+the system can promise — which requirements the answer selects (by clause, for
+a condition), that the same stored reading is re-checked rather than the
+photograph read again, that the answer is recorded as the person's, and that
+leaving it unanswered is supported. It is written once in the backend so the
+two clients cannot describe the same mechanism differently.
+
 ## API
 
 Additive, on the compliance result body (`POST /compliance/`, `POST /images/`,
@@ -162,7 +200,7 @@ Additive, on the compliance result body (`POST /compliance/`, `POST /images/`,
 
 - `product_category_source`: `submitter` | `reviewer` | `classifier` | `null`.
 - `applicability_assessment`: `status`, `reason`, `classifier`, `policy`,
-  `category`, `facts[]`, `questions[]`.
+  `category`, `facts[]`, `questions[]` (each with `outcome`), `evidence`.
 
 One request-side relaxation: `applicability_declarations` without a
 `category_code` is accepted when the policy will establish a category for the
@@ -172,13 +210,19 @@ refused exactly as before.
 ## Clients
 
 - **Web**: a card under the verdict ("What kind of product this is") shows the
-  status, the type in effect and who set it, the suggestion with the
-  classifier's confidence *labelled as not a compliance figure*, and only the
-  open questions as buttons. Confirming re-checks the same reading through the
+  status, the type in effect and who set it, the suggestion under a
+  *"Suggested product type"* term with the classifier's confidence under a
+  *"Classifier confidence"* term (labelled as not a compliance figure), a
+  **"What the label says"** panel with the phrases and the declarations, what
+  answering will do, and the open questions as buttons. Model terms and the
+  policy detail sit in a "How this suggestion was produced" disclosure. Status
+  is never carried by colour alone: every state has a word in the badge and a
+  sentence in the body. Confirming re-checks the same reading through the
   existing manual path (`category_code` / `applicability_declarations`).
-- **Mobile**: already offered "Re-check as X" for the classifier's suggestion;
-  now also says when a category was established automatically. It does not
-  render `questions` yet.
+- **Mobile**: the classification card now also carries the backend's reason,
+  up to three label phrases with their snippets (or the "no evidence" sentence),
+  and what confirming would do. It renders `questions` as the existing
+  "Re-check as X" button and does not present the condition questions.
 
 ## Testing strategy
 
@@ -215,4 +259,9 @@ OCR confidence and is labelled as not a compliance figure).
   `alcoholic-beverage` is defined but untrained).
 - No reviewer path: `category_source = reviewer` exists as a value and is not
   yet written by any endpoint.
-- The mobile client does not render the assessment's questions.
+- The mobile client renders only the category question (as "Re-check as X");
+  condition questions are web-only.
+- Label signals are English keyword patterns. A phrase absent from the table is
+  simply not reported, and their absence is not evidence about the product.
+- `declared_fields` is context, not evidence of a product type: a net quantity
+  says nothing about whether a package is food.

@@ -14,7 +14,7 @@ import { fireEvent, render, screen } from '@testing-library/react-native';
 import { SafeAreaProvider } from 'react-native-safe-area-context';
 
 import { ResultScreen } from './ResultScreen';
-import { classificationBody, complianceBody, extractionRunBody } from '../../tests/fixtures';
+import { assessmentBody, classificationBody, complianceBody, extractionRunBody } from '../../tests/fixtures';
 import { fakeAnalysis, PHONE_METRICS, stubNavigation } from '../../tests/render';
 import { mapResult } from '../api/compliance';
 import type { ComplianceCheckWire } from '../types/api';
@@ -147,6 +147,57 @@ describe('ResultScreen', () => {
     expect(screen.getByTestId('classification-category')).toHaveTextContent('Could not tell', { exact: false });
     expect(screen.getByTestId('classification-confidence')).toHaveTextContent('Not reported', { exact: false });
     expect(screen.queryByTestId('use-classification')).toBeNull();
+  });
+
+  it('shows what the label says behind the suggestion, with the words around it', async () => {
+    await renderResult(complianceBody({ product_category_code: null }));
+
+    const evidence = screen.getByTestId('classification-evidence');
+    expect(evidence).toHaveTextContent('What the label says', { exact: false });
+    expect(screen.getByTestId('signal-soap / bathing bar')).toHaveTextContent(
+      '“…dove beauty bathing bar moisturising cream…”',
+      { exact: false },
+    );
+    expect(evidence).toHaveTextContent('do not establish what this product is', { exact: false });
+    expect(screen.getByTestId('classification-reason')).toHaveTextContent(
+      'not accepted for automatic use',
+      { exact: false },
+    );
+    expect(screen.getByTestId('classification-outcome')).toHaveTextContent(
+      'not uploaded or read again',
+      { exact: false },
+    );
+  });
+
+  it('says plainly when the label offered nothing to go on', async () => {
+    await renderResult(
+      complianceBody({
+        product_category_code: null,
+        applicability_assessment: assessmentBody({
+          evidence: {
+            has_supporting_evidence: false,
+            note: 'No text was read from this photograph, so there is no evidence from the label to support any suggestion about what kind of product this is.',
+            label_signals: [],
+          },
+        }),
+      }),
+    );
+
+    expect(screen.queryByTestId('signal-soap / bathing bar')).toBeNull();
+    expect(screen.getByTestId('classification-no-evidence')).toHaveTextContent(
+      'no evidence from the label',
+      { exact: false },
+    );
+  });
+
+  it('renders the card unchanged against a backend with no assessment', async () => {
+    const { applicability_assessment: _omitted, ...older } = complianceBody({ product_category_code: null });
+    await renderResult(older);
+
+    expect(screen.getByTestId('classification-category')).toHaveTextContent('Packaged food', { exact: false });
+    expect(screen.queryByTestId('classification-evidence')).toBeNull();
+    expect(screen.queryByTestId('classification-reason')).toBeNull();
+    expect(screen.queryByTestId('classification-outcome')).toBeNull();
   });
 
   it('shows no classification card when the backend made none', async () => {

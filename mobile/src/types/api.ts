@@ -150,6 +150,35 @@ export interface AppliedDeclarationWire {
   stated_before_this_check?: boolean | null;
 }
 
+/**
+ * `applicability_assessment` - what the label classifier proposed and what
+ * became of it. The app reads only the parts it shows: the policy's status and
+ * reason, the suggested category with the classifier's own confidence, and the
+ * evidence from the reading behind it. The rest of the object (facts,
+ * questions, policy detail) is rendered by the web client and passed over
+ * here; ignoring a field is not the same as it being absent, and nothing in
+ * this app decides anything from any of it.
+ */
+export interface ApplicabilityAssessmentWire {
+  status?: string;
+  reason?: string;
+  classifier?: { name?: string; version?: string; confidence?: number | null };
+  category?: {
+    proposed?: string | null;
+    proposed_name?: string | null;
+    confidence?: number | null;
+    in_effect?: string | null;
+    in_effect_source?: string | null;
+    disposition?: string;
+  };
+  evidence?: {
+    has_supporting_evidence?: boolean;
+    note?: string;
+    label_signals?: { phrase?: string; indicative_of?: string; snippet?: string }[];
+  };
+  questions?: { kind?: string; code?: string | null; suggested?: string | null; outcome?: string }[];
+}
+
 /** The compliance result body - `POST /compliance/`, `POST /images/`, `GET /compliance/<uuid>/`. */
 export interface ComplianceCheckWire {
   id: string;
@@ -169,6 +198,7 @@ export interface ComplianceCheckWire {
   /** Who set the category: submitter | reviewer | classifier. Absent on older backends. */
   product_category_source?: string | null;
   applicability_declarations?: AppliedDeclarationWire[];
+  applicability_assessment?: ApplicabilityAssessmentWire | null;
   violations?: ViolationWire[];
   findings?: FindingWire[];
   extraction?: ExtractionRunWire | null;
@@ -313,6 +343,37 @@ export interface AppliedDeclaration {
   statedBeforeThisCheck: boolean | null;
 }
 
+/** One phrase the reading contains, with the words around it. */
+export interface LabelSignal {
+  phrase: string;
+  /** The kind of product this phrase is *typically* found on. Not a claim about this one. */
+  indicativeOf: string;
+  /** Surrounding text from the reading, so it can be checked against the label. */
+  snippet: string;
+}
+
+/**
+ * What the classifier proposed, why it was or was not acted on, and the
+ * evidence from the reading behind it.
+ *
+ * Null against a backend that predates the field. `status` is the policy's
+ * verdict on the classification - `confident` | `uncertain` | `unknown` |
+ * `failed` - and is never a compliance state.
+ */
+export interface ApplicabilityAssessment {
+  status: string;
+  reason: string;
+  categoryProposed: string | null;
+  categoryProposedName: string | null;
+  categoryConfidence: number | null;
+  categoryDisposition: string;
+  hasSupportingEvidence: boolean;
+  evidenceNote: string;
+  labelSignals: LabelSignal[];
+  /** What answering the open category question would do, in the backend's words. */
+  categoryQuestionOutcome: string;
+}
+
 /** The four verdicts the backend defines. Passed through verbatim. */
 export type ComplianceVerdict =
   | 'compliant'
@@ -347,6 +408,7 @@ export interface ComplianceResult {
    */
   productCategorySource: string | null;
   applicabilityDeclarations: AppliedDeclaration[];
+  applicabilityAssessment: ApplicabilityAssessment | null;
   /** False against a backend that sends no `findings` key at all. */
   findingsReported: boolean;
   findings: Finding[];

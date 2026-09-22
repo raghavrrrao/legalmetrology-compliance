@@ -19,6 +19,8 @@
 import { ApiError, apiClient, type RequestOptions } from './client';
 import { mapExtractionRun, mapImage } from './extraction';
 import type {
+  ApplicabilityAssessment,
+  ApplicabilityAssessmentWire,
   AppliedDeclaration,
   AppliedDeclarationWire,
   ComplianceCheckWire,
@@ -90,6 +92,46 @@ export function mapFinding(finding: FindingWire): Finding {
   };
 }
 
+/**
+ * The classifier's suggestion and the reading behind it, or null.
+ *
+ * Defensive throughout: an older backend sends nothing, and a field this app
+ * cannot read is not a reason to lose the parts it can. `hasSupportingEvidence`
+ * defaults to false, so "the backend said nothing about evidence" and "there
+ * was no evidence" both render as the honest empty state rather than as
+ * silence.
+ */
+export function mapAssessment(
+  data: ApplicabilityAssessmentWire | null | undefined,
+): ApplicabilityAssessment | null {
+  if (!data || typeof data !== 'object' || typeof data.status !== 'string') {
+    return null;
+  }
+  const category = data.category ?? {};
+  const evidence = data.evidence ?? {};
+  const categoryQuestion = (Array.isArray(data.questions) ? data.questions : []).find(
+    (question) => question.kind === 'category',
+  );
+  return {
+    status: data.status,
+    reason: data.reason || '',
+    categoryProposed: category.proposed ?? null,
+    categoryProposedName: category.proposed_name ?? null,
+    categoryConfidence: typeof category.confidence === 'number' ? category.confidence : null,
+    categoryDisposition: category.disposition || 'not_proposed',
+    hasSupportingEvidence: Boolean(evidence.has_supporting_evidence),
+    evidenceNote: evidence.note || '',
+    labelSignals: (Array.isArray(evidence.label_signals) ? evidence.label_signals : [])
+      .filter((signal) => typeof signal?.phrase === 'string' && signal.phrase)
+      .map((signal) => ({
+        phrase: signal.phrase as string,
+        indicativeOf: signal.indicative_of || '',
+        snippet: signal.snippet || '',
+      })),
+    categoryQuestionOutcome: categoryQuestion?.outcome || '',
+  };
+}
+
 export function mapDeclaration(declaration: AppliedDeclarationWire): AppliedDeclaration {
   return {
     code: declaration.code,
@@ -147,6 +189,7 @@ export function mapResult(data: ComplianceCheckWire | null | undefined): Complia
     applicabilityDeclarations: Array.isArray(data.applicability_declarations)
       ? data.applicability_declarations.map(mapDeclaration)
       : [],
+    applicabilityAssessment: mapAssessment(data.applicability_assessment),
     findingsReported,
     findings: findingsReported ? (data.findings as FindingWire[]).map(mapFinding) : [],
     violations: Array.isArray(data.violations) ? data.violations.map(mapViolation) : [],

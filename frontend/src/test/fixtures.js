@@ -197,18 +197,44 @@ export function assessmentBody(overrides = {}) {
         'The classifier tfidf-logreg 0.1.0 is not accepted for automatic use: no held-out evaluation on verified labels has established an operating point for it, so its category is a suggestion for a person to confirm.',
     },
     facts: [],
+    evidence: assessmentEvidenceBody(),
     questions: [
       {
         kind: 'category',
         code: 'packaged-non-food',
         suggested: 'packaged-non-food',
         prompt: 'The label reads like packaged non-food. Is that right?',
+        outcome:
+          'Answering selects the requirements loaded for that product type and checks them against this same reading. The photograph is not uploaded or read again, and the answer is recorded as yours. Leaving it unanswered is a supported choice: the result then says the product type was not known rather than assuming one.',
         choices: [
           { code: 'packaged-food', name: 'Packaged food' },
           { code: 'packaged-non-food', name: 'Packaged non-food' },
         ],
       },
     ],
+    ...overrides,
+  };
+}
+
+/** `applicability_assessment.evidence` - what the reading offers for the suggestion. */
+export function assessmentEvidenceBody(overrides = {}) {
+  return {
+    has_supporting_evidence: true,
+    note: '',
+    label_signals: [
+      {
+        phrase: 'soap / bathing bar',
+        indicative_of: 'cosmetics-and-toiletries',
+        snippet: '…dove beauty bathing bar moisturising cream…',
+      },
+      {
+        phrase: 'for external use only',
+        indicative_of: 'cosmetics-and-toiletries',
+        snippet: '…milk for external use only keep out of reach…',
+      },
+    ],
+    declared_fields: [{ field_key: 'net_quantity', value: 'Net Qty: 100 g' }],
+    model_terms: ['bathing', 'bar'],
     ...overrides,
   };
 }

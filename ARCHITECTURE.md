@@ -334,6 +334,15 @@ govern a package must not read its label at all — evaluating and discarding
 would still let a misread declaration reach a finding on a package the clause
 never covered.
 
+**A suggestion arrives with the reading behind it.** When the policy cannot
+establish a category — which, with no artifact licensed, is always — the result
+carries `applicability_assessment.evidence`: the label phrases this reading
+contains with the surrounding words, the declarations the extractor read, and
+an explicit "there was none" when there was none. Every string is from the
+reading or from the classifier's own record; nothing is generated, and the
+model's own terms are kept apart as internals. That is what a person is given
+to answer with, alongside what answering will do.
+
 **The classifier reaches applicability through one door.** `Product.category`
 selects the rules and answers the one category-derived condition; it is set by
 a person, or — under `AUTOMATIC_APPLICABILITY_ACCEPTED_CLASSIFIERS`, per

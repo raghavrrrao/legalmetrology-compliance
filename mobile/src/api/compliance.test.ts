@@ -4,7 +4,7 @@
 
 import { ApiError } from './client';
 import { evaluateExtractionRun, fetchComplianceResult, mapResult } from './compliance';
-import { CHECK_ID, complianceBody, errorEnvelope, jsonResponse, RUN_ID } from '../../tests/fixtures';
+import { assessmentBody, CHECK_ID, complianceBody, errorEnvelope, jsonResponse, RUN_ID } from '../../tests/fixtures';
 
 const fetchMock = jest.fn();
 
@@ -158,6 +158,55 @@ describe('mapResult', () => {
     expect(mapResult(complianceBody({ product_category_source: 'classifier' })).productCategorySource).toBe('classifier');
     const { product_category_source: _omitted, ...older } = complianceBody();
     expect(mapResult(older).productCategorySource).toBeNull();
+  });
+
+  it('maps the classification assessment the app reads, and null when absent', () => {
+    const result = mapResult(complianceBody());
+
+    const assessment = result.applicabilityAssessment;
+    expect(assessment).toEqual({
+      status: 'uncertain',
+      reason: expect.stringContaining('not accepted for automatic use'),
+      categoryProposed: 'packaged-non-food',
+      categoryProposedName: 'Packaged non-food',
+      categoryConfidence: 0.72,
+      categoryDisposition: 'needs_confirmation',
+      hasSupportingEvidence: true,
+      evidenceNote: '',
+      labelSignals: [
+        {
+          phrase: 'soap / bathing bar',
+          indicativeOf: 'cosmetics-and-toiletries',
+          snippet: '…dove beauty bathing bar moisturising cream…',
+        },
+      ],
+      categoryQuestionOutcome: expect.stringContaining('not uploaded or read again'),
+    });
+
+    const { applicability_assessment: _omitted, ...older } = complianceBody();
+    expect(mapResult(older).applicabilityAssessment).toBeNull();
+  });
+
+  it('treats a malformed or evidence-less assessment as the honest empty state', () => {
+    expect(mapResult(complianceBody({ applicability_assessment: 'uncertain' as never })).applicabilityAssessment).toBeNull();
+
+    const noEvidence = mapResult(
+      complianceBody({
+        applicability_assessment: assessmentBody({
+          evidence: { has_supporting_evidence: false, note: 'No text was read from this photograph.', label_signals: [] },
+        }) as never,
+      }),
+    ).applicabilityAssessment;
+    expect(noEvidence?.hasSupportingEvidence).toBe(false);
+    expect(noEvidence?.labelSignals).toEqual([]);
+    expect(noEvidence?.evidenceNote).toContain('No text was read');
+
+    // An assessment whose evidence key the backend omitted entirely.
+    const noKey = mapResult(
+      complianceBody({ applicability_assessment: assessmentBody({ evidence: undefined }) as never }),
+    ).applicabilityAssessment;
+    expect(noKey?.hasSupportingEvidence).toBe(false);
+    expect(noKey?.labelSignals).toEqual([]);
   });
 
   it('keeps an unknown product category null', () => {
