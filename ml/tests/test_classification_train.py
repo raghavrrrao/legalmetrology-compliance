@@ -64,7 +64,12 @@ def dataset_path(tmp_path):
                     "text": text,
                     "text_source": "ocr",
                     "labelled_by": "test",
+                    # Verification is all-or-none: a name with no date and no
+                    # ledger reference is refused, so the fixture carries all
+                    # three or it would not be a loadable dataset.
                     "label_verified_by": "test",
+                    "label_verified_on": "2026-01-01",
+                    "label_verification_ref": "fixture-review",
                     "ocr_engine": "stub",
                     "ocr_engine_version": "0",
                     "source_dataset": None,

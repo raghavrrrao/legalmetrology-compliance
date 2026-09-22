@@ -108,6 +108,22 @@ def test_load_dataset_records_the_file_digest(tmp_path):
     assert dataset.path == path
 
 
+def test_a_dataset_written_before_the_verification_fields_still_parses():
+    """The two fields added for verification are optional and default to null.
+
+    `seed_v0.1.json` predates them and is frozen - `tfidf-logreg 0.1.0` records
+    its digest - so a schema change that required them would have invalidated
+    the only dataset the project has.
+    """
+    data = minimal()
+    data["examples"][0].pop("label_verified_on", None)
+    data["examples"][0].pop("label_verification_ref", None)
+    example = parse_dataset(data).examples[0]
+    assert example.label_verified_on is None
+    assert example.label_verification_ref is None
+    assert not example.is_verified
+
+
 # --- the shipped seed set -----------------------------------------------------
 
 
@@ -197,3 +213,69 @@ def test_the_digest_of_the_seed_set_is_the_digest_of_its_lf_bytes(seed):
 
     raw = seed_dataset_path().read_bytes().replace(b"\r\n", b"\n")
     assert seed.sha256 == hashlib.sha256(raw).hexdigest()
+
+
+# --- the dataset registry ------------------------------------------------------
+#
+# A published dataset version is immutable once an artifact has been trained
+# against it. The registry is what makes that enforceable rather than a note in
+# a README: it records the digest of every version, and these tests re-digest
+# the files and refuse a mismatch. Edit a trained-against dataset and the
+# failure is here, rather than in the quiet difference between what a published
+# number meant and what it now means.
+
+
+@pytest.fixture(scope="module")
+def registry():
+    path = seed_dataset_path().parent / "REGISTRY.json"
+    return json.loads(path.read_text(encoding="utf-8")), path
+
+
+def test_every_registered_dataset_file_exists_and_matches_its_digest(registry):
+    document, path = registry
+    assert document["datasets"], "the registry must list every published version"
+    for row in document["datasets"]:
+        dataset = load_dataset(path.parent / row["file"])
+        assert dataset.sha256 == row["sha256"], row["file"]
+        assert dataset.dataset_version == row["dataset_version"]
+
+
+def test_every_registered_row_states_its_own_composition(registry):
+    """The counts in the registry are derived from the file, not typed at it."""
+    document, path = registry
+    for row in document["datasets"]:
+        dataset = load_dataset(path.parent / row["file"])
+        assert row["examples"] == len(dataset.examples)
+        assert row["products"] == len(dataset.product_ids)
+        assert row["images"] == len(dataset.image_sha256s)
+        assert row["verified_examples"] == len(dataset.verified_examples)
+        assert row["taxonomy_version"] == dataset.taxonomy_version
+
+
+def test_dataset_versions_are_unique_in_the_registry(registry):
+    document, _ = registry
+    versions = [row["dataset_version"] for row in document["datasets"]]
+    assert len(versions) == len(set(versions))
+
+
+def test_the_seed_set_is_registered_as_the_artifacts_training_data(seed, registry):
+    """The link the artifact records from the other end."""
+    document, _ = registry
+    row = next(
+        item
+        for item in document["datasets"]
+        if item["dataset_version"] == seed.dataset_version
+    )
+    assert row["sha256"] == seed.sha256
+    assert "tfidf-logreg/0.1.0" in row["trained_artifacts"]
+
+
+def test_changing_a_dataset_changes_its_digest(tmp_path):
+    """What 'a new digest per dataset change' means, asserted rather than assumed."""
+    before = tmp_path / "before.json"
+    after = tmp_path / "after.json"
+    document = minimal()
+    before.write_text(json.dumps(document, indent=2), encoding="utf-8")
+    document["examples"][0]["subcategory"] = "health-supplement"
+    after.write_text(json.dumps(document, indent=2), encoding="utf-8")
+    assert load_dataset(before).sha256 != load_dataset(after).sha256

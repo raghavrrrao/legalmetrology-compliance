@@ -1,0 +1,22 @@
+{
+  "registry_version": "1",
+  "description": "Every published product-classification dataset version, with the digest of the file that carries it. The digest is the SHA-256 of the file's bytes with CRLF normalised to LF - the bytes Git stores - so it is the same in a Windows working copy and in CI. A dataset version is immutable once an artifact has been trained against it: change the data and publish a new version with a new row here, never edit a row. tests/test_classification_dataset.py re-digests every file listed and refuses a mismatch, which is what makes a silent edit to a trained-against dataset a test failure rather than a quietly different meaning for every published number.",
+  "datasets": [
+    {
+      "dataset_version": "product-classification-seed-v0.1",
+      "file": "seed_v0.1.json",
+      "sha256": "d40c7751bd9baf265b4b0a4921947c3ee2c7d09c8433d9df1a069a2f0402ec5b",
+      "created_on": "2026-09-16",
+      "taxonomy_version": "1",
+      "examples": 33,
+      "products": 10,
+      "images": 28,
+      "verified_examples": 0,
+      "verification_ledger": "label_verification_ledger.json",
+      "trained_artifacts": [
+        "tfidf-logreg/0.1.0"
+      ],
+      "note": "The seed set. 28 OCR texts and 5 model transcriptions from the 28 photographs of 10 retail packages in our-eval-v0.1-draft. Every label is model-drafted and unverified. Frozen: tfidf-logreg 0.1.0 records this digest in trained_on.dataset_sha256, and every figure in docs/ml/product-classification.md refers to these exact bytes."
+    }
+  ]
+}

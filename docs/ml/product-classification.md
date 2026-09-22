@@ -21,7 +21,8 @@ product prints this".
 |---|---|
 | Pipeline | `tesseract` **0.4.0** = 0.3.0 + this classifier. 0.3.0 stays registered without it. |
 | Model | `tfidf-logreg` **0.1.0**: TF-IDF (word uni- and bigrams) + multinomial logistic regression |
-| Trained on | `product-classification-seed-v0.1`: **33 texts from 10 products**, labels **model-drafted and unverified** |
+| Trained on | `product-classification-seed-v0.1`: **33 texts from 10 products**, labels **model-drafted and unverified — 0 of 33 verified** |
+| Dataset discipline | 12 integrity checks + a human-verification ledger, both enforced ([Validation](#validation--twelve-checks-and-what-each-one-catches), [Verifying a label](#verifying-a-label)). The ledger is **empty**: the machinery exists, the verified data does not. |
 | Measured | Leave-one-product-out: category **strict accuracy 0.36**, unknown rate 0.33, `packaged-non-food` **never predicted** when its product is held out — and **below a constant "always food" classifier** (macro F1 0.279 vs 0.389). See [Evaluation](#evaluation) |
 | Artifact | 119,535 bytes of JSON, committed, evaluated in plain Python; no scikit-learn at runtime |
 | Latency | median **0.62 ms** per text for the whole `classify_text` call, on the development machine, artifact pre-loaded — see [Performance](#performance) for exactly what that covers |
@@ -402,6 +403,7 @@ download-on-demand-with-checksum scheme `ml-integration.md` sketches, and
 | `text` | The text. May be empty — a front panel read as nothing is a real outcome. |
 | `text_source` | `ocr` (verbatim engine output) or `manual_transcription` (typed from the photograph). |
 | `labelled_by`, `label_verified_by` | Who assigned the category, and who checked it — or `null`. |
+| `label_verified_on`, `label_verification_ref` | **Added 2026-09-23.** The date of the verification and the ledger entry recording it. All-or-none with `label_verified_by`. |
 | `ocr_engine`, `ocr_engine_version` | Required for OCR text, so the sample can be regenerated. |
 | `source_dataset`, `source_sample_id`, `image_sha256` | The frozen evaluation-set photograph the text came from. |
 | `note` | What the panel is. |
@@ -409,6 +411,134 @@ download-on-demand-with-checksum scheme `ml-integration.md` sketches, and
 Validation refuses rather than repairs: a dataset that loads with three
 examples quietly dropped still reports a count, and that count ends up in a
 table.
+
+**The two verification fields, and why they were added.** `label_verified_by`
+on its own is a name in a field: it cannot be placed in time, and it cannot be
+traced to a record of what the person actually looked at. The project already
+holds *image annotations* to a higher bar than that (`annotated_by` +
+`annotated_on`, with the decisions in
+`ml/data/human-verification/VERIFICATION-LOG.md`), and a training label is not
+a weaker claim than an annotation. Both fields are optional and default to
+`null`, so `seed_v0.1.json` — which predates them and is frozen — parses
+unchanged and keeps digest `d40c7751…`. The loader enforces all-three-or-none:
+a partial verification is refused rather than counted.
+
+**A verifier is a person.** `dataset.MACHINE_LABELLER_MARKERS` is checked
+against every `label_verified_by`, and there is no flag to override it. The
+case that matters most is the classifier itself: a model that confirms its own
+training labels produces agreement with itself, and a metric computed against
+those labels measures nothing at all. The drafting model
+(`claude-opus-5-draft`) is refused for the same reason — it is the thing being
+checked. `labelled_by` is deliberately *not* checked: a model drafting a label
+is the normal case here, and it says so.
+
+### Validation — twelve checks, and what each one catches
+
+[`validation.py`](../../ml/labelextract/classification/validation.py). The
+loader refuses a *malformed* file; these answer a different question — the file
+parsed, but is the data fit to train or measure on? A duplicated product, a
+label that contradicts itself across two panels, or a product on both sides of
+a split are all well-formed JSON, and each moves a measured number upwards.
+
+```bash
+cd ml && python -m labelextract.classification.validation
+```
+
+Prints the coverage table and every finding; exits 1 if any is an error.
+
+| # | Check | Severity | Catches |
+|---|---|---|---|
+| 1 | `missing-product-id` | error | A placeholder where an identity should be |
+| 2 | `duplicate-product` | error | One image digest under two `product_id`s — one pack imported twice, counted as two |
+| 3 | `duplicate-image` | error | The same `(image, text_source)` twice — one reading weighted double |
+| 4 | `missing-label` | error | No category or subcategory |
+| 5 | `invalid-category` | error | A code outside the taxonomy |
+| 6 | `missing-provenance` | error | An example that cannot be traced to a photograph or an OCR engine |
+| 7 | `unverified-labels` | warning¹ | Labels nobody has checked |
+| 8 | `conflicting-label` | error | One product labelled two different ways |
+| 9 | `product-leakage` | error | A product in more than one evaluation fold |
+| 10 | `empty-class` / `single-product-class` | warning | A class with no examples, or with one product |
+| 11 | `duplicate-text-across-products` | error | Identical text under two product ids |
+| 11 | `duplicate-text-within-product` | warning | Identical text twice under one product |
+| 12 | `unsupported-taxonomy-value` | error | A subcategory or taxonomy version this code does not speak |
+
+¹ `--require-verified` promotes it to an error. **The seed set does not pass
+that switch and is not meant to** — it is the gate a future held-out set is
+validated under.
+
+Warnings are reported and never fatal, because the seed set is *entirely*
+warnings: refusing to load it would be refusing to describe the problem this
+module exists to describe. Nothing here repairs anything. Where a finding is
+ambiguous — two products whose text is identical might be a duplicate import
+or two genuinely identical private-label packs — it is reported with both
+identifiers and left for a person.
+
+**Leakage is enforced, not just tested.** `train.cross_validate` runs check 9
+over each fold *before* fitting it and raises on a leaking split, so the
+guarantee holds at training time rather than only in a test. The regression
+test for it lives in `test_classification_validation.py` and needs no
+scikit-learn — the older copy in `test_classification_evaluation.py` sits
+behind an `importorskip`, so on a machine with no training extra it silently
+does not run, which is exactly the machine where a grouping change would go
+unnoticed.
+
+### Verifying a label
+
+[`verification.py`](../../ml/labelextract/classification/verification.py) and
+[`datasets/label_verification_ledger.json`](../../ml/labelextract/classification/datasets/label_verification_ledger.json).
+**The ledger is the authority; a verified row in the dataset is a projection of
+it**, and `reconcile` checks the two against each other rather than trusting
+either alone. A dataset row claiming verification with no ledger entry behind
+it is an error.
+
+Verification is **per product**, because the thing being established is what a
+package is; all of its panels move together. A person must establish four
+things, and an entry omitting any of them is refused:
+
+1. **Product identity** — what the package is, in words.
+2. **Category** — `packaged-food` or `packaged-non-food`.
+3. **Subcategory** — the taxonomy code.
+4. **Source** — which photographs and which example rows they read.
+
+`entry_template()` produces a worksheet pre-filled with only what the dataset
+already knows — the example ids and image digests for that product. The verdict
+fields come back blank **on purpose**: pre-filling them from the drafted label
+is how a draft becomes a verification with nobody deciding anything.
+
+| `outcome` | Effect |
+|---|---|
+| `confirmed` | Rows become verified |
+| `changed` | Rows become verified **and** relabelled, in one step |
+| `unresolved` | Recorded; **never** applied; rows stay unverified |
+
+`unresolved` is a real answer. A package whose category is genuinely arguable
+should be recorded as arguable, not forced into whichever class reads closest.
+
+`apply()` is a pure function over parsed JSON — it writes no file — and it
+**requires a new `dataset_version`**, because applying a verification changes
+the digest and `seed_v0.1` is what `tfidf-logreg 0.1.0` was trained against.
+Editing it in place would silently change what every published figure refers
+to. Applying a verification is also **not** a reason to retrain: that is a
+separate, separately justified experiment.
+
+The full procedure is in
+[`datasets/README.md`](../../ml/labelextract/classification/datasets/README.md).
+
+### Dataset versions and digests
+
+[`datasets/REGISTRY.json`](../../ml/labelextract/classification/datasets/REGISTRY.json)
+records every published version with the digest of the file carrying it, its
+composition, and which artifacts were trained on it. A dataset version is
+immutable once an artifact has been trained against it; the registry makes that
+enforceable rather than a note in a README, because
+`test_classification_dataset.py` re-digests every listed file and re-derives
+every count from it. Edit a trained-against dataset and the failure is a test,
+not a quiet difference between what a published number meant and what it now
+means.
+
+| Version | Digest | Examples | Products | Verified | Artifacts |
+|---|---|---|---|---|---|
+| `product-classification-seed-v0.1` | `d40c7751…` | 33 | 10 | **0** | `tfidf-logreg/0.1.0` |
 
 **The seed set:**
 [`seed_v0.1.json`](../../ml/labelextract/classification/datasets/seed_v0.1.json),
@@ -422,12 +552,53 @@ table.
 | Labels | Assigned by a model from the photographs and the annotation notes. **`label_verified_by` is `null` on all 33.** |
 | Contents | Public print on retail packaging: brand names, ingredient lists, manufacturer addresses, licence numbers, care-line numbers. No user upload, no image, no secret; a test asserts the last. |
 
-| Subcategory | Examples | Products |
-|---|---|---|
-| `general-food` | 16 | 7 (masala sachet, milk, sugar, namkeen, chana, soya chunks, lapsi rawa) |
-| `health-supplement` | 5 | **1** (Plix "Acne Fighter" effervescent tablets) |
-| `cleaning-product` | 7 | **1** (ShineXPro helmet cleaner aerosol) |
-| `cosmetics-and-toiletries` | 5 | **1** (Dove serum bathing bar) |
+**Coverage, as `python -m labelextract.classification.validation` prints it.**
+Every taxonomy subcategory gets a row, including the empty ones: a table
+listing only what is present reads as though the taxonomy were covered.
+
+| Subcategory | Products | Examples | Verified | Unverified |
+|---|---|---|---|---|
+| `general-food` | 7 | 16 | 0 | 16 |
+| `health-supplement` | **1** | 5 | 0 | 5 |
+| `alcoholic-beverage` | **0** | 0 | 0 | 0 |
+| `cosmetics-and-toiletries` | **1** | 5 | 0 | 5 |
+| `cleaning-product` | **1** | 7 | 0 | 7 |
+| `medical-device` | **0** | 0 | 0 | 0 |
+| `tobacco-product` | **0** | 0 | 0 | 0 |
+| `electronic-product` | **0** | 0 | 0 | 0 |
+| `other-non-food` | **0** | 0 | 0 | 0 |
+| **Totals** | **10** | **33** | **0** | **33** |
+
+28 distinct images. The seven `general-food` products are the masala sachet,
+milk, sugar, namkeen, chana, soya chunks and lapsi rawa; `health-supplement`
+is Plix "Acne Fighter" effervescent tablets; `cleaning-product` is the
+ShineXPro helmet-cleaner aerosol; `cosmetics-and-toiletries` is the Dove serum
+bathing bar.
+
+**Eight of the nine subcategories cannot be measured from this set** — five
+have no example at all, three have exactly one product. Zero of 33 labels have
+been verified by a person.
+
+**A repository-wide inventory was run on 2026-09-23 and found no unused real
+product data.** Every candidate source was checked, and the image overlaps were
+established by SHA-256 rather than by filename:
+
+| Source | Verdict |
+|---|---|
+| `ml/data/raw/products/` | The 28 originals. All already in the seed set. |
+| `ml/data/{our,usp,hv}-evaluation-set/` | The **same 28 image bytes**, three times, with successively corrected *declaration* annotations. No new product. |
+| `ml/data/evaluation/ocr_runs/{before,after}/` | Genuine Tesseract output for those same 28 images; the text is already in the seed set. |
+| `ml/data/evaluation/{compliant,non_compliant,requires_review}/` | Empty — `.gitkeep` only. |
+| `backend/media/product-images/` | 18 files: 17 are byte-identical duplicates of existing evaluation photographs, 1 is a 240×120 synthetic PNG. **User uploads; gitignored; not eligible** — see [Privacy](#privacy-and-what-is-not-in-the-dataset). |
+| `frontend/src/test/fixtures.js`, `mobile/tests/fixtures.ts`, backend tests | Synthetic API shapes. Not products. |
+
+The `hv-` set is worth naming precisely, because its name invites a wrong
+reading: 34 of its 364 cells have been checked by a person, and **all of them
+are declaration cells** — dates, quantities, prices. **No product category has
+ever been human-verified**, in that set or anywhere else. The verification
+machinery described above exists so that the next person to check one has
+somewhere to record it; it did not create any verified data, and none was
+invented to fill it.
 
 **Limitation, stated plainly.** Ten products, three of the four classes
 represented by a single product each, and 20 of the 33 texts are front
@@ -445,6 +616,27 @@ same way. OCR text from the project's own photographs, with the engine
 version. Transcriptions with who typed them. Labels with who assigned them
 and — separately — who verified them. Nothing downloaded from a third party
 without its licence being read first (`data-strategy.md` §3a).
+
+### Privacy, and what is not in the dataset
+
+No image bytes are committed. Each example carries the SHA-256 of the
+photograph it came from; the photographs live under `ml/data/`, which
+`.gitignore` excludes in full. `test_data_layout.py` asserts that negation
+chain still holds, because a photograph committed once is in every clone for
+ever.
+
+The dataset's text is **public print on retail packaging** — brand names,
+ingredient lists, manufacturer addresses, licence numbers, care-line numbers.
+A consumer-care number printed on a package is a declaration and part of what
+is being read; anything identifying a private individual is not.
+`test_classification_dataset.py` asserts no secret-looking string is present.
+
+**User uploads are not eligible, however useful.**
+`backend/media/product-images/` holds 18 images submitted through the app. They
+are gitignored, and they stay that way: a photograph a user sent to be analysed
+was not given for training, and the fact that 17 of the 18 happen to duplicate
+photographs the project already owns does not change the rule that decided it.
+Nothing in this dataset came from that directory.
 
 ## Training
 
@@ -891,8 +1083,14 @@ fact the engine may use — the same way it is today.
   constraint, and it cannot be fixed by modelling. `ml/data/` contains 28
   photographs of 10 products and nothing else; the three evaluation sets
   (`our-`, `usp-`, `hv-`) are the *same* 28 images with successively corrected
-  annotations, and all 28 are already in the classifier's seed set. There is no
-  unused real product data in the repository.
+  annotations, and all 28 are already in the classifier's seed set. **A
+  repository-wide inventory on 2026-09-23 re-confirmed this**, checking image
+  overlap by SHA-256 rather than by filename — see
+  [Dataset](#dataset) for the source-by-source table. There is no unused real
+  product data in the repository.
+- **Zero verified labels.** A ledger, a schema and a procedure for verifying
+  one now exist (2026-09-23); nothing has been verified through them. The
+  machinery is not the data, and the count is still 0 of 33.
 
 ### What would actually move this
 
@@ -905,13 +1103,25 @@ In rough order of value, and none of it is a code change:
    products, leave-one-product-out cannot measure it and no model can learn it.
 2. **Human-verified labels.** All 33 seed labels are `claude-opus-5-draft`
    with `label_verified_by: null`. A metric computed against unverified labels
-   measures agreement with a drafting model.
+   measures agreement with a drafting model. The mechanism for recording a
+   verification now exists — [`verification.py`](../../ml/labelextract/classification/verification.py)
+   and the ledger — so this step is now a person looking at ten packages, not
+   a design problem.
 3. **A held-out set of verified labels, split by product**, kept apart from
    whatever is used for tuning — the only basis on which a calibration and an
-   operating point could be chosen.
+   operating point could be chosen. `--require-verified` is the gate such a set
+   would be validated under.
 4. Only then: calibration (reliability diagram, ECE, temperature scaling) and,
    if and only if accuracy rises with confidence at usable coverage, a proposed
    acceptance-policy entry.
+
+**What the 2026-09-23 dataset work did and did not do.** It added validation,
+a verification mechanism, a dataset registry and 115 tests. It added **no
+examples, no products and no verified labels**, because the repository
+contains no further genuine product data and inventing some would have made
+every figure above meaningless. `tfidf-logreg 0.1.0` was not retrained and is
+byte-identical; `AUTOMATIC_APPLICABILITY_ACCEPTED_CLASSIFIERS` stays empty.
+Steps 1 and 2 are unchanged and are still the whole problem.
 
 ## Files
 
@@ -922,11 +1132,13 @@ In rough order of value, and none of it is a code change:
 | `ml/labelextract/classification/signals.py` | Evidence phrases |
 | `ml/labelextract/classification/model.py` | Artifact format, validation, plain-Python TF-IDF + linear inference |
 | `ml/labelextract/classification/classifier.py` | `TfidfProductClassifier`, `ClassifierConfig`, `build_classifier`, `VERSION` |
-| `ml/labelextract/classification/dataset.py` | Dataset format, loader, validation |
+| `ml/labelextract/classification/dataset.py` | Dataset format, loader, schema validation |
+| `ml/labelextract/classification/validation.py` | The twelve data-integrity checks, fold integrity, the coverage report, the CLI |
+| `ml/labelextract/classification/verification.py` | The human-verification ledger: format, reconciliation, `apply`, worksheets |
 | `ml/labelextract/classification/metrics.py` | Abstention-aware metrics |
 | `ml/labelextract/classification/train.py` | Offline training, cross-validation, export, report |
 | `ml/labelextract/classification/artifacts/` | The shipped artifact and its metrics report |
-| `ml/labelextract/classification/datasets/` | The seed dataset |
+| `ml/labelextract/classification/datasets/` | The seed dataset, the verification ledger, `REGISTRY.json`, and the reviewer's procedure in `README.md` |
 | `ml/labelextract/contracts.py` | `ProductClassification`, `UNKNOWN_CATEGORY` |
 | `ml/labelextract/interfaces.py` | `ProductClassifier` |
 | `ml/labelextract/pipeline.py` | The optional `classifier` stage |

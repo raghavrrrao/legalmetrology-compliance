@@ -1,0 +1,6 @@
+{
+  "ledger_version": "classifier-label-verification-v1",
+  "dataset_version": "product-classification-seed-v0.1",
+  "description": "Human verification of the product-category labels in product-classification-seed-v0.1. EMPTY: no person has yet checked any of the 33 labels, all of which were drafted by a model (claude-opus-5-draft) from the photographs. This file is empty because nothing has been verified, not because verification is untracked - an entry appears here only when a named person has established a product's identity, its category, its subcategory and which photographs and example rows they read. The classifier and the drafting model are refused as verifiers by labelextract.classification.verification. See README.md in this directory for the procedure.",
+  "entries": []
+}
