@@ -157,8 +157,11 @@ describe('navigating to a stored result', () => {
 
     fireEvent.click(await screen.findByRole('link', { name: /result 11111111/i }));
 
+    // The result screen's H1. It was "Compliance assessment" and is now
+    // "Inspection report"; what this test asserts is unchanged - that clicking
+    // a row lands on the stored result rather than staying on the list.
     expect(
-      await screen.findByRole('heading', { name: /compliance assessment/i }),
+      await screen.findByRole('heading', { level: 1, name: /inspection report/i }),
     ).toBeInTheDocument();
     await waitFor(() =>
       expect(

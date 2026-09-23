@@ -1,4 +1,5 @@
 import { isUnrecognisedResult, toneForResult } from '../utils/compliance.js';
+import { formatDateTime, humaniseCode } from '../utils/format.js';
 
 /**
  * The verdict, its explanation, and the counts behind it.
@@ -37,24 +38,41 @@ export function VerdictBanner({ result }) {
   const unrecognised = isUnrecognisedResult(result.result);
   const headline = countSentence(result);
 
+  const subject = subjectLine(result);
+
   return (
     <section
-      className={`verdict verdict--${tone}`}
+      className={`verdict verdict--${tone} glass`}
       aria-label="Compliance verdict"
     >
-      <p className="verdict__eyebrow">Automated compliance check</p>
-
+      {/*
+        The report header: the outcome as a mark and a word, what was
+        inspected, and when. It reads top-to-bottom as an inspection record
+        rather than as a status field on a form - which is the difference
+        between this screen feeling like a report and feeling like a database
+        row.
+      */}
       <div className="verdict__head">
-        <h2 className="verdict__title">
-          <span className="verdict__mark" aria-hidden="true">
+        <div className="verdict__identity">
+          <span
+            className={`verdict__mark verdict__mark--${tone}`}
+            aria-hidden="true"
+          >
             {MARK_BY_TONE[tone] ?? '?'}
           </span>
-          {/*
-            The backend's own label, not one restated here, so the two cannot
-            drift. Falls back to the raw value for a verdict with no label.
-          */}
-          {result.resultDisplay || result.result || 'Unknown result'}
-        </h2>
+          <div className="verdict__words">
+            <p className="verdict__eyebrow">Automated compliance check</p>
+            <h2 className="verdict__title">
+              {/*
+                The backend's own label, not one restated here, so the two
+                cannot drift. Falls back to the raw value for a verdict with
+                no label.
+              */}
+              {result.resultDisplay || result.result || 'Unknown result'}
+            </h2>
+            {subject && <p className="verdict__subject">{subject}</p>}
+          </div>
+        </div>
         <p className="verdict__meta">
           Compliance engine v{result.engineVersion}
           {result.processingMs !== null && ` · ${result.processingMs} ms`}
@@ -65,35 +83,39 @@ export function VerdictBanner({ result }) {
 
       <p className="verdict__summary">{result.summary}</p>
 
+      {/*
+        The summary tiles. Every number is one the engine reported; nothing
+        here is derived, averaged or turned into a rate. The word beside each
+        number is what carries its meaning - the tint is decoration on top of a
+        label that already says the same thing.
+      */}
       <div className="verdict__counts">
-        <span className="count-chip count-chip--success">
-          <span className="count-chip__dot" aria-hidden="true" />
-          {result.rulesPassed} passed
-        </span>
-        <span className="count-chip count-chip--error">
-          <span className="count-chip__dot" aria-hidden="true" />
-          {result.rulesFailed} failed
-        </span>
-        <span className="count-chip count-chip--review">
-          <span className="count-chip__dot" aria-hidden="true" />
-          {result.rulesInconclusive}{' '}
-          {result.rulesInconclusive === 1 ? 'requires' : 'require'} review
-        </span>
+        <Tile tone="success" value={result.rulesPassed} label="passed" />
+        <Tile tone="error" value={result.rulesFailed} label="failed" />
+        <Tile
+          tone="review"
+          value={result.rulesInconclusive}
+          label={`${result.rulesInconclusive === 1 ? 'requires' : 'require'} review`}
+        />
         {/*
           Null against a backend that predates the count, and omitted then
           rather than drawn as zero - "no rule was exempt" and "this server
           does not report exemptions" are different claims.
         */}
         {result.rulesNotApplicable !== null && (
-          <span className="count-chip count-chip--muted">
-            <span className="count-chip__dot" aria-hidden="true" />
-            {result.rulesNotApplicable} did not apply
-          </span>
+          <Tile
+            tone="muted"
+            value={result.rulesNotApplicable}
+            label="did not apply"
+          />
         )}
-        <span className="count-chip">
-          <span className="count-chip__dot" aria-hidden="true" />
-          {result.rulesEvaluated} requirements examined
-        </span>
+        {/*
+          "examined", not "requirements examined". The longer label was the one
+          tile in the row that wrapped to two lines, which left the summary
+          looking ragged for no gain - the heading above the row already says
+          these are requirements.
+        */}
+        <Tile value={result.rulesEvaluated} label="examined" />
       </div>
 
       {result.rulesInconclusive > 0 && (
@@ -131,6 +153,51 @@ export function VerdictBanner({ result }) {
       )}
     </section>
   );
+}
+
+/**
+ * One summary tile: a count the engine reported, and the word for it.
+ *
+ * **The count and the word are one text node, and must stay that way.** An
+ * earlier draft set the number in its own `<span>` so it could be styled
+ * large, which broke two assertions and would have broken more than that:
+ * Testing Library's `getNodeText` joins only an element's *direct* text
+ * children, so "1" and "failed" in sibling spans are no longer findable as
+ * "1 failed" — and a screen reader has the same problem, announcing two
+ * fragments where a person reads one phrase.
+ *
+ * So the tile is a dot and a sentence. The number is not set at 2rem; the
+ * tile's own size and border carry the emphasis instead, which is the cheaper
+ * half of the effect and costs nothing that matters.
+ */
+function Tile({ tone, value, label }) {
+  return (
+    <span className={`count-chip${tone ? ` count-chip--${tone}` : ''}`}>
+      <span className="count-chip__dot" aria-hidden="true" />
+      {value} {label}
+    </span>
+  );
+}
+
+/**
+ * What was inspected and when, or null when the response says neither.
+ *
+ * Both halves come straight from the response: the product category the rules
+ * were selected for, and the moment the evaluation completed. **No product
+ * name is shown, because the API does not carry one** - this system reads
+ * labels, it does not identify products, and printing a name here would be the
+ * one invented fact on the screen.
+ */
+function subjectLine(result) {
+  const parts = [];
+  if (result.productCategoryCode) {
+    parts.push(humaniseCode(result.productCategoryCode));
+  }
+  const checkedAt = formatDateTime(result.completedAt);
+  if (checkedAt) {
+    parts.push(`Checked ${checkedAt}`);
+  }
+  return parts.length > 0 ? parts.join(' · ') : null;
 }
 
 /**

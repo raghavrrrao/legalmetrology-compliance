@@ -71,9 +71,16 @@ export function ResultPage() {
             </li>
             <li>Result {String(checkId).slice(0, 8)}</li>
           </ol>
-          <h1 className="page-title">Compliance assessment</h1>
+          <h1 className="page-title">Inspection report</h1>
+          {/*
+            "A stored result, loaded from the API by its id" described the
+            plumbing rather than the page. What a reader needs to know here is
+            that this is a saved record they can come back to and send on - the
+            reason the route exists at all.
+          */}
           <p className="page-lede">
-            A stored result, loaded from the API by its id.
+            A saved record of one label check. This link reopens it, and can be
+            sent to a reviewer.
           </p>
         </div>
         <div className="page-header__actions">

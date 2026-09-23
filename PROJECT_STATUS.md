@@ -41,6 +41,23 @@ permissions. Synchronous analysis, ~2 s median.
 **Frontend:** React 19 + Vite. Scan, result, permalink and history screens
 against the real API, with the applicability declaration form and the full
 finding trace. No login screen (see *Known security limitations*).
+**Redesigned 2026-09-23** onto an iOS 18-inspired system shared with the mobile
+client: near-white ground with a faint green atmosphere, one restrained green
+accent, large radii, hairline separators, and glass on five named surfaces
+rather than everywhere. The home page was recomposed rather than restyled — a
+hero with the product's one sentence and its primary action, an illustrative
+label card that asserts no product data, four workflow tiles, real recent
+inspections or a polished empty state, and the backend diagnostics demoted to a
+closed disclosure at the bottom. The result screen reads as an inspection
+report: a status disc, the verdict as a word, what was inspected and when, then
+the engine's own counts as tiles. The stylesheet was three stacked layers in
+which 118 of 211 selectors were declared more than once; it is now one pass with
+every selector declared once. Appearance only: no API contract, backend
+behaviour or compliance logic was touched; there is still no compliance score
+anywhere; and the four outcomes keep their own tone, word and symbol. Rendered
+and checked at 1920/1440/1280/1024/768/492 px — phone widths under 492 could not
+be rendered on this machine and are unverified visually. See
+[`docs/ui/design-system.md`](docs/ui/design-system.md).
 
 **OCR/ML:** Working with Tesseract 5 (`eng` + `osd`) through the separate
 `labelextract` package, which installs and passes its whole suite with **zero**
@@ -82,13 +99,25 @@ trusting the claim. Compliance results are now scoped to the caller. Throttling
 30/min anonymous, 120/min authenticated. `manage.py check --deploy` reports zero
 issues with `DJANGO_DEBUG=False`.
 
-**Testing:** 934 backend, 998 ML (plus 2 recorded expected failures and 2 unexpected passes of the same parametrised classifier-robustness test), 243 frontend, 203 mobile — all passing as of 2026-09-23. The ML count includes 92 new extraction-hardening regressions, every one of whose inputs is recognised text this project actually produced rather than a drafted label. Lint clean, production build succeeds, mobile typecheck clean, `makemigrations --check` reports no changes. Counts are stated so drift is noticeable, not as a
+**Testing:** 934 backend, 998 ML (plus 2 recorded expected failures and 2 unexpected passes of the same parametrised classifier-robustness test), 255 frontend, 207 mobile — all passing as of 2026-09-23. The ML count includes 92 new extraction-hardening regressions, every one of whose inputs is recognised text this project actually produced rather than a drafted label. The web and mobile suites grew by 16 with the analysis state: 12 web and 4 mobile cases covering `AnalysisPanel` and `ScanPreview`, most of them asserting what a progress display must NOT do - no percentage, no "n of m", no time estimate, no `progressbar` role, and no splitting of one server call into two ticking stages. Everything else in those suites asserts behaviour, text and semantics, which is exactly what a restyle must not change, so they are what each visual pass is verified against. Nothing asserts on appearance, so a purely cosmetic regression would not fail a test - which is why each pass is also checked by rendering the pages and looking at them. Lint clean, production build succeeds, mobile typecheck clean, `makemigrations --check` reports no changes. Counts are stated so drift is noticeable, not as a
 quality claim: a passing suite bounds what is checked, not what is correct.
 
 **Documentation:** Checked against the code in Step 5. Where a document and the
 code disagreed, the document was corrected rather than the claim softened.
 
-**Deployment:** **Ready to deploy, not deployed.** `Dockerfile` (with the
+**Deployment:** **Deployed, and currently serving a broken endpoint.** A Railway
+service exists at `legalmetrology-compliance-production.up.railway.app` and
+answers `/api/v1/health/` with `200 {"status":"ok"}` — but
+`GET /api/v1/compliance/` returns **500**, and so does the detail route for an
+id that does not exist (which would otherwise be a 404). The cause is a
+database whose schema is behind the deployed code: `catalog.0003_product_category_source`
+has not been applied there, so every query that selects a `Product` column
+fails. The application code is correct and unchanged; this is database state.
+The fix is to run `python backend/manage.py deploy_setup` (or `migrate`) against
+the production database. See the section below, which had claimed no service
+existed at all.
+
+`Dockerfile` (with the
 Tesseract binary), `railway.json`, `gunicorn.conf.py` and the `deploy_setup`
 initialisation command all exist and were re-verified on 2026-09-09. No Railway
 project has been created from this repository and there is no URL. See
@@ -109,9 +138,9 @@ project has been created from this repository and there is no URL. See
 | Rule engine | Working. Seven registered deterministic checks; no LLM anywhere in the decision path. | `apps/rules/checks/` |
 | Findings & result | Working. One finding per rule examined, with clause, source, evidence, confidence and applicability. | `apps/compliance/services/engine.py` |
 | Frontend | Working. Scan, result, permalink and history screens against the real API. | `frontend/src/` |
-| Mobile client | **Foundation.** React Native (Expo) app: camera or gallery → preview → upload to `POST /api/v1/extraction/` → `POST /api/v1/compliance/` → result with verdict, findings, reading and the classifier's suggestion when present. 196 Jest tests; Android project generated and a debug APK built with Gradle; iOS configured but not built; not yet run on hardware. No sign-in - relies on the demonstration switch. | `mobile/`, `docs/mobile.md` |
+| Mobile client | **Foundation.** React Native (Expo) app: camera or gallery → preview → upload to `POST /api/v1/extraction/` → `POST /api/v1/compliance/` → result with verdict, findings, reading and the classifier's suggestion when present. Shares the web's design language as of 2026-09-23 (same palette, rhythm and tones; native layout, no web CSS). 203 Jest tests; Android project generated and a debug APK built with Gradle; iOS configured but not built; not yet run on hardware. No sign-in - relies on the demonstration switch. | `mobile/`, `docs/mobile.md` |
 | Authentication UI | **Not built.** Session auth and deny-by-default permissions exist; there is no login screen, so a demonstration switch (`DEMO_PUBLIC_ANALYSIS_API`, default off) opens the analysis endpoints. | — |
-| Deployment | Configured and verified, **not deployed**. Container image, Railway config, gunicorn, one-command initialisation. No Railway project exists. | `Dockerfile`, `railway.json`, `backend/gunicorn.conf.py` |
+| Deployment | **Deployed, and currently broken.** A Railway service is live and healthy at the health endpoint, but `GET /api/v1/compliance/` returns 500 because `catalog.0003_product_category_source` is unapplied on that database. Not a code defect — run `deploy_setup` against it. | `Dockerfile`, `railway.json`, `backend/gunicorn.conf.py` |
 
 ---
 
@@ -318,10 +347,47 @@ and there is no measured end-to-end verdict accuracy at all.**
 
 ## Deployment status
 
-**READY FOR DEPLOYMENT — NOT DEPLOYED.** The configuration exists, and every
-check below has been run. No Railway project has been created from this
-repository, no `railway up` has been run, and there is no URL. Anyone saying
-"it's deployed" is wrong; the accurate sentence is "it is ready to deploy".
+**DEPLOYED, AND CURRENTLY BROKEN.** This section said the opposite until
+2026-09-23 — "no Railway project has been created from this repository ... and
+there is no URL" — and that was wrong. A service is live at
+`legalmetrology-compliance-production.up.railway.app`, found while
+investigating a 500 reported from the Inspections screen.
+
+What is true of it today:
+
+| Endpoint | Status |
+|---|---|
+| `GET /api/v1/health/` | **200** — `{"status":"ok"}`, database reported `ok` |
+| `GET /api/v1/compliance/applicability-conditions/` | **200** |
+| `GET /api/v1/compliance/` | **500** |
+| `GET /api/v1/compliance/<unknown-uuid>/` | **500** (should be 404) |
+
+The last row is the diagnostic one. A UUID that matches no row should produce a
+404; a 500 means the `SELECT` itself failed, which puts the fault in the schema
+rather than in the data. The deployed code has `Product.category_source` and
+`Product.category_basis`; that database does not, because
+`catalog.0003_product_category_source` was never applied to it. Every query
+selecting a `Product` column therefore fails, which is every compliance
+endpoint that joins the product.
+
+**No application code is at fault and none was changed.** `railway.json`
+already declares the right `preDeployCommand`
+(`python /app/backend/manage.py deploy_setup`, which runs `migrate` first), so
+either that step did not run for the deploy that shipped this code, or it ran
+against a different database. Which of the two cannot be determined from here:
+this environment has no Railway CLI and no credentials, so the platform's logs
+were not readable.
+
+**The fix is operational, not a patch:** run
+`python backend/manage.py deploy_setup` (or `migrate`) against the production
+database, then re-check the four endpoints above.
+
+**Note the health check did not catch this.** It reports `database: ok` from a
+connection test, and Railway's `healthcheckPath` points at it — so the platform
+considered a deploy healthy while the main list endpoint was returning 500.
+Reporting unapplied migrations there would have surfaced it immediately; that
+change is *not* made here, because it is a new behaviour rather than a fix to
+this incident, and it is recorded as a recommendation instead.
 
 Target: the backend as a container on **Railway**, with **Railway PostgreSQL**;
 the React bundle hosted separately. Full runbook:

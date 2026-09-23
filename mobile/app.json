@@ -1,6 +1,6 @@
 {
   "expo": {
-    "name": "Label Check",
+    "name": "NIRIKSHAN",
     "slug": "legalmetrology-label-check",
     "version": "0.1.0",
     "orientation": "portrait",
@@ -30,8 +30,8 @@
       [
         "expo-image-picker",
         {
-          "cameraPermission": "Label Check uses the camera to photograph a product label so it can be checked.",
-          "photosPermission": "Label Check lets you choose an existing photo of a product label to check.",
+          "cameraPermission": "NIRIKSHAN uses the camera to photograph a product label so it can be checked.",
+          "photosPermission": "NIRIKSHAN lets you choose an existing photo of a product label to check.",
           "microphonePermission": false
         }
       ]

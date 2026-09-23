@@ -1,7 +1,7 @@
 import type { ReactNode } from 'react';
 import { StyleSheet, Text, View } from 'react-native';
 
-import { colors, radius, spacing, typography } from '../theme';
+import { colors, elevation, radius, spacing, typography } from '../theme';
 
 interface CardProps {
   title?: string;
@@ -34,6 +34,7 @@ const styles = StyleSheet.create({
     borderColor: colors.border,
     padding: spacing.lg,
     marginBottom: spacing.lg,
+    ...elevation.card,
   },
   title: {
     ...typography.heading,

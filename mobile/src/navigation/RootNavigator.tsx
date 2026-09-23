@@ -23,13 +23,15 @@ export function RootNavigator() {
       initialRouteName="Home"
       screenOptions={{
         headerStyle: { backgroundColor: colors.surface },
-        headerTintColor: colors.text,
-        headerTitleStyle: { fontWeight: '600' },
+        // The back chevron and any header action take the accent; the title
+        // stays text-coloured, so the accent means "you can press this".
+        headerTintColor: colors.primary,
+        headerTitleStyle: { fontWeight: '600', color: colors.text },
         headerShadowVisible: false,
         contentStyle: { backgroundColor: colors.background },
       }}
     >
-      <Stack.Screen name="Home" component={HomeScreen} options={{ title: 'Label Check' }} />
+      <Stack.Screen name="Home" component={HomeScreen} options={{ title: 'NIRIKSHAN' }} />
       <Stack.Screen name="Preview" component={PreviewScreen} options={{ title: 'Preview' }} />
       <Stack.Screen
         name="Analysis"

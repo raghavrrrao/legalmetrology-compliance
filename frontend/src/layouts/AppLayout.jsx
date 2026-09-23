@@ -19,11 +19,36 @@ import { Link, NavLink, Outlet } from 'react-router-dom';
 export function AppLayout() {
   return (
     <div className="app-layout">
+      {/*
+        First in the tab order, hidden until focused. The header carries a
+        brand link and three navigation items; without this a keyboard user
+        tabs through all four on every page before reaching the content they
+        came for. `#main` is the `<main>` below, which takes focus because it
+        is given `tabIndex={-1}` - a bare anchor jump moves the viewport but
+        not the focus ring in several browsers, and the next Tab would then
+        continue from the header.
+      */}
+      <a className="skip-link" href="#main">
+        Skip to main content
+      </a>
+
       <header className="app-header">
         <Link to="/" className="app-header__title">
           <BrandMark />
+          {/*
+            NIRIKSHAN is the product name; "Compliance Assistant" is what it
+            does. The two are separate elements so the tagline can drop on a
+            phone without touching the name.
+
+            This is the *application's* name and nothing else. "Legal
+            Metrology" remains the name of the Rules the system checks against,
+            and it still appears wherever the law is being referred to - the
+            hero eyebrow, the footer disclaimer, every finding's clause. The
+            two must not be conflated: renaming the product does not rename the
+            legislation.
+          */}
           <span className="app-header__words">
-            <span className="app-header__name">LM Metrology</span>
+            <span className="app-header__name">NIRIKSHAN</span>
             <span className="app-header__tagline">Compliance Assistant</span>
           </span>
         </Link>
@@ -39,7 +64,7 @@ export function AppLayout() {
         </nav>
       </header>
 
-      <main className="app-main">
+      <main className="app-main" id="main" tabIndex={-1}>
         <Outlet />
       </main>
 
@@ -48,13 +73,33 @@ export function AppLayout() {
           Shown on every page, not just the results screen. This tool assists a
           human reviewer; it does not certify legal compliance, and a user must
           never be able to reach a verdict without seeing that stated.
+
+          The summary line carries the whole claim in eight words and is always
+          visible. The paragraph behind the disclosure is the same text it has
+          always been - `<details>` keeps it in the DOM, so it is still found by
+          a page search and still read out by a screen reader that opens it.
+          Nothing here is hidden from anyone; it is weighted, because a
+          four-line grey block under every screen is a thing people learn to
+          skip.
         */}
-        <p className="app-footer__disclaimer">
-          This tool provides automated assistance for reviewing packaged
-          commodity labels. It is not a legal determination and does not
-          certify compliance with the Legal Metrology (Packaged Commodities)
-          Rules, 2011. Always confirm findings against the authoritative rules.
-        </p>
+        <div className="app-footer__inner">
+          <details>
+            <summary className="app-footer__summary">
+              <strong>Automated assistance only</strong>
+              <span className="app-footer__dot" aria-hidden="true">
+                •
+              </span>
+              <span>Not a legal determination</span>
+            </summary>
+            <p className="app-footer__disclaimer">
+              This tool provides automated assistance for reviewing packaged
+              commodity labels. It is not a legal determination and does not
+              certify compliance with the Legal Metrology (Packaged
+              Commodities) Rules, 2011. Always confirm findings against the
+              authoritative rules.
+            </p>
+          </details>
+        </div>
       </footer>
     </div>
   );

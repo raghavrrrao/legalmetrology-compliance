@@ -1,7 +1,7 @@
 import { StyleSheet, Text, View } from 'react-native';
 
 import { StatusBadge } from './StatusBadge';
-import { colors, radius, spacing, typography } from '../theme';
+import { colors, elevation, radius, spacing, toneColors, typography } from '../theme';
 import type { Finding } from '../types/api';
 import { formatConfidence, humaniseCode } from '../utils/format';
 import { findingStatusLabel, toneForFindingStatus } from '../utils/status';
@@ -22,7 +22,24 @@ export function FindingCard({ finding }: { finding: Finding }) {
     .join(' · ');
 
   return (
-    <View style={styles.card} testID={`finding-${finding.id}`}>
+    /*
+     * The tone is carried by a rule down the leading edge, the same signal the
+     * web finding card uses - never as a fill behind the text, which costs the
+     * message its contrast. It is never the only signal either: the badge above
+     * says the status in words and carries its own symbol.
+     *
+     * `not_applicable` tones to `muted` and gets a dashed edge, because nothing
+     * about those declarations was examined and the card must not read as a
+     * result.
+     */
+    <View
+      style={[
+        styles.card,
+        { borderLeftColor: toneColors[tone].border },
+        tone === 'muted' && styles.cardNotApplicable,
+      ]}
+      testID={`finding-${finding.id}`}
+    >
       <View style={styles.header}>
         <Text style={styles.title} accessibilityRole="header">
           {heading}
@@ -72,10 +89,16 @@ const styles = StyleSheet.create({
   card: {
     borderWidth: 1,
     borderColor: colors.border,
-    borderRadius: radius.md,
+    borderLeftWidth: 4,
+    borderRadius: radius.lg,
     padding: spacing.md,
     marginBottom: spacing.md,
     backgroundColor: colors.surface,
+    ...elevation.card,
+  },
+  cardNotApplicable: {
+    borderStyle: 'dashed',
+    borderLeftColor: colors.borderStrong,
   },
   header: {
     flexDirection: 'row',

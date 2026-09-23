@@ -49,8 +49,16 @@ describe('layout', () => {
 
     renderApp();
 
+    // The home page's own H1. The wording changed with the interface
+    // redesign - it was "Packaged commodity compliance", which named the
+    // subject rather than saying what the tool does - and this assertion still
+    // does the one job it ever did: prove the shell renders a heading without
+    // a backend.
     expect(
-      await screen.findByRole('heading', { name: /packaged commodity compliance/i }),
+      await screen.findByRole('heading', {
+        level: 1,
+        name: /check a package before you trust the label/i,
+      }),
     ).toBeInTheDocument();
     // Wait for the health request to settle so the assertion above is not
     // followed by an unawaited state update.
@@ -62,8 +70,16 @@ describe('layout', () => {
 
     renderApp();
 
+    // `findAllBy`, because the footer now states the claim twice on purpose:
+    // once in the always-visible summary line and once in the full notice
+    // behind the disclosure. A single-match query would fail on the *presence*
+    // of the summary, which is the opposite of what this test is for. The
+    // assertion below is the stronger one - it is the full paragraph, not just
+    // the phrase, that has to survive.
+    const mentions = await screen.findAllByText(/not a legal determination/i);
+    expect(mentions.length).toBeGreaterThan(0);
     expect(
-      await screen.findByText(/not a legal determination/i),
+      screen.getByText(/does not\s+certify compliance with the Legal Metrology/i),
     ).toBeInTheDocument();
     await screen.findByText(/version v1/i);
   });
@@ -173,10 +189,21 @@ describe('backend connectivity', () => {
     renderApp();
 
     await waitFor(() => expect(screen.getByText(/version v1/i)).toBeInTheDocument());
-    expect(fetch.mock.calls[0][0]).toContain('/api/v1/health/');
-    // The name of this test promises "exactly once", so assert it. An effect
-    // that refires on every render would be invisible otherwise.
-    expect(fetch).toHaveBeenCalledTimes(1);
+
+    // The name of this test promises the *health* endpoint exactly once, and
+    // this now asserts exactly that rather than "fetch was called once".
+    //
+    // The old form read `fetch.mock.calls[0][0]` and `toHaveBeenCalledTimes(1)`,
+    // which only worked while health was the page's sole request. The home page
+    // also loads recent inspections now, and either request can settle first -
+    // so counting every call would fail for a reason that has nothing to do
+    // with what this test is guarding. Filtering by URL is the stronger
+    // assertion: an effect refiring on every render would still be caught, and
+    // it is no longer coupled to how many *other* endpoints the page uses.
+    const healthCalls = fetch.mock.calls.filter(([url]) =>
+      String(url).includes('/api/v1/health/'),
+    );
+    expect(healthCalls).toHaveLength(1);
   });
 
   it('does not leave state updates pending after unmount', async () => {

@@ -101,7 +101,7 @@ const styles = StyleSheet.create({
   },
   frame: {
     width: '100%',
-    backgroundColor: '#1F2937',
+    backgroundColor: colors.photoWell,
     borderRadius: radius.lg,
     overflow: 'hidden',
     alignItems: 'center',
