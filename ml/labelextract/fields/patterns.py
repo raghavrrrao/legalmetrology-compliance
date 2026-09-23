@@ -211,12 +211,20 @@ UNIT_SALE_PRICE_KEYWORD = re.compile(
 #: commit to `5 per g` - a confident reading of a price the label never
 #: printed, which is exactly the failure this layer exists to avoid. With it,
 #: the line yields nothing.
+#:
+#: `per` carries no trailing `\b`, so the space OCR loses between it and its
+#: unit does not cost the reading. `Rs. 0.08 perg` is `Rs. 0.08 per g` with one
+#: space dropped - the shape seen on `p010_01_back`, whose panel prints
+#: `₹ 0.08 per g` and was recognised as `Z 0.08 perg`. Nothing is invented by
+#: allowing it: every character of the unit was recognised, and the unit's own
+#: `\b` still has to close the token, so `per 100 g` is unreachable and
+#: `perfume` cannot end in a unit. It is a spacing variation, not a repair.
 PER_UNIT_PRICE = re.compile(
     rf"(?<![\d,.])"
     rf"(?:(?P<currency>{_CURRENCY})\s*)?"
     rf"(?P<amount>{_NUMBER})\s*"
     rf"(?:{_CURRENCY})?\s*"
-    rf"(?:per\b|/)\s*"
+    rf"(?:per|/)\s*"
     rf"(?P<unit>{_UNITS})\b\.?",
     _I,
 )
@@ -259,6 +267,52 @@ DATE_KEYWORDS: tuple[tuple[str, re.Pattern[str]], ...] = (
             r"|\bexp(?:iry|ires?|\.)?\s*(?:date|on|dt)?\b"
             r"|\bexpiration\b"
             r"|\bconsume\s*(?:by|before)\b",
+            _I,
+        ),
+    ),
+)
+
+#: The strict half of `DATE_KEYWORDS`, for the two declarations whose keyword
+#: is also the opening of a *different* declaration.
+#:
+#: Same split, and for the same reason, as `NET_QUANTITY_ANCHOR` /
+#: `NET_QUANTITY_KEYWORD` and `BATCH_NUMBER_ANCHOR` / `BATCH_NUMBER`. The loose
+#: keyword is right inside `rule_based._dates`, where an actual date has to be
+#: read on the line before anything is emitted, so `Packed by BAZINGA MEDIA`
+#: harmlessly matches and produces nothing. It is wrong as evidence *on its
+#: own*: reporting a packing date "named but unread" there would be a claim
+#: about a label that names a packer and no date at all.
+#:
+#: What is left is the phrasings that cannot open a name declaration, because
+#: each of them names a *date*: the word `date` is in the phrase, or the
+#: abbreviation carries its own `DATE`/`DT` qualifier. `MFG. DT. :` is one of
+#: these; `MFG. BY LAKME LEVER PVT. LTD.` is not, and neither is `Packed by`.
+#:
+#: `pkd` on its own is deliberately excluded even though it is unambiguous as
+#: an abbreviation, because `Pkd. By:` is how a packer is named on real
+#: packaging and the qualifier is what tells the two apart.
+#:
+#: Every string these accept is also matched by the corresponding
+#: `DATE_KEYWORDS` entry; a test asserts it, so the two cannot drift into
+#: disagreeing about what a date keyword is.
+DATE_ANCHORS: tuple[tuple[str, re.Pattern[str]], ...] = (
+    (
+        "date_of_manufacture",
+        re.compile(
+            r"\bdate\s+of\s+(?:manufacture|mfg|mfr)\b"
+            r"|\bmanufactur(?:ed|ing)\s+date\b"
+            r"|\bmfg\.?\s*(?:date|dt)\b"
+            r"|\bmfd\.?\s*(?:date|dt)\b",
+            _I,
+        ),
+    ),
+    (
+        "date_of_packing",
+        re.compile(
+            r"\bdate\s+of\s+pack(?:ing|ed)?\b"
+            r"|\bpacking\s*date\b"
+            r"|\bpacked\s+(?:on|date)\b"
+            r"|\bpkd\.?\s*(?:on|date|dt)\b",
             _I,
         ),
     ),
@@ -353,7 +407,22 @@ CONTACT_KEYWORD = re.compile(
     _I,
 )
 
-EMAIL = re.compile(r"[A-Za-z0-9._%+\-]+@[A-Za-z0-9.\-]+\.[A-Za-z]{2,}")
+#: An e-mail address, tolerating the one space OCR routinely inserts at the
+#: `@`.
+#:
+#: A single optional space on each side, not `\s*`: `normalise_text` has
+#: already collapsed every whitespace run to one space by the time a line
+#: reaches here, so one space is the whole of what can be lost or gained, and
+#: keeping the quantifier that tight is what stops the pattern reaching across
+#: a line that merely contains an `@`.
+#:
+#: Nothing is invented. Both halves of the address still have to be recognised
+#: in full, and the domain still has to end in a dot and a TLD - so
+#: `suggestion @dmartindia com`, where OCR dropped the dot as well as the
+#: space, is still not an e-mail address and is still not reported as one. The
+#: space is a separator OCR added; a missing dot would be a character we did
+#: not read, and putting one back would be a fabricated address.
+EMAIL = re.compile(r"[A-Za-z0-9._%+\-]+[ ]?@[ ]?[A-Za-z0-9.\-]+\.[A-Za-z]{2,}")
 
 #: Indian toll-free numbers, the strongest single signal that a line is a
 #: consumer-care declaration.
@@ -425,18 +494,31 @@ COUNTRY_OF_ORIGIN_IMPLIED = re.compile(
 
 #: Keyword -> `LabelFieldKey` value. Only the *name* is captured. The address
 #: that follows on the next lines is not extracted; see `ml/README.md`.
+#:
+#: The joined forms - `Manufactured & Packed by`, `Packed & Marketed by` - are
+#: how an Indian package names one company that does two of the jobs, and each
+#: one is a declaration of the *first* role named, which is why the joining
+#: word sits inside the keyword and not in the captured value.
+#: `p005_01_back` prints `Packed & Marketed by:`, which matched only the
+#: `marketed by` pattern and so was recorded as a marketing declaration while
+#: the packer the label plainly names went unread.
+_ALSO_DOES = r"(?:packed|marketed|distributed|imported)\s*"
 NAME_DECLARATIONS: tuple[tuple[str, re.Pattern[str]], ...] = (
     (
         "manufacturer_name",
         re.compile(
             r"\b(?:manufactured|mfd|mfg|mfr)\.?\s*(?:&|and)?\s*"
-            r"(?:packed\s*)?by\b\s*[:\-]?\s*(?P<value>.+)",
+            rf"(?:{_ALSO_DOES})?by\b\s*[:\-]?\s*(?P<value>.+)",
             _I,
         ),
     ),
     (
         "packer_name",
-        re.compile(r"\b(?:packed|pkd|packer)\.?\s*by\b\s*[:\-]?\s*(?P<value>.+)", _I),
+        re.compile(
+            r"\b(?:packed|pkd|packer)\.?\s*(?:&|and)?\s*"
+            rf"(?:{_ALSO_DOES})?by\b\s*[:\-]?\s*(?P<value>.+)",
+            _I,
+        ),
     ),
     (
         "importer_name",

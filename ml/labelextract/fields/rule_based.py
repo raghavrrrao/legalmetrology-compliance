@@ -58,6 +58,7 @@ from labelextract.fields.normalisation import (
     is_uncertain,
     normalise_date,
     normalise_duration,
+    normalise_email,
     normalise_price,
     normalise_quantity,
     normalise_text,
@@ -69,7 +70,19 @@ from labelextract.interfaces import FieldExtractor
 logger = logging.getLogger(__name__)
 
 NAME = "rule-based-fields"
-VERSION = "0.1.0"
+#: 0.2.0 is the extraction-hardening pass: several quantity readings on one
+#: line are reported rather than the leftmost silently kept, a batch code must
+#: carry a digit, a shelf life is no longer read as a manufacture date, and the
+#: two date declarations gained unread-observation anchors. It changes what is
+#: read off a label and nothing about what is required of one.
+#:
+#: Note the registered *pipeline* versions in `labelextract.ocr.tesseract` are
+#: deliberately unchanged. A pipeline version pins engine and preprocessing
+#: configuration, and that module says plainly that it does not pin
+#: `labelextract.fields` - every registered pipeline imports these patterns from
+#: one module, so a correction here reaches 0.1.0 as well. This constant is how
+#: that correction is named; the commit is what reproduces a reading exactly.
+VERSION = "0.2.0"
 
 #: How a candidate was located. Recorded on every field so a reviewer can tell
 #: "the label said MRP" from "this line merely looked like a price".
@@ -118,15 +131,29 @@ UNSUPPORTED_KEYS: frozenset[LabelFieldKey] = frozenset(LabelFieldKey) - SUPPORTE
 #: which is right when a number and a unit are on the same line and wrong as
 #: evidence on its own. `the quantity supplied may vary` is prose.
 #:
+#: `date_of_manufacture` and `date_of_packing` anchor on `P.DATE_ANCHORS`,
+#: which is the strict half of their `DATE_KEYWORDS` entries, for exactly the
+#: reason net quantity needs a strict half. The loose keyword matches the bare
+#: stems `manufactured` and `packed`, which is also how the *manufacturer* and
+#: *packer name* declarations begin: on `Packed by BAZINGA MEDIA` it fires and
+#: there is no packing date anywhere, so reporting one unread would send a
+#: reviewer to look for something the package never printed. `DATE_ANCHORS`
+#: keeps only the phrasings that name a *date* - the word `date` is in them, or
+#: the abbreviation carries its own `DT`/`DATE` qualifier - which `MFG. DT. :`
+#: is and `MFG. BY LAKME LEVER PVT. LTD.` is not.
+#:
+#: Their exclusion left a gap this mechanism exists to close. OCR reads
+#: `Mfg Date: 1142025` - separators lost, as a stamped date on a curved surface
+#: routinely comes back - and no date can be made of it without guessing where
+#: the separators were, so `extract()` correctly emits nothing. The declaration
+#: then disappeared entirely, indistinguishable from a package that never dated
+#: itself, which is the one outcome `UnreadDeclaration` was written to prevent.
+#: It is now reported unread, with the line it was read from as its evidence
+#: and no date invented.
+#:
 #: Deliberately excluded, each for a reason that would otherwise produce a
 #: wrong claim:
 #:
-#: - `date_of_manufacture` and `date_of_packing`. Their keywords match the bare
-#:   stems `manufactured` and `packed`, which is also how the *manufacturer*
-#:   and *packer name* declarations begin. On `Packed by BAZINGA MEDIA` the
-#:   date keyword matches and there is no packing date anywhere - reporting one
-#:   as unread would invent a declaration. `extract()` is unaffected: it needs
-#:   an actual date before it emits anything.
 #: - `consumer_care_contact`. The detector already emits a keyword-only field
 #:   marked uncertain when it finds the keyword and no contact details, so
 #:   there is nothing left unresolved to report.
@@ -157,6 +184,28 @@ _KEYWORD_ANCHORS: tuple[tuple[LabelFieldKey, re.Pattern[str]], ...] = (
     (LabelFieldKey.BATCH_NUMBER, P.BATCH_NUMBER_ANCHOR),
     (LabelFieldKey.BEST_BEFORE, dict(P.DATE_KEYWORDS)["best_before"]),
     (LabelFieldKey.DATE_OF_IMPORT, dict(P.DATE_KEYWORDS)["date_of_import"]),
+    (LabelFieldKey.DATE_OF_MANUFACTURE, dict(P.DATE_ANCHORS)["date_of_manufacture"]),
+    (LabelFieldKey.DATE_OF_PACKING, dict(P.DATE_ANCHORS)["date_of_packing"]),
+)
+
+#: Date declarations a bare shelf life may stand in for.
+#:
+#: `BEST BEFORE 2 YEARS FROM MFG. DT.` is a complete best-before declaration.
+#: It is not a manufacture date, a packing date or an import date, and those
+#: three cannot be expressed as a duration at all - a package is manufactured
+#: on a day, not "two years from" anything.
+#:
+#: Without this the shelf life on the line *below* `MFG. DT. :` was read as the
+#: manufacture date. Measured on `our-eval-v0.3-usp-partial`, that was the
+#: whole of `date_of_manufacture`'s recall: the one sample it was detected on,
+#: `p001_05_declaration_closeup`, is a can whose manufacture date is stamped
+#: `11/2025` and was not recognised at all, and what the extractor reported for
+#: it was the `2 YEARS` off the best-before line beneath. The reading was
+#: flagged uncertain, but `field_presence` passes on an uncertain field exactly
+#: as it does on a committed one, so the package was recorded as having
+#: declared a manufacture date nobody had read. It is now reported unread.
+_DURATION_IS_A_VALUE_FOR: frozenset[LabelFieldKey] = frozenset(
+    {LabelFieldKey.BEST_BEFORE}
 )
 
 
@@ -315,6 +364,32 @@ class RuleBasedFieldExtractor(FieldExtractor):
     # --- net quantity -------------------------------------------------------
 
     def _net_quantity(self, lines: list[_Line]) -> list[_Candidate]:
+        """Locate a declared net quantity, reading **every** quantity on a line.
+
+        Every one, not the first. A line carries more than one quantity often
+        enough that taking the leftmost is a silent choice dressed as a
+        measurement:
+
+            NET CONTENTS WHEN PACKED 4 UNITS X 125 g + 125 g FREE
+            NET QUANTITY : 120 GRAMS (125 mL)
+
+        The first of those is `p003_03_right`, a five-bar soap pack. The
+        leftmost reading there is `4 units`, and it was emitted committed and
+        unflagged - so a reviewer was shown "this package declares 4" for a
+        package declaring 625 g of soap, with the two `125 g` readings on the
+        same line discarded unmentioned. The second is the shape a dual-declared
+        aerosol takes, where mass and volume are both printed and neither is
+        the other.
+
+        Each reading becomes its own candidate. `_resolve` then does what it
+        already does when two *lines* disagree: it keeps the best-ranked one,
+        flags the field uncertain and lists the competing readings under
+        `candidates`. Nothing is dropped and nothing is chosen silently.
+
+        A line whose several matches all normalise to the same value - the same
+        quantity printed twice - produces one signature and stays committed,
+        because there is no disagreement to report.
+        """
         found: list[_Candidate] = []
         for line in lines:
             if P.NON_DECLARATION_CONTEXT.search(line.text):
@@ -326,35 +401,32 @@ class RuleBasedFieldExtractor(FieldExtractor):
             if self.require_net_quantity_keyword and not has_keyword:
                 continue
 
-            match = P.QUANTITY.search(line.text)
-            if match is None:
-                continue
-
-            normalized = normalise_quantity(
-                match.group("value"),
-                match.group("unit"),
-                pack_count_text=match.group("pack"),
-            )
-            if not has_keyword:
-                normalized = _mark_uncertain(
-                    normalized,
-                    "no net-quantity keyword on this line; this may be any "
-                    "quantity printed on the package",
+            for match in P.QUANTITY.finditer(line.text):
+                normalized = normalise_quantity(
+                    match.group("value"),
+                    match.group("unit"),
+                    pack_count_text=match.group("pack"),
                 )
-            found.append(
-                _candidate(
-                    LabelFieldKey.NET_QUANTITY,
-                    line,
-                    normalized,
-                    MATCHED_BY_KEYWORD if has_keyword else MATCHED_BY_PATTERN,
-                    signature=(
-                        normalized.get("base_quantity"),
-                        normalized.get("base_unit"),
-                        normalized.get("quantity"),
-                        normalized.get("unit"),
-                    ),
+                if not has_keyword:
+                    normalized = _mark_uncertain(
+                        normalized,
+                        "no net-quantity keyword on this line; this may be any "
+                        "quantity printed on the package",
+                    )
+                found.append(
+                    _candidate(
+                        LabelFieldKey.NET_QUANTITY,
+                        line,
+                        normalized,
+                        MATCHED_BY_KEYWORD if has_keyword else MATCHED_BY_PATTERN,
+                        signature=(
+                            normalized.get("base_quantity"),
+                            normalized.get("base_unit"),
+                            normalized.get("quantity"),
+                            normalized.get("unit"),
+                        ),
+                    )
                 )
-            )
         return found
 
     # --- retail sale price --------------------------------------------------
@@ -503,7 +575,7 @@ class RuleBasedFieldExtractor(FieldExtractor):
                 continue
 
             value = normalise_text(match.group("value")).strip(P.TRAILING_PUNCTUATION)
-            if not value:
+            if not value or not _could_be_a_batch_code(value):
                 continue
 
             if _looks_like_a_date(value):
@@ -550,10 +622,20 @@ class RuleBasedFieldExtractor(FieldExtractor):
                     if position + offset >= len(lines):
                         break
                     source = lines[position + offset]
+                    if offset and _names_another_date(source.text, keyword):
+                        # The next line names a *different* date declaration,
+                        # so whatever date is on it belongs to that one. Read
+                        # it here and the keyword above would be credited with
+                        # a value that is visibly somebody else's.
+                        break
                     normalized = _date_value(
                         source.text, after=keyword if offset == 0 else None
                     )
                     if normalized is None:
+                        continue
+                    if _is_a_duration(normalized) and key not in _DURATION_IS_A_VALUE_FOR:
+                        # A shelf life is not a date, and only `best_before`
+                        # can be declared as one. See `_DURATION_IS_A_VALUE_FOR`.
                         continue
 
                     evidence = line.text
@@ -644,7 +726,7 @@ class RuleBasedFieldExtractor(FieldExtractor):
             contributing.append(line)
             keyword_seen = keyword_seen or has_keyword
             toll_free_seen = toll_free_seen or bool(toll_free)
-            _extend_unique(emails, (normalise_text(e) for e in line_emails))
+            _extend_unique(emails, (normalise_email(e) for e in line_emails))
             _extend_unique(
                 phones, (normalise_text(p) for p in [*toll_free, *mobiles])
             )
@@ -1028,6 +1110,34 @@ def _looks_like_a_date(value: str) -> bool:
     return _first_date_in(value) is not None
 
 
+def _is_a_duration(normalized: dict) -> bool:
+    """Whether a reading is a shelf life rather than a date."""
+    return "duration_value" in normalized or "duration_unit" in normalized
+
+
+def _names_another_date(text: str, keyword: re.Pattern[str]) -> bool:
+    """Whether `text` names a date declaration other than `keyword`'s.
+
+    The guard on the next-line lookahead. `MFG. DT. :` printed above
+    `BEST BEFORE 2 YEARS FROM MFG. DT-` is the case it was written for, read
+    off `p001_05_declaration_closeup` in the frozen set: the line below the
+    manufacture-date keyword is the best-before declaration, whole and
+    self-contained, and reading its value as the manufacture date attributed
+    one declaration's value to another.
+
+    Compared by pattern identity rather than by key, because the caller already
+    holds the keyword object from `DATE_KEYWORDS` and a keyword that matches
+    both lines - `MFG. DT.` above `MFG. DT. 11/2025`, a wrapped line - is the
+    *same* declaration continuing, which is exactly what the lookahead is for.
+    """
+    for _, other in P.DATE_KEYWORDS:
+        if other is keyword:
+            continue
+        if other.search(text):
+            return True
+    return False
+
+
 #: The weakest test that separates a name from OCR noise: a name contains at
 #: least one letter.
 #:
@@ -1047,6 +1157,32 @@ _HAS_A_LETTER = re.compile(r"[^\W\d_]")
 
 def _could_be_a_name(value: str) -> bool:
     return bool(value) and _HAS_A_LETTER.search(value) is not None
+
+
+#: The weakest test that separates a batch code from the keyword's own wording:
+#: a batch code contains at least one digit.
+#:
+#: `patterns._NOT_A_BATCH_VALUE` already refuses the qualifier spelt correctly -
+#: `No`, `Nos`, `Number`, `Code`. It cannot refuse the qualifier spelt the way
+#: OCR read it. On `p006_01_back` the legend line `MRP Rs. (incl. of all
+#: taxes), Batch No.` came back as `PRs. (inc, of al laxes), Batch Ni`, and
+#: `Ni` was emitted as the batch code, committed and unflagged - a production
+#: code that appears nowhere on the package, on a line that is a legend naming
+#: where the declarations are rather than a declaration itself. Enumerating the
+#: misreadings of `No.` is a losing game: `Ni`, `Ne`, `Na`, `NG`, `N1`, `M0`.
+#:
+#: Requiring a digit ends it in one test, and costs a batch code made of
+#: letters alone. Every code in the frozen evaluation set carries digits -
+#: `2546`, `N668`, `BL28I50075`, `PKM126F154`, `PL02K50116`, `RD02F50033`,
+#: `GN30A60040` - as does every code in this suite. A label whose batch really
+#: is alphabetic is not reported, which is the same trade this layer takes
+#: everywhere else: a declaration we fail to find is recoverable, a fabricated
+#: one is not, because `field_presence` passes on it.
+_HAS_A_DIGIT = re.compile(r"\d")
+
+
+def _could_be_a_batch_code(value: str) -> bool:
+    return _HAS_A_DIGIT.search(value) is not None
 
 
 def _resolve(candidates: list[_Candidate]) -> tuple[ExtractedField, ...]:
