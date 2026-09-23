@@ -1,6 +1,6 @@
 import { ActivityIndicator, Pressable, StyleSheet, Text, type StyleProp, type ViewStyle } from 'react-native';
 
-import { colors, MIN_TOUCH_TARGET, radius, spacing, typography } from '../theme';
+import { colors, elevation, MIN_TOUCH_TARGET, radius, spacing, typography } from '../theme';
 
 interface ButtonProps {
   label: string;
@@ -74,6 +74,7 @@ const styles = StyleSheet.create({
   },
   primary: {
     backgroundColor: colors.primary,
+    ...elevation.card,
   },
   secondary: {
     backgroundColor: colors.surface,
@@ -98,8 +99,8 @@ const styles = StyleSheet.create({
 
 const pressedStyles = StyleSheet.create({
   primary: { backgroundColor: colors.primaryPressed },
-  secondary: { backgroundColor: '#E7EEFA' },
-  text: { backgroundColor: '#E7EEFA' },
+  secondary: { backgroundColor: colors.primarySoft },
+  text: { backgroundColor: colors.primarySoft },
 });
 
 const labelStyles = StyleSheet.create({

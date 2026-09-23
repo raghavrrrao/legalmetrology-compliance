@@ -19,6 +19,19 @@ import { Link, NavLink, Outlet } from 'react-router-dom';
 export function AppLayout() {
   return (
     <div className="app-layout">
+      {/*
+        First in the tab order, hidden until focused. The header carries a
+        brand link and three navigation items; without this a keyboard user
+        tabs through all four on every page before reaching the content they
+        came for. `#main` is the `<main>` below, which takes focus because it
+        is given `tabIndex={-1}` - a bare anchor jump moves the viewport but
+        not the focus ring in several browsers, and the next Tab would then
+        continue from the header.
+      */}
+      <a className="skip-link" href="#main">
+        Skip to main content
+      </a>
+
       <header className="app-header">
         <Link to="/" className="app-header__title">
           <BrandMark />
@@ -39,7 +52,7 @@ export function AppLayout() {
         </nav>
       </header>
 
-      <main className="app-main">
+      <main className="app-main" id="main" tabIndex={-1}>
         <Outlet />
       </main>
 

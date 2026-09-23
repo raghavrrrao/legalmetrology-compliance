@@ -2,7 +2,7 @@ import type { ReactNode } from 'react';
 import { ScrollView, StyleSheet, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
-import { colors, spacing } from '../theme';
+import { colors, elevation, spacing } from '../theme';
 
 interface ScreenProps {
   children: ReactNode;
@@ -62,11 +62,23 @@ const styles = StyleSheet.create({
     paddingTop: spacing.lg,
     paddingBottom: spacing.lg,
   },
+  /*
+   * The pinned action bar. Content scrolls behind it, which on the web is
+   * where a frosted surface earns its cost - here it is an opaque surface with
+   * a hairline and a lift instead.
+   *
+   * Deliberately not `expo-blur`: a real backdrop blur on this bar would mean
+   * a new native dependency and a continuously recomposited layer on a screen
+   * the user scrolls, for a surface whose whole job is to keep one button
+   * legible. The hairline and the shadow separate it just as well and cost
+   * nothing per frame.
+   */
   footer: {
     paddingTop: spacing.md,
-    backgroundColor: colors.background,
+    backgroundColor: colors.surface,
     borderTopWidth: 1,
     borderTopColor: colors.border,
     gap: spacing.sm,
+    ...elevation.raised,
   },
 });

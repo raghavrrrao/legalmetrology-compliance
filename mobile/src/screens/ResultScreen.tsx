@@ -10,6 +10,7 @@ import { FindingCard } from '../components/FindingCard';
 import { KeyValue } from '../components/KeyValue';
 import { Screen } from '../components/Screen';
 import { StatusBadge } from '../components/StatusBadge';
+import { VerdictPanel } from '../components/VerdictPanel';
 import { useAnalysis } from '../hooks/AnalysisContext';
 import type { RootScreenProps } from '../navigation/types';
 import { colors, MIN_TOUCH_TARGET, spacing, typography } from '../theme';
@@ -70,7 +71,7 @@ export function ResultScreen({ navigation }: RootScreenProps<'Result'>) {
         Result
       </Text>
 
-      <Card testID="verdict-card">
+      <VerdictPanel tone={toneForResult(result.result)} testID="verdict-card">
         <StatusBadge label={verdictLabel} tone={toneForResult(result.result)} size="large" testID="verdict-badge" />
         {result.summary ? (
           <Text style={styles.summary} testID="verdict-summary">
@@ -93,7 +94,7 @@ export function ResultScreen({ navigation }: RootScreenProps<'Result'>) {
           }
           testID="product-type-used"
         />
-      </Card>
+      </VerdictPanel>
 
       {recheckError ? (
         <Callout title={recheckError.title} message={recheckError.message} tone="error" testID="recheck-error">

@@ -62,7 +62,13 @@ export function ClassificationCard({
         </View>
       ) : null}
       <View style={styles.row}>
-        <Text style={styles.label}>Confidence</Text>
+        {/*
+          "Model confidence", not "Confidence". The sentence below already says
+          what the number is, but a reader scanning the card sees the label
+          first, and a bare "Confidence" beside a compliance verdict is exactly
+          the reading this screen exists to prevent.
+        */}
+        <Text style={styles.label}>Model confidence</Text>
         <Text style={styles.value} testID="classification-confidence">
           {formatConfidence(classification.confidence)}
         </Text>

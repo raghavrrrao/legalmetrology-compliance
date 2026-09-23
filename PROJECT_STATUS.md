@@ -41,6 +41,15 @@ permissions. Synchronous analysis, ~2 s median.
 **Frontend:** React 19 + Vite. Scan, result, permalink and history screens
 against the real API, with the applicability declaration form and the full
 finding trace. No login screen (see *Known security limitations*).
+**Redesigned 2026-09-23** onto an iOS 18-inspired system — near-white ground,
+one restrained green accent, large radii, hairline separators, translucency on
+the sticky header only — shared with the mobile client, which previously used a
+blue primary. The stylesheet was three stacked layers in which 118 of 211
+selectors were declared more than once; it is now one pass with every selector
+declared once, and 680 lines and 7.5 kB smaller. Appearance only: no API
+contract, backend behaviour or compliance logic was touched, and the four
+outcomes keep their own tone, word and symbol. See
+[`docs/ui/design-system.md`](docs/ui/design-system.md).
 
 **OCR/ML:** Working with Tesseract 5 (`eng` + `osd`) through the separate
 `labelextract` package, which installs and passes its whole suite with **zero**
@@ -82,7 +91,7 @@ trusting the claim. Compliance results are now scoped to the caller. Throttling
 30/min anonymous, 120/min authenticated. `manage.py check --deploy` reports zero
 issues with `DJANGO_DEBUG=False`.
 
-**Testing:** 934 backend, 998 ML (plus 2 recorded expected failures and 2 unexpected passes of the same parametrised classifier-robustness test), 243 frontend, 203 mobile — all passing as of 2026-09-23. The ML count includes 92 new extraction-hardening regressions, every one of whose inputs is recognised text this project actually produced rather than a drafted label. Lint clean, production build succeeds, mobile typecheck clean, `makemigrations --check` reports no changes. Counts are stated so drift is noticeable, not as a
+**Testing:** 934 backend, 998 ML (plus 2 recorded expected failures and 2 unexpected passes of the same parametrised classifier-robustness test), 243 frontend, 203 mobile — all passing as of 2026-09-23. The ML count includes 92 new extraction-hardening regressions, every one of whose inputs is recognised text this project actually produced rather than a drafted label. The web and mobile counts are unchanged by the 2026-09-23 interface redesign, which was verified against them rather than against new ones: the suites assert behaviour, text and semantics, so they are exactly what a restyle must not change. Nothing asserts on appearance, so a purely visual regression would not fail a test. Lint clean, production build succeeds, mobile typecheck clean, `makemigrations --check` reports no changes. Counts are stated so drift is noticeable, not as a
 quality claim: a passing suite bounds what is checked, not what is correct.
 
 **Documentation:** Checked against the code in Step 5. Where a document and the
@@ -109,7 +118,7 @@ project has been created from this repository and there is no URL. See
 | Rule engine | Working. Seven registered deterministic checks; no LLM anywhere in the decision path. | `apps/rules/checks/` |
 | Findings & result | Working. One finding per rule examined, with clause, source, evidence, confidence and applicability. | `apps/compliance/services/engine.py` |
 | Frontend | Working. Scan, result, permalink and history screens against the real API. | `frontend/src/` |
-| Mobile client | **Foundation.** React Native (Expo) app: camera or gallery → preview → upload to `POST /api/v1/extraction/` → `POST /api/v1/compliance/` → result with verdict, findings, reading and the classifier's suggestion when present. 196 Jest tests; Android project generated and a debug APK built with Gradle; iOS configured but not built; not yet run on hardware. No sign-in - relies on the demonstration switch. | `mobile/`, `docs/mobile.md` |
+| Mobile client | **Foundation.** React Native (Expo) app: camera or gallery → preview → upload to `POST /api/v1/extraction/` → `POST /api/v1/compliance/` → result with verdict, findings, reading and the classifier's suggestion when present. Shares the web's design language as of 2026-09-23 (same palette, rhythm and tones; native layout, no web CSS). 203 Jest tests; Android project generated and a debug APK built with Gradle; iOS configured but not built; not yet run on hardware. No sign-in - relies on the demonstration switch. | `mobile/`, `docs/mobile.md` |
 | Authentication UI | **Not built.** Session auth and deny-by-default permissions exist; there is no login screen, so a demonstration switch (`DEMO_PUBLIC_ANALYSIS_API`, default off) opens the analysis endpoints. | — |
 | Deployment | Configured and verified, **not deployed**. Container image, Railway config, gunicorn, one-command initialisation. No Railway project exists. | `Dockerfile`, `railway.json`, `backend/gunicorn.conf.py` |
 

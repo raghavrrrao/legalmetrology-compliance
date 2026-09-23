@@ -1,7 +1,7 @@
 import type { ReactNode } from 'react';
 import { StyleSheet, Text, View } from 'react-native';
 
-import { radius, spacing, toneColors, typography } from '../theme';
+import { elevation, radius, spacing, toneColors, typography } from '../theme';
 import { SYMBOL_BY_TONE, type Tone } from '../utils/status';
 
 interface CalloutProps {
@@ -27,7 +27,10 @@ export function Callout({ title, message, tone = 'neutral', children, testID }: 
       accessibilityRole={isAlert ? 'alert' : undefined}
       accessibilityLiveRegion={isAlert ? 'assertive' : 'polite'}
       testID={testID}
-      style={[styles.callout, { backgroundColor: palette.background, borderColor: palette.border }]}
+      style={[
+        styles.callout,
+        { backgroundColor: palette.background, borderColor: palette.border, borderLeftColor: palette.text },
+      ]}
     >
       <View style={styles.header}>
         <Text style={[styles.symbol, { color: palette.text }]}>{SYMBOL_BY_TONE[tone]}</Text>
@@ -41,10 +44,14 @@ export function Callout({ title, message, tone = 'neutral', children, testID }: 
 
 const styles = StyleSheet.create({
   callout: {
-    borderRadius: radius.md,
+    borderRadius: radius.lg,
     borderWidth: 1,
+    // A coloured rule down the leading edge, the same signal the web panel
+    // uses. Never the only carrier: the symbol and the title say it too.
+    borderLeftWidth: 3,
     padding: spacing.lg,
     marginBottom: spacing.lg,
+    ...elevation.card,
   },
   header: {
     flexDirection: 'row',
