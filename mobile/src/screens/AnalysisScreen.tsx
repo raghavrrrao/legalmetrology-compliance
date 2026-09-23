@@ -7,25 +7,43 @@ import { Card } from '../components/Card';
 import { ScanPreview } from '../components/ScanPreview';
 import { ProgressSteps, type ProgressStep } from '../components/ProgressSteps';
 import { Screen } from '../components/Screen';
-import { useAnalysis } from '../hooks/AnalysisContext';
+import { useAnalysis, useStartOver } from '../hooks/AnalysisContext';
 import type { AnalysisPhase } from '../hooks/useLabelAnalysis';
 import type { RootScreenProps } from '../navigation/types';
 import { colors, spacing, typography } from '../theme';
 import { describeError } from '../utils/errors';
 
 /**
- * The steps as they really are: one per request. The first request uploads
- * the photograph and returns what was read off it (OCR and field extraction
- * happen inside it, on the server, and the client cannot see between them);
- * the second asks the rule engine what that reading means. No step here is a
- * timer or a guess.
+ * The steps as they really are: one per request.
+ *
+ * The first request uploads every photograph of the package and returns what
+ * was read off them (OCR and field extraction happen inside it, on the server,
+ * and the client cannot see between them); the second asks the rule engine
+ * what that reading means.
+ *
+ * **Two steps, not five.** A longer list - "uploading", "reading", "extracting
+ * declarations", "checking requirements", "preparing findings" - would look
+ * more informative and would be invented: the backend performs two operations
+ * this client can observe, and it reports nothing from inside either. No step
+ * here is a timer, a percentage or a guess.
+ *
+ * `imageCount` changes only the wording of the first step, because that step
+ * genuinely covers more work when there are more photographs. It never adds a
+ * step per photograph: the set is read in one request and produces one
+ * reading, and a step each would imply a progress signal the server does not
+ * send.
  */
 export function stepsForPhase(
   phase: AnalysisPhase,
   extractionFailed: boolean,
   complianceFailed: boolean,
+  imageCount: number = 1,
 ): ProgressStep[] {
-  const reading: ProgressStep = { key: 'reading', label: 'Reading the label', state: 'pending' };
+  const reading: ProgressStep = {
+    key: 'reading',
+    label: imageCount > 1 ? `Reading ${imageCount} photos` : 'Reading the label',
+    state: 'pending',
+  };
   const checking: ProgressStep = { key: 'checking', label: 'Checking the requirements', state: 'pending' };
 
   if (extractionFailed) {
@@ -57,7 +75,8 @@ export function stepsForPhase(
 
 export function AnalysisScreen({ navigation }: RootScreenProps<'Analysis'>) {
   const analysis = useAnalysis();
-  const { phase, image, extractionError, complianceError, isBusy, retry, reset } = analysis;
+  const { phase, image, images, extractionError, complianceError, isBusy, retry } = analysis;
+  const startOver = useStartOver();
 
   useEffect(() => {
     if (phase === 'complete') {
@@ -82,18 +101,25 @@ export function AnalysisScreen({ navigation }: RootScreenProps<'Analysis'>) {
 
   const error = extractionError ?? complianceError;
   const described = error ? describeError(error) : null;
-  const steps = stepsForPhase(phase, Boolean(extractionError), Boolean(complianceError));
+  const steps = stepsForPhase(
+    phase,
+    Boolean(extractionError),
+    Boolean(complianceError),
+    images.length,
+  );
 
-  const startOver = () => {
-    reset();
+  const abandon = () => {
+    // Clears the photographs as well as the result. The other way out of a
+    // failure is "Try again", which keeps them - see `retry`.
+    startOver();
     navigation.popToTop();
   };
 
   if (!image && !isBusy) {
     return (
       <Screen testID="analysis-screen">
-        <Callout title="Nothing to analyse" message="Choose a photo of a label to begin." tone="neutral">
-          <Button label="Scan a label" onPress={startOver} />
+        <Callout title="Nothing to analyse" message="Add a photo of a package to begin." tone="neutral">
+          <Button label="Scan a package" onPress={abandon} />
         </Callout>
       </Screen>
     );
@@ -106,8 +132,10 @@ export function AnalysisScreen({ navigation }: RootScreenProps<'Analysis'>) {
       </Text>
       <Text style={styles.lede}>
         {described
-          ? 'The label could not be fully checked.'
-          : 'The photo is being read and checked on the analysis server. This usually takes a few seconds.'}
+          ? 'The package could not be fully checked. Your photos have been kept.'
+          : images.length > 1
+            ? `All ${images.length} photos are being read and checked together, as one package, on the analysis server.`
+            : 'The photo is being read and checked on the analysis server. This usually takes a few seconds.'}
       </Text>
 
       {/*
@@ -117,7 +145,12 @@ export function AnalysisScreen({ navigation }: RootScreenProps<'Analysis'>) {
         report.
       */}
       {image ? (
-        <ScanPreview uri={image.uri} scanning={isBusy} testID="scan-preview" />
+        <ScanPreview
+          uri={image.uri}
+          imageCount={images.length}
+          scanning={isBusy}
+          testID="scan-preview"
+        />
       ) : null}
 
       <Card>
@@ -131,8 +164,9 @@ export function AnalysisScreen({ navigation }: RootScreenProps<'Analysis'>) {
           ) : null}
           <Button
             variant={described.retryable ? 'text' : 'primary'}
-            label="Choose another photo"
-            onPress={startOver}
+            label="Start a new inspection"
+            accessibilityHint="Discards these photos and returns to the start"
+            onPress={abandon}
             disabled={isBusy}
             testID="start-over"
           />

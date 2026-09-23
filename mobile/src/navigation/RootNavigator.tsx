@@ -3,14 +3,14 @@ import { createNativeStackNavigator } from '@react-navigation/native-stack';
 import type { RootStackParamList } from './types';
 import { AnalysisScreen } from '../screens/AnalysisScreen';
 import { HomeScreen } from '../screens/HomeScreen';
-import { PreviewScreen } from '../screens/PreviewScreen';
 import { ResultScreen } from '../screens/ResultScreen';
+import { ScanScreen } from '../screens/ScanScreen';
 import { colors } from '../theme';
 
 const Stack = createNativeStackNavigator<RootStackParamList>();
 
 /**
- * One linear stack: Home -> Preview -> Analysis -> Result.
+ * One linear stack: Home -> Scan -> Analysis -> Result.
  *
  * A native stack rather than a JS one so back gestures, the Android back
  * button and the header follow each platform's own conventions. The analysis
@@ -32,7 +32,7 @@ export function RootNavigator() {
       }}
     >
       <Stack.Screen name="Home" component={HomeScreen} options={{ title: 'NIRIKSHAN' }} />
-      <Stack.Screen name="Preview" component={PreviewScreen} options={{ title: 'Preview' }} />
+      <Stack.Screen name="Scan" component={ScanScreen} options={{ title: 'Scan a package' }} />
       <Stack.Screen
         name="Analysis"
         component={AnalysisScreen}

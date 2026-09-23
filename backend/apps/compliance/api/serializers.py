@@ -39,6 +39,7 @@ from apps.compliance.services import auto_applicability
 from apps.extraction.api.serializers import (
     ExtractedFieldSerializer,
     ExtractionRunSerializer,
+    run_image_entries,
 )
 from apps.extraction.models import ExtractionRun
 from apps.images.api.serializers import ProductImageSerializer
@@ -78,6 +79,20 @@ class EvidenceSerializer(serializers.ModelSerializer):
     Attached even to a finding of absence: the text we *did* read is the
     justification for concluding a declaration was not there.
 
+    `image_id` is the photograph this evidence should be shown against, and
+    matches one of the `images[].image.id` values on the same result. When the
+    evidence is a reading, it is the photograph that reading came from - so an
+    interface can say "Evidence · Image 2" and mean it, and a bounding box is
+    drawn over the panel it was measured on rather than over whichever
+    photograph happened to be first.
+
+    For a finding of **absence** it is the primary photograph, because there is
+    no reading to have a source and no single photograph is more the evidence
+    than another: the declaration was absent from the whole set. A client must
+    not turn that into a claim that the declaration should have been on that
+    panel - "image 1 is missing the net quantity" is a statement this system
+    has not made and cannot make.
+
     No confidence here, deliberately. It would mean following
     `extracted_field` per evidence row - a query each on the POST paths, which
     do not prefetch - to reach a number `ComplianceFinding` already snapshots
@@ -85,9 +100,15 @@ class EvidenceSerializer(serializers.ModelSerializer):
     reads that violation's finding, which is linked to it.
     """
 
+    image_id = serializers.UUIDField(
+        read_only=True,
+        allow_null=True,
+        help_text="The photograph this evidence should be shown against.",
+    )
+
     class Meta:
         model = ComplianceEvidence
-        fields = ["excerpt", "bounding_box", "note"]
+        fields = ["excerpt", "bounding_box", "note", "image_id"]
         read_only_fields = fields
 
 
@@ -494,6 +515,7 @@ class ComplianceCheckSerializer(serializers.ModelSerializer):
     findings = ComplianceFindingSerializer(many=True, read_only=True)
     extraction = ExtractionRunSerializer(source="extraction_run", read_only=True)
     image = ProductImageSerializer(source="extraction_run.image", read_only=True)
+    images = serializers.SerializerMethodField()
     product_category_code = serializers.SerializerMethodField()
     product_category_source = serializers.SerializerMethodField()
     applicability_declarations = serializers.SerializerMethodField()
@@ -523,8 +545,28 @@ class ComplianceCheckSerializer(serializers.ModelSerializer):
             "findings",
             "extraction",
             "image",
+            "images",
         ]
         read_only_fields = fields
+
+    def get_images(self, check: ComplianceCheck) -> list:
+        """Every photograph this one inspection was made from, in order.
+
+        **One result, several photographs.** This is a set of images that were
+        read together into one reading and judged once, not a set of results
+        shown side by side. A client should say "3 images checked" and show one
+        verdict; showing three verdicts would be describing something this
+        system did not do.
+
+        `image` above is the primary photograph and stays for the clients that
+        predate the set. It is `images[0].image`, always.
+
+        The same list the embedded `extraction` carries, surfaced at the top
+        level beside `image` so that a result screen does not have to reach
+        through the reading to count the photographs it was made from. Built by
+        the same function, so the two can never disagree.
+        """
+        return run_image_entries(check.extraction_run)
 
     def get_applicability_declarations(self, check: ComplianceCheck) -> list:
         """The facts stated about this package, as evidence beside the findings.

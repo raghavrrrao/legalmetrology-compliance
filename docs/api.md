@@ -222,11 +222,11 @@ other path still redirects. See [deployment.md](deployment.md).
 
 ### `POST /api/v1/images/`
 
-Upload a label photograph; receive the finished compliance result.
+Upload the photographs of a package; receive the finished compliance result.
 
 Runs the whole flow inline - validate, store, OCR, extract, normalise,
 evaluate - and returns **201** with the complete `ComplianceCheck`. Extraction
-measures at a ~2.2 s median on the configured Tesseract pipeline
+measures at a ~2.2 s median per photograph on the configured Tesseract pipeline
 (docs/evaluation-results.md), so there is nothing to poll. When that becomes
 slow enough to need a queue, `run_extraction` moves behind it and this response
 gains a `pending` shape additively.
@@ -235,8 +235,8 @@ gains a `pending` shape additively.
 
 | Field | Required | Notes |
 |---|---|---|
-| `image` | yes | The photograph. Validated by `apps.images.validators` in full. |
-| `view_type` | no | A `ProductImage.ViewType` value. Defaults to `unspecified`. |
+| `image` | yes | A photograph. Validated by `apps.images.validators` in full. **Repeatable** - see [Several photographs, one inspection](#several-photographs-one-inspection). At most 6. |
+| `view_type` | no | A `ProductImage.ViewType` value, one per `image` part, positionally. Defaults to `unspecified`. |
 | `category_code` | no | A `ProductCategory.code`. Determines which rules apply. An unknown code is a 400, never silently ignored - dropping it would produce a "category not known" result indistinguishable from omitting it. |
 
 **201** carries the verdict (`result`), the engine's plain-language
@@ -244,18 +244,115 @@ explanation (`summary`), every declaration that was read with its normalised
 value and bounding box, and the two finding lists described under
 [Findings and violations](#findings-and-violations) below.
 `extraction.is_placeholder` says whether any real recognition happened;
-`product_category_code` is `null` when the commodity was not known.
+`product_category_code` is `null` when the commodity was not known. `images`
+lists every photograph the result was made from.
 
 **201 even when nothing could be read.** An unreadable photograph still
 produces a stored, retrievable result whose verdict is `review_required` and
 whose summary explains why. That is an outcome, not a failed request.
 
-**400** for a missing file, a file the validators reject, an unknown
-`category_code` or an unknown `view_type`.
+**400** for a missing file, a file the validators reject, more than 6 files, an
+unknown `category_code` or an unknown `view_type`.
+
+### Several photographs, one inspection
+
+A packaged commodity declares different things on different panels - the net
+quantity on the back, the retail sale price on a side, a batch number in small
+print. A caller may therefore send several photographs of the same package, by
+**repeating the `image` part**:
+
+```
+POST /api/v1/extraction/
+Content-Type: multipart/form-data; boundary=…
+
+--…
+Content-Disposition: form-data; name="image"; filename="front.jpg"
+…
+--…
+Content-Disposition: form-data; name="image"; filename="back.jpg"
+…
+--…
+Content-Disposition: form-data; name="view_type"
+
+front
+--…
+Content-Disposition: form-data; name="view_type"
+
+back
+--…--
+```
+
+The same applies to `POST /api/v1/images/`.
+
+**They become one inspection, not several.** One `ProductImage` per
+photograph, then **one** `ExtractionRun` over all of them, and - on
+`/images/` - **one** `ComplianceCheck`. That is the point of the feature
+rather than an implementation detail: the rule engine judges the *package*,
+and a run per photograph would report the front panel as failing to declare a
+net quantity that is printed on the back.
+
+Rules a client can rely on:
+
+- **The order is kept.** The first `image` part is position 1 and becomes
+  `ExtractionRun.image`, the primary photograph. The positions are what the
+  response's `images[].position` reports and what an interface shows a person
+  ("Evidence · Image 2").
+- **`view_type` is positional and never repeated.** The *n*th `view_type` part
+  describes the *n*th `image` part; a shorter list leaves the rest
+  `unspecified`. Stating that the first photograph is the front says nothing
+  about the second, so the value is not copied across.
+- **A single `image` part behaves exactly as it always has.** One photograph is
+  a set of one. A client written before this existed needs no change, and its
+  requests take the same path rather than a special case.
+- **At most 6 photographs** (`apps.images.constants.MAX_IMAGES_PER_INSPECTION`).
+  Every photograph costs a full pipeline pass inside the same synchronous
+  request. More than 6 is a **400** on `details.image`.
+- **A rejected photograph rejects the whole request.** A set is one inspection,
+  and reporting a partial success would leave the submitter believing a panel
+  was checked when it was not. The photographs stored before the rejected one
+  was reached are orphan rows that nothing points at; no run and no result
+  exist.
+- **One unreadable photograph does not fail the inspection.** Two good panels
+  and a blurred close-up produce a `completed` run: the label was read well
+  enough to judge against. The close-up's own entry in `images[]` carries
+  `status: "failed"` and its `error_code`, so a submitter can still be told
+  which photograph contributed nothing. Only when *every* photograph failed is
+  the run itself `failed`.
+- **The same photograph twice is refused.** Its declarations would be read and
+  counted twice.
+
+#### Which photograph a reading came from
+
+`ExtractedLabelField.image_id` names the photograph each declaration was read
+from, and matches one of the `images[].image.id` values in the same response.
+`ComplianceEvidence.image_id` does the same for the evidence behind a
+violation.
+
+Two things a client must not do with them:
+
+1. **`null` is "not recorded", never "no photograph".** Every reading made
+   before this existed has a null here, and so does one whose image row has
+   since been deleted. The honest rendering is to say nothing about which
+   image.
+2. **Evidence for an *absence* falls back to the primary photograph.** There is
+   no reading to have a source, and the declaration was absent from the whole
+   set, so no panel is more its evidence than another. A client must not turn
+   that into "image 1 is missing the net quantity" - that is a claim about
+   where a declaration should appear on a package, and this system has not made
+   it.
+
+`fields_read` may contain the **same `field_key` more than once** when a
+declaration is printed on two photographed panels. Every entry is a real
+reading with its own image and confidence, and none is the "wrong" one. Which
+reading the rule engine judged against is a separate question, answered by the
+finding, which links to the exact reading it used - the engine resolves a
+duplicate by taking the earliest photograph's reading, in position order
+(`apps.rules.checks.base.CheckContext.from_run`).
 
 ### `POST /api/v1/extraction/`
 
-Upload a label photograph; receive **what was read off it**, and nothing more.
+Upload the photographs of a package; receive **what was read off them**, and
+nothing more.
 
 The same upload and the same pipeline as the endpoint above, stopping one stage
 earlier:
@@ -277,8 +374,8 @@ determination is offered.
 
 | Field | Required | Notes |
 |---|---|---|
-| `image` | yes | The photograph. Validated by `apps.images.validators` in full — the same path as `POST /api/v1/images/`. |
-| `view_type` | no | A `ProductImage.ViewType` value. Defaults to `unspecified`. |
+| `image` | yes | A photograph. Validated by `apps.images.validators` in full — the same path as `POST /api/v1/images/`. **Repeatable**; see [Several photographs, one inspection](#several-photographs-one-inspection). At most 6. |
+| `view_type` | no | A `ProductImage.ViewType` value, one per `image` part, positionally. Defaults to `unspecified`. |
 
 There is deliberately **no `category_code`**. A category selects which rules
 apply, and no rule is consulted here. Nothing is created but a `ProductImage`
@@ -304,7 +401,18 @@ and an `ExtractionRun`: no `Product`, no `ComplianceCheck`.
       "raw_value": "Net Qty: 500 g",
       "normalized_value": {"quantity": 500, "unit": "g", "uncertain": false},
       "confidence": 0.87,
-      "bounding_box": {"x": 4, "y": 4, "width": 300, "height": 18}
+      "bounding_box": {"x": 4, "y": 4, "width": 300, "height": 18},
+      "image_id": "…"
+    }
+  ],
+  "images": [
+    {
+      "position": 1,
+      "status": "completed",
+      "error_code": "",
+      "error_message": "",
+      "processing_ms": 2202,
+      "image": {"id": "…", "original_filename": "front.jpg", "…": "…"}
     }
   ],
   "unread_declarations": [],
@@ -642,6 +750,21 @@ response:
 | `applicability_declarations` | What a person **asserted** about the goods. No photograph could establish these, and nothing verified them. |
 | `findings` | What the rules **concluded** from both. See *Findings and violations* below for the per-finding fields. |
 
+**One result, however many photographs.** `images[]` lists every photograph the
+inspection was made from, in position order, and `image` is the primary one
+(`images[0].image`) kept for clients that predate the set. There is one verdict,
+one summary and one set of findings whatever the length of that list: the rule
+engine evaluated one reading, assembled from every panel. A client showing a
+verdict per photograph would be describing an analysis this system did not
+perform. Say "3 images checked" and show one result.
+
+Each entry is `{position, status, error_code, error_message, processing_ms,
+image}`. `status` there is that **one photograph's** outcome and is not the
+run's: a run may be `completed` - the label was read well enough to judge
+against - while one of its photographs is `failed` because it was too blurred
+to contribute. Both are true, and an interface that showed only the first
+would leave a submitter unable to see which photograph to retake.
+
 #### Counts
 
 `rules_evaluated` = `rules_passed` + `rules_failed` + `rules_inconclusive`.
@@ -753,6 +876,14 @@ Each finding carries:
 | `downgraded_from_failed` | The check failed, but the rule is not verified against the authoritative legal text, so the engine recorded it as inconclusive rather than as a violation. |
 | `details` | Validator diagnostics. Shape is validator-specific. |
 | `violation` | Id of the violation this became, or `null`. |
+
+A finding carries no image of its own. Which photograph its evidence came from
+is on the **violation** it became — `violations[].evidence[].image_id` — and on
+the reading it drew on, `extraction.fields_read[].image_id`. A finding that
+became no violation (a pass, an inconclusive outcome, a downgraded failure) has
+no evidence row and therefore no image, and a client must show none rather than
+fall back to the first photograph. See
+[Which photograph a reading came from](#which-photograph-a-reading-came-from).
 
 Five of these are easy to misread:
 

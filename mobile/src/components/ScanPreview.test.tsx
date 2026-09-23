@@ -30,7 +30,7 @@ function mockReduceMotion(enabled: boolean) {
  * `act` scope, which React escalates to an error - so the flush belongs here,
  * once, rather than being worked around differently in every test.
  */
-async function renderPreview(props: { scanning?: boolean } = {}) {
+async function renderPreview(props: { scanning?: boolean; imageCount?: number } = {}) {
   // `render` inside the act scope rather than beside it. `render` opens its own
   // scope and the mocked promise resolves as that scope closes, so a second
   // `act` afterwards overlaps the first - which React reports as an error
@@ -88,5 +88,39 @@ describe('ScanPreview', () => {
     expect(screen.queryByText(/%/)).not.toBeOnTheScreen();
     expect(screen.queryByText(/remaining|estimated|second/i)).not.toBeOnTheScreen();
     expect(screen.queryByRole('progressbar')).not.toBeOnTheScreen();
+  });
+
+  it('says how many photos are in the set, and not which one is being read', async () => {
+    mockReduceMotion(false);
+
+    await renderPreview({ imageCount: 3 });
+
+    // `includeHiddenElements` because the badge is deliberately hidden from
+    // screen readers: the analysis screen's own heading already says how many
+    // photos are being checked, and hearing the number twice is worse than
+    // once. It is a visual restatement, so it is queried as one.
+    const badge = screen.getByTestId('scan-image-count', { includeHiddenElements: true });
+    expect(badge).toHaveTextContent('3 photos', { exact: false });
+    // A count, never a position: the backend reports nothing about which
+    // photograph it is on, so "2 of 3" would be invented.
+    expect(screen.queryByText(/of 3/, { includeHiddenElements: true })).not.toBeOnTheScreen();
+  });
+
+  it('shows no count for a single photo, where the number is noise', async () => {
+    mockReduceMotion(false);
+
+    await renderPreview({ imageCount: 1 });
+
+    expect(screen.queryByTestId('scan-image-count', { includeHiddenElements: true })).not.toBeOnTheScreen();
+  });
+
+  it('keeps the count visible when motion is turned off', async () => {
+    mockReduceMotion(true);
+
+    await renderPreview({ imageCount: 3 });
+
+    // Reduced motion removes the sweep, not the information.
+    await waitFor(() => expect(screen.queryByTestId('scan-sweep')).not.toBeOnTheScreen());
+    expect(screen.getByTestId('scan-image-count', { includeHiddenElements: true })).toBeOnTheScreen();
   });
 });

@@ -1,9 +1,14 @@
 /**
- * The home screen: the two ways to pick a photo, and every way that can end.
+ * The home screen: the two ways to start an inspection, and every way that can end.
  *
  * The picker module is mocked at the expo-image-picker boundary
  * (tests/setup.ts), so the app's own permission handling, validation and
  * navigation all run for real.
+ *
+ * Home no longer carries the photograph to the next screen. It seeds the
+ * inspection's image set - which lives in the provider, so that adding a
+ * second panel and retrying a failed upload both work - and then navigates.
+ * The assertions below are on what it put in the set, not on a route param.
  */
 
 import { fireEvent, render, screen, waitFor } from '@testing-library/react-native';
@@ -13,12 +18,14 @@ import { SafeAreaProvider } from 'react-native-safe-area-context';
 
 import { HomeScreen } from './HomeScreen';
 import { cameraPermission, healthBody, jsonResponse, libraryPermission, routedFetch } from '../../tests/fixtures';
-import { fakeAnalysis, PHONE_METRICS, stubNavigation } from '../../tests/render';
+import { fakeSelection, PHONE_METRICS, stubNavigation } from '../../tests/render';
 import { config } from '../config/env';
 
-const mockUseAnalysis = jest.fn();
+const mockUseSelection = jest.fn();
+const mockStartOver = jest.fn();
 jest.mock('../hooks/AnalysisContext', () => ({
-  useAnalysis: () => mockUseAnalysis(),
+  useInspectionSelection: () => mockUseSelection(),
+  useStartOver: () => mockStartOver,
 }));
 
 const picker = ImagePicker as jest.Mocked<typeof ImagePicker>;
@@ -39,15 +46,15 @@ beforeEach(() => {
 });
 
 async function renderHome() {
-  const analysis = fakeAnalysis();
-  mockUseAnalysis.mockReturnValue(analysis);
+  const selection = fakeSelection();
+  mockUseSelection.mockReturnValue(selection);
   const navigation = stubNavigation();
   await render(
     <SafeAreaProvider initialMetrics={PHONE_METRICS}>
       <HomeScreen navigation={navigation as never} route={{ key: 'Home', name: 'Home' } as never} />
     </SafeAreaProvider>,
   );
-  return { analysis, navigation };
+  return { selection, navigation };
 }
 
 describe('HomeScreen', () => {
@@ -82,37 +89,65 @@ describe('HomeScreen', () => {
     await renderHome();
 
     expect(screen.getByRole('button', { name: 'Take photo' })).toBeOnTheScreen();
-    expect(screen.getByRole('button', { name: 'Choose from gallery' })).toBeOnTheScreen();
+    expect(screen.getByRole('button', { name: 'Choose photos' })).toBeOnTheScreen();
     expect(screen.getByText(/Avoid glare/)).toBeOnTheScreen();
     expect(screen.getByText(/Nothing is analysed on this phone/)).toBeOnTheScreen();
   });
 
-  it('goes to the preview with the validated photo after a capture', async () => {
+  it('seeds the inspection with the validated photo and opens the scan screen', async () => {
     picker.requestCameraPermissionsAsync.mockResolvedValue(granted);
     picker.launchCameraAsync.mockResolvedValue({ canceled: false, assets: [asset] });
-    const { analysis, navigation } = await renderHome();
+    const { selection, navigation } = await renderHome();
 
     await fireEvent.press(screen.getByTestId('take-photo'));
 
     await waitFor(() => expect(navigation.navigate).toHaveBeenCalled());
-    expect(analysis.reset).toHaveBeenCalled();
-    expect(navigation.navigate).toHaveBeenCalledWith('Preview', {
-      image: { uri: asset.uri, name: 'abc.jpg', type: 'image/jpeg', sizeBytes: 123456, width: 3000, height: 4000 },
-    });
+    // Starting from Home is starting a new inspection: the last result and any
+    // photographs left over from it go first.
+    expect(mockStartOver).toHaveBeenCalled();
+    expect(selection.add).toHaveBeenCalledWith([
+      { uri: asset.uri, name: 'abc.jpg', type: 'image/jpeg', sizeBytes: 123456, width: 3000, height: 4000 },
+    ]);
+    expect(navigation.navigate).toHaveBeenCalledWith('Scan');
   });
 
-  it('goes to the preview after a gallery pick', async () => {
+  it('seeds every photo of a multiple gallery selection, in order', async () => {
     picker.requestMediaLibraryPermissionsAsync.mockResolvedValue(libraryPermission(true));
-    picker.launchImageLibraryAsync.mockResolvedValue({ canceled: false, assets: [{ ...asset, fileName: null, mimeType: 'image/png' }] });
-    const { navigation } = await renderHome();
+    picker.launchImageLibraryAsync.mockResolvedValue({
+      canceled: false,
+      assets: [
+        { ...asset, uri: 'file:///front.jpg', fileName: 'front.jpg' },
+        { ...asset, uri: 'file:///back.jpg', fileName: 'back.jpg' },
+        { ...asset, uri: 'file:///side.jpg', fileName: 'side.jpg' },
+      ],
+    });
+    const { selection, navigation } = await renderHome();
 
     await fireEvent.press(screen.getByTestId('choose-from-gallery'));
 
     await waitFor(() => expect(navigation.navigate).toHaveBeenCalled());
-    expect(navigation.navigate).toHaveBeenCalledWith(
-      'Preview',
-      expect.objectContaining({ image: expect.objectContaining({ name: 'label.png', type: 'image/png' }) }),
-    );
+    // One inspection of three panels, not three inspections - and the order is
+    // the order the user chose, because it becomes the position on each.
+    expect(selection.add).toHaveBeenCalledTimes(1);
+    expect((selection.add as jest.Mock).mock.calls[0][0].map((one: { name: string }) => one.name)).toEqual([
+      'front.jpg',
+      'back.jpg',
+      'side.jpg',
+    ]);
+    expect(navigation.navigate).toHaveBeenCalledWith('Scan');
+  });
+
+  it('normalises a gallery pick with no filename before adding it', async () => {
+    picker.requestMediaLibraryPermissionsAsync.mockResolvedValue(libraryPermission(true));
+    picker.launchImageLibraryAsync.mockResolvedValue({ canceled: false, assets: [{ ...asset, fileName: null, mimeType: 'image/png' }] });
+    const { selection } = await renderHome();
+
+    await fireEvent.press(screen.getByTestId('choose-from-gallery'));
+
+    await waitFor(() => expect(selection.add).toHaveBeenCalled());
+    expect(selection.add).toHaveBeenCalledWith([
+      expect.objectContaining({ name: 'label.png', type: 'image/png' }),
+    ]);
   });
 
   it('stays put, with no message, when the camera is dismissed', async () => {
@@ -186,6 +221,27 @@ describe('HomeScreen', () => {
 
     expect(await screen.findByTestId('selection-issue')).toHaveTextContent('JPEG, PNG or WebP', { exact: false });
     expect(navigation.navigate).not.toHaveBeenCalled();
+  });
+
+  it('keeps the acceptable photos when one of a multiple selection is rejected', async () => {
+    picker.requestMediaLibraryPermissionsAsync.mockResolvedValue(libraryPermission(true));
+    picker.launchImageLibraryAsync.mockResolvedValue({
+      canceled: false,
+      assets: [
+        { ...asset, uri: 'file:///front.jpg', fileName: 'front.jpg' },
+        { ...asset, uri: 'file:///x.heic', fileName: 'IMG_1.HEIC', mimeType: 'image/heic' },
+      ],
+    });
+    const { selection, navigation } = await renderHome();
+
+    await fireEvent.press(screen.getByTestId('choose-from-gallery'));
+
+    // Throwing the whole selection away would make the user repeat a choice
+    // that was mostly fine, over a file format they cannot change.
+    await waitFor(() => expect(selection.add).toHaveBeenCalled());
+    expect((selection.add as jest.Mock).mock.calls[0][0]).toHaveLength(1);
+    expect(navigation.navigate).toHaveBeenCalledWith('Scan');
+    expect(await screen.findByTestId('selection-issue')).toHaveTextContent('could not be used', { exact: false });
   });
 
   it('rejects an oversized photo before uploading', async () => {

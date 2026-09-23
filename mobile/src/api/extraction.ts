@@ -1,5 +1,11 @@
 /**
- * Label-extraction client: what was read off a photograph, and nothing more.
+ * Label-extraction client: what was read off a package, and nothing more.
+ *
+ * One inspection may carry several photographs of the same package - front,
+ * back, a side panel, a close-up - and they are sent by repeating the `image`
+ * part of one multipart body. They come back as **one** reading, not several,
+ * because a packaged commodity declares different things on different panels
+ * and the question "what does this package say" has one answer.
  *
  * Mirrors `POST /api/v1/extraction/` and the mappers in
  * `frontend/src/services/extractionService.js`. A reading is an observation
@@ -20,10 +26,12 @@ import type {
   ExtractionResponseWire,
   ExtractionRun,
   ExtractionRunWire,
+  InspectionImage,
   ProductClassification,
   ProductClassificationWire,
   ProductImage,
   ProductImageWire,
+  RunImageWire,
 } from '../types/api';
 
 /**
@@ -35,6 +43,23 @@ import type {
  */
 export const EXTRACTION_TIMEOUT_MS = 90000;
 
+/**
+ * Added to the timeout for each photograph after the first.
+ *
+ * The backend reads the set one photograph at a time in the same request, so
+ * a three-image inspection genuinely takes about three times as long to upload
+ * and read. Keeping the single-image timeout for a set would abort work that
+ * was proceeding normally, and the user would see it as a broken server.
+ *
+ * Not a progress estimate and never shown: the app reports no ETA, because the
+ * pipeline reports none.
+ */
+export const EXTRACTION_TIMEOUT_PER_EXTRA_IMAGE_MS = 60000;
+
+export function extractionTimeoutFor(imageCount: number): number {
+  return EXTRACTION_TIMEOUT_MS + Math.max(0, imageCount - 1) * EXTRACTION_TIMEOUT_PER_EXTRA_IMAGE_MS;
+}
+
 export function mapExtractedField(field: ExtractedFieldWire): ExtractedField {
   return {
     fieldKey: field.field_key,
@@ -42,6 +67,10 @@ export function mapExtractedField(field: ExtractedFieldWire): ExtractedField {
     normalizedValue: field.normalized_value ?? null,
     confidence: typeof field.confidence === 'number' ? field.confidence : null,
     boundingBox: field.bounding_box ?? null,
+    // Absent on a backend without image sets, and null when the source was not
+    // recorded. Both map to null, which the UI reads as "not stated" - never
+    // as "no photograph was involved".
+    imageId: typeof field.image_id === 'string' ? field.image_id : null,
   };
 }
 
@@ -59,6 +88,48 @@ export function mapImage(image: ProductImageWire | null | undefined): ProductIma
     viewType: image.view_type,
     status: image.status,
   };
+}
+
+/**
+ * The photographs of one inspection, in the order they were sent.
+ *
+ * Falls back to the single `image` the response also carries when the backend
+ * sent no `images` key at all. That is the honest reading of an older backend:
+ * it returned one photograph, so the set is that photograph - not an empty
+ * set, which would make the screen say no images were checked.
+ *
+ * Entries with no usable `image` object are dropped rather than rendered with
+ * blanks, and the positions are taken from the backend rather than from the
+ * array index, because the position is the number a person is shown beside a
+ * piece of evidence and the two must agree.
+ */
+export function mapInspectionImages(
+  images: RunImageWire[] | null | undefined,
+  fallback?: ProductImageWire | null,
+): InspectionImage[] {
+  if (Array.isArray(images) && images.length > 0) {
+    return images
+      .map((entry) => {
+        const image = mapImage(entry?.image);
+        if (!image) {
+          return null;
+        }
+        return {
+          position: typeof entry.position === 'number' ? entry.position : 0,
+          status: entry.status ?? '',
+          errorCode: entry.error_code ?? '',
+          processingMs: typeof entry.processing_ms === 'number' ? entry.processing_ms : null,
+          image,
+        };
+      })
+      .filter((entry): entry is InspectionImage => entry !== null);
+  }
+
+  const single = mapImage(fallback);
+  if (!single) {
+    return [];
+  }
+  return [{ position: 1, status: single.status, errorCode: '', processingMs: null, image: single }];
 }
 
 /**
@@ -112,6 +183,8 @@ export function mapExtractionRun(run: ExtractionRunWire | null | undefined): Ext
     errorCode: run.error_code || '',
     errorMessage: run.error_message || '',
     fieldsRead: Array.isArray(run.fields_read) ? run.fields_read.map(mapExtractedField) : [],
+    // The photographs this one reading was made from. Never several readings.
+    images: mapInspectionImages(run.images),
     // Declarations the label named whose values could not be read. Kept
     // distinct from "not found": one asks for a better photograph, the other
     // is a possible contravention.
@@ -129,6 +202,16 @@ export function mapExtractionRun(run: ExtractionRunWire | null | undefined): Ext
 export interface ExtractLabelOptions extends Pick<RequestOptions, 'signal'> {
   /** A `ProductImage.ViewType` value. Omitted means `unspecified`. */
   viewType?: string;
+}
+
+export interface ExtractPackageOptions extends Pick<RequestOptions, 'signal'> {
+  /**
+   * A `ProductImage.ViewType` per photograph, positionally. Shorter than the
+   * set leaves the rest `unspecified`; the value is never copied across,
+   * because saying the first photograph is the front says nothing about the
+   * second.
+   */
+  viewTypes?: (string | undefined)[];
 }
 
 /**
@@ -169,25 +252,56 @@ export function toUploadPart(file: UploadFile): UploadPart {
 }
 
 /**
- * Build the multipart body for an upload.
+ * Build the multipart body for an upload of one or more photographs.
+ *
+ * **The `image` part is repeated, once per photograph**, which is the ordinary
+ * multipart way to send several values under one name and is what the backend
+ * reads. One photograph produces exactly the body this app has always sent.
+ *
+ * `view_type` is repeated alongside it and read positionally by the backend.
+ * A photograph whose panel was not stated contributes an `unspecified` part
+ * rather than being skipped - skipping one would shift every later view type
+ * onto the wrong photograph, which is worse than saying nothing about any of
+ * them.
  *
  * Exported so a test can check what is sent without a server: the field name
- * the backend reads (`image`), and the file part's `name` and `type`, which
- * the backend's validators check before decoding the bytes. Content-Type is
- * never set here: the fetch implementation generates the boundary.
+ * the backend reads, the number of parts, and each file part's `name` and
+ * `type`, which the backend's validators check before decoding the bytes.
+ * Content-Type is never set here: the fetch implementation generates the
+ * boundary.
  */
-export function buildUploadFormData(file: UploadFile, viewType?: string): FormData {
+export function buildUploadFormData(
+  files: UploadFile | UploadFile[],
+  viewTypes?: string | (string | undefined)[],
+): FormData {
   const formData = new FormData();
-  // The DOM typings only know Blob; the runtime accepts the File-like part.
-  formData.append('image', toUploadPart(file) as unknown as Blob);
-  if (viewType) {
-    formData.append('view_type', viewType);
+  const list = Array.isArray(files) ? files : [files];
+  const panels = Array.isArray(viewTypes) ? viewTypes : viewTypes === undefined ? [] : [viewTypes];
+
+  list.forEach((file) => {
+    // The DOM typings only know Blob; the runtime accepts the File-like part.
+    formData.append('image', toUploadPart(file) as unknown as Blob);
+  });
+
+  // Only sent when at least one panel was actually stated, so an app that
+  // names none goes on sending the body it always sent.
+  if (panels.some((panel) => Boolean(panel))) {
+    list.forEach((_file, index) => {
+      formData.append('view_type', panels[index] || UNSPECIFIED_VIEW_TYPE);
+    });
   }
   return formData;
 }
 
+/** The backend's `ProductImage.ViewType` default, used to pad the parts. */
+export const UNSPECIFIED_VIEW_TYPE = 'unspecified';
+
 /**
- * Upload a label photograph and receive what was read off it.
+ * Upload one photograph and receive what was read off it.
+ *
+ * The single-photograph form of `extractPackage`, kept because most callers
+ * and every existing test have exactly one photograph in hand. It delegates,
+ * so one photograph takes the path a set of one does.
  *
  * No `categoryCode` parameter, deliberately: a category selects which rules
  * apply and no rule is consulted here. The endpoint does not accept one.
@@ -199,11 +313,42 @@ export async function extractLabel(
   options: ExtractLabelOptions = {},
 ): Promise<ExtractionRun & { image: ProductImage | null }> {
   const { viewType, ...requestOptions } = options;
+  return extractPackage([file], { ...requestOptions, viewTypes: viewType ? [viewType] : undefined });
+}
+
+/**
+ * Upload every photograph of one package and receive **one** reading of it.
+ *
+ * Not several readings presented together: the backend reads the set into one
+ * `ExtractionRun`, so a declaration printed only on the back panel is a
+ * declaration this reading contains. Each entry in `fieldsRead` carries the
+ * `imageId` it was read from.
+ *
+ * The timeout grows with the set, because the backend reads the photographs
+ * one after another inside the request. That is a real cost, not a guess about
+ * progress - nothing here shows an estimate.
+ *
+ * @throws {ApiError}
+ */
+export async function extractPackage(
+  files: UploadFile[],
+  options: ExtractPackageOptions = {},
+): Promise<ExtractionRun & { image: ProductImage | null }> {
+  const { viewTypes, ...requestOptions } = options;
+
+  if (files.length === 0) {
+    // Guarded here rather than left to a 400, because an empty set is a bug in
+    // the caller and the user should never be shown a server error for it.
+    throw new ApiError('Add at least one photo of the package before checking it.', {
+      status: 0,
+      code: 'no_images',
+    });
+  }
 
   const data = await apiClient.upload<ExtractionResponseWire>(
     'extraction/',
-    buildUploadFormData(file, viewType),
-    { timeoutMs: EXTRACTION_TIMEOUT_MS, ...requestOptions },
+    buildUploadFormData(files, viewTypes),
+    { timeoutMs: extractionTimeoutFor(files.length), ...requestOptions },
   );
 
   const run = mapExtractionRun(data);
@@ -215,5 +360,11 @@ export async function extractLabel(
       code: 'unexpected_response',
     });
   }
-  return { ...run, image: mapImage(data.image) };
+  return {
+    ...run,
+    // Against an older backend the run carries no set, so the single image the
+    // response does report becomes the set of one it always was.
+    images: run.images.length > 0 ? run.images : mapInspectionImages(undefined, data.image),
+    image: mapImage(data.image),
+  };
 }

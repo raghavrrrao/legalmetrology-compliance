@@ -67,14 +67,21 @@ class CheckContext:
 
     @property
     def image(self) -> ProductImage:
-        """The image these readings came from.
+        """The primary photograph - position 1 of the run's image set.
 
         Part of the contract so a future `visual_check` - measuring declaration
-        height for a readability requirement - has a defined way to reach the
+        height for a readability requirement - has a defined way to reach a
         source image and its dimensions, rather than reaching through
         `run.image` and coupling itself to the run's shape. Combined with
         `ExtractedLabelField.bounding_box`, this is what makes font-size
         analysis expressible without a schema change.
+
+        An inspection may carry several photographs. A validator that needs the
+        one a particular reading came from asks that reading -
+        `context.field(key).image` - rather than this, which answers only "the
+        primary photograph of this inspection". A measurement made against the
+        wrong panel's dimensions would be wrong in a way nothing downstream
+        could detect.
         """
         return self.run.image
 
@@ -87,8 +94,50 @@ class CheckContext:
 
         Called once per compliance check rather than per rule, so evaluating
         fifty rules against one run is one query, not fifty.
+
+        **Where a declaration read twice is resolved.** An inspection may carry
+        several photographs of the same package, and a declaration printed on
+        an overlapping panel - or a front photograph that also catches the edge
+        of the back - can be read more than once. Every reading is stored;
+        this picks the one the validators judge against, and it is the only
+        place that choice is made, so no two rules can be evaluated against
+        different readings of the same declaration.
+
+        **The earliest photograph wins**, by position, then by the order the
+        readings were written. Not the highest confidence, and the difference
+        matters: OCR confidence is an opinion about characters, not about which
+        panel of a package carries the authoritative declaration, and choosing
+        by it would let a crisp photograph of a promotional flash outrank a
+        softer one of the declaration panel. Position is the order the
+        submitter supplied, which is the only ordering anybody stated. It is
+        predictable, it is the number the interface shows, and a reviewer
+        checking a finding can see exactly which photograph it came from.
+
+        No reading is discarded. The ones not selected stay in `run.fields`
+        with their own `image`, so a client can show that the package declared
+        a net quantity on two panels, and a future reviewer-facing path can
+        compare them. Nothing here judges whether two readings agree - that is
+        a question about the package, and this layer makes no claims about
+        packages.
         """
-        fields = {f.field_key: f for f in run.fields.all()}
+        # One query for the memberships, not one per field: `from_run` is
+        # called once per check and the engine's query-count test bounds the
+        # whole evaluation. A run written before image sets existed, or built
+        # directly in a fixture, has no membership rows - every reading then
+        # sorts at position 1, which is exactly what it was.
+        positions = {
+            image_id: position
+            for image_id, position in run.run_images.values_list(
+                "image_id", "position"
+            )
+        }
+
+        def source_order(reading: ExtractedLabelField) -> tuple[int, int]:
+            return (positions.get(reading.image_id, 1), reading.pk or 0)
+
+        fields: dict[str, ExtractedLabelField] = {}
+        for reading in sorted(run.fields.all(), key=source_order):
+            fields.setdefault(reading.field_key, reading)
         return cls(run=run, fields_by_key=fields)
 
 

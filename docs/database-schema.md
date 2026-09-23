@@ -120,6 +120,7 @@ The schema deliberately uses UUID and BigAutoField primary keys.
 | `ProductCategory` | `id` | BigAutoField |
 | `ComplianceRule` | `id` | BigAutoField |
 | `ExtractedLabelField` | `id` | BigAutoField |
+| `ExtractionRunImage` | `id` | BigAutoField |
 | `ComplianceViolation` | `id` | BigAutoField |
 | `ComplianceEvidence` | `id` | BigAutoField |
 
@@ -133,6 +134,40 @@ UUIDs are used for the main workflow/domain objects:
 BigAutoField is used for catalogue and child records whose database identifier
 is primarily an internal relational identifier.
 
+## 4.2 One inspection, several photographs
+
+`ExtractionRunImage` is the membership row joining an `ExtractionRun` to each
+`ProductImage` it read, with a 1-based `position` and that photograph's own
+outcome. An inspection is therefore **one run over N images**, not N runs:
+
+```
+ProductImage ──┐
+ProductImage ──┼─ ExtractionRunImage ─→ ExtractionRun ─→ ComplianceCheck
+ProductImage ──┘   (position, status)      (one)            (one)
+```
+
+The alternative - one run per photograph - would mean one `ComplianceCheck`
+per photograph, and a package whose net quantity is printed on the back would
+be reported as failing the check made against its front. The rule engine
+judges the package, so it has to see every declaration at once.
+
+`ExtractionRun.image` is kept and is the image at position 1: the primary
+photograph, not the only one. Every query, index and serializer written before
+the set existed still means what it meant, and a single-image inspection is
+exactly a set of one.
+
+`ExtractedLabelField.image` records which photograph each declaration was read
+from - the link that lets a finding cite "image 2" rather than "the package".
+It is `SET_NULL`, so deleting an image does not delete the reading a finding
+snapshots. Where two photographs of overlapping panels both yield the same
+`field_key`, **both rows are kept**; which one the engine judges against is
+decided in one place, `apps.rules.checks.base.CheckContext.from_run`, by
+earliest position.
+
+Migration `extraction.0003_backfill_run_image_set` gives every pre-existing run
+a membership row at position 1 and sets its readings' `image`, so historical
+rows describe themselves as truthfully as new ones.
+
 For `ProductCategory`, the stable business identifier is `code`.
 
 For `ComplianceRule`, the stable business identifier is `code`.
@@ -140,7 +175,7 @@ For `ComplianceRule`, the stable business identifier is `code`.
 The database primary key and business identifier are therefore separate
 concepts for those models.
 
-## 4.2 Nullability convention
+## 4.3 Nullability convention
 
 Database nullability represents whether the absence of a value is a valid
 persisted state.
@@ -158,6 +193,8 @@ persisted state.
 | `ExtractedLabelField.normalized_value` | Yes | No structured normalized representation is available |
 | `ExtractedLabelField.confidence` | Yes | Producer did not provide confidence |
 | `ExtractedLabelField.bounding_box` | Yes | Source-image location is unavailable |
+| `ExtractedLabelField.image` | Yes | The photograph this was read from was not recorded (a run made before an inspection could hold a set) or has since been deleted. **Never** a statement that no photograph was involved |
+| `ExtractionRunImage.processing_ms` | Yes | Processing duration for this photograph is unavailable |
 | `ComplianceRule.effective_from` | Yes | No explicit start date |
 | `ComplianceRule.effective_to` | Yes | No explicit end date |
 | `ComplianceCheck.product` | Yes | Check can exist before a product is linked |
@@ -204,7 +241,7 @@ Other semantic rules:
 - An absence of applicable rules must not automatically be interpreted as proof
   of compliance.
 
-## 4.3 Delete behaviour
+## 4.4 Delete behaviour
 
 Foreign-key deletion policies are part of the data-lifecycle contract.
 
@@ -217,6 +254,9 @@ Foreign-key deletion policies are part of the data-lifecycle contract.
 | `ProductImage.uploaded_by` → `User` | `SET_NULL` |
 | `ExtractionRun.image` → `ProductImage` | `CASCADE` |
 | `ExtractedLabelField.run` → `ExtractionRun` | `CASCADE` |
+| `ExtractedLabelField.image` → `ProductImage` | `SET_NULL` |
+| `ExtractionRunImage.run` → `ExtractionRun` | `CASCADE` |
+| `ExtractionRunImage.image` → `ProductImage` | `CASCADE` |
 | `ComplianceRule.applies_to_categories` → `ProductCategory` | `CASCADE` |
 | `ComplianceCheck.extraction_run` → `ExtractionRun` | `CASCADE` |
 | `ComplianceCheck.product` → `Product` | `CASCADE` |

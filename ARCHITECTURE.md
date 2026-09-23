@@ -57,18 +57,23 @@ The end-to-end flow the whole system exists to serve:
     .ingestion                  validation cannot be skipped on this path
         │
         ▼
-  ProductImage row              stored under a generated filename
-        │
+  ProductImage row(s)           stored under a generated filename; one per
+        │                       photograph of the package, 1 to 6 of them
         ▼
   apps.extraction.services      the ONLY module that runs an ML engine
         │
         ▼
-  labelextract.ExtractionPipeline
+  labelextract.ExtractionPipeline   run once per photograph
         │  preprocess ──▶ OCR ──▶ field extraction
         ▼
-  ExtractionRun + ExtractedLabelField rows
-        │                       readings, with confidence and bounding boxes,
-        │                       plus the classifier's category as METADATA
+  ONE ExtractionRun + ExtractedLabelField rows
+        │                       readings, with confidence, bounding boxes and
+        │                       the photograph each was read from, plus the
+        │                       classifier's category as METADATA
+        │                       (several photographs, one reading: the Rules
+        │                       bind the package, and a run per photograph
+        │                       would report the front as missing what the
+        │                       back declares)
         ▼
   apps.compliance.services.auto_applicability   (API layer calls it; the
         │   engine never reads the classification)
@@ -237,6 +242,8 @@ Own persistence and data invariants. Notable decisions:
 | UUID primary keys on `Product`, `ProductImage`, `ExtractionRun`, `ComplianceCheck` | These IDs appear in URLs. Sequential integers would let one user enumerate another's submissions. |
 | Label declarations live in `extraction`, not on `Product` | A declaration is a *reading from a photograph*, with a confidence and a source. Copying it onto `Product` would turn evidence into an unsourced assertion. |
 | `ExtractionRun` is a FK to image, not a OneToOne | Re-running a better engine must not destroy the readings that existing compliance results cite. |
+| An inspection is one run over N images (`ExtractionRunImage`), not N runs | A packaged commodity declares different things on different panels. One run per photograph would mean one verdict per photograph, and a package whose net quantity is on the back would be reported as failing the check made against its front. `ExtractionRun.image` remains the primary photograph — position 1 — so nothing written before the set existed changed meaning. |
+| `ExtractedLabelField.image` is `SET_NULL`, not `CASCADE` | A finding snapshots the reading it drew on; deleting a photograph must not take the evidence with it. Null there means "the source was not recorded", never "no photograph was involved". |
 | `ComplianceCheck` is a FK, not a OneToOne | Rules change; re-evaluating adds a result rather than rewriting history. |
 | `ComplianceViolation` snapshots the rule's severity and reference | An amended rule must not silently change what a past finding meant. |
 | `ComplianceFinding` records every rule examined, `ComplianceViolation` only the failures | They answer different questions. "What is wrong with this package?" is the violation list; "what was actually checked, and on what evidence?" is the finding list, and a user needs the second before they can trust the first. A pass and an undecidable rule have no violation to hang off. |

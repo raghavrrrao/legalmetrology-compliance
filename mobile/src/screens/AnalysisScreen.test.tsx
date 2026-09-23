@@ -12,8 +12,12 @@ import { fakeAnalysis, PHONE_METRICS, stubNavigation } from '../../tests/render'
 import { ApiError } from '../api/client';
 
 const mockUseAnalysis = jest.fn();
+const mockStartOver = jest.fn();
 jest.mock('../hooks/AnalysisContext', () => ({
   useAnalysis: () => mockUseAnalysis(),
+  // Discards the photographs and the result together. A screen that offered
+  // only "reset" would leave the user's photos behind for the next inspection.
+  useStartOver: () => mockStartOver,
 }));
 
 async function renderAnalysis(overrides: Parameters<typeof fakeAnalysis>[0] = {}) {
@@ -79,7 +83,7 @@ describe('AnalysisScreen', () => {
   });
 
   it('shows the backend\'s reason for a rejected photo, without a retry', async () => {
-    const { analysis, navigation } = await renderAnalysis({
+    const { navigation } = await renderAnalysis({
       phase: 'idle',
       extractionError: new ApiError('The submitted data was not valid.', {
         status: 400,
@@ -92,7 +96,9 @@ describe('AnalysisScreen', () => {
     expect(screen.queryByTestId('retry')).toBeNull();
 
     await fireEvent.press(screen.getByTestId('start-over'));
-    expect(analysis.reset).toHaveBeenCalled();
+    // Abandoning discards the photographs as well as the result - the other
+    // way out of a failure is "Try again", which keeps them.
+    expect(mockStartOver).toHaveBeenCalled();
     expect(navigation.popToTop).toHaveBeenCalled();
   });
 
@@ -143,7 +149,7 @@ describe('AnalysisScreen', () => {
     const { navigation } = await renderAnalysis({ image: null, phase: 'idle' });
 
     expect(screen.getByText('Nothing to analyse')).toBeOnTheScreen();
-    await fireEvent.press(screen.getByText('Scan a label'));
+    await fireEvent.press(screen.getByText('Scan a package'));
     expect(navigation.popToTop).toHaveBeenCalled();
   });
 });

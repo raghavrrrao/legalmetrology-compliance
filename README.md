@@ -100,7 +100,7 @@ those limits are enforced by tests rather than only documented:
 │       ├── api/         client.ts + one module per API area
 │       ├── config/      env.ts - the only reader of process.env
 │       ├── hooks/       the two-step analysis flow, image selection
-│       ├── navigation/  Home -> Preview -> Analysis -> Result
+│       ├── navigation/  Home -> Scan -> Analysis -> Result
 │       ├── screens/     one file per screen
 │       ├── components/  presentational components
 │       ├── services/    camera / gallery / permissions, upload pre-checks

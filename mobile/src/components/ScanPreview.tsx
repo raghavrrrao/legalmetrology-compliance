@@ -1,11 +1,20 @@
 import { useEffect, useState } from 'react';
-import { AccessibilityInfo, Animated, Easing, Image, StyleSheet, View } from 'react-native';
+import { AccessibilityInfo, Animated, Easing, Image, StyleSheet, Text, View } from 'react-native';
 
-import { colors, radius } from '../theme';
+import { colors, radius, spacing, typography } from '../theme';
 
 interface ScanPreviewProps {
-  /** The local URI of the photograph being checked. */
+  /** The local URI of the primary photograph being checked. */
   uri: string;
+  /**
+   * How many photographs this inspection carries. Shown as a badge when it is
+   * more than one, so the user can see that the picture under the sweep is one
+   * of a set rather than the only thing being checked.
+   *
+   * A count, not progress. The backend reports nothing about which photograph
+   * it is on, so nothing here claims to know.
+   */
+  imageCount?: number;
   /** False once nothing is in flight, which stops the sweep. */
   scanning?: boolean;
   testID?: string;
@@ -29,7 +38,7 @@ interface ScanPreviewProps {
  * asked for stillness, and stops on one that asks mid-analysis. The frame, the
  * brackets and the photograph all remain - only the movement goes.
  */
-export function ScanPreview({ uri, scanning = true, testID }: ScanPreviewProps) {
+export function ScanPreview({ uri, imageCount = 1, scanning = true, testID }: ScanPreviewProps) {
   // `useState` with a lazy initialiser rather than `useRef(...).current`: both
   // give one `Animated.Value` for the component's lifetime, but only this one
   // avoids reading a ref during render, which React's own lint rule rejects
@@ -105,6 +114,22 @@ export function ScanPreview({ uri, scanning = true, testID }: ScanPreviewProps) 
         />
       ) : null}
 
+      {imageCount > 1 ? (
+        // Centred along the bottom edge, clear of all four corner brackets.
+        // Decorative: the heading above already says how many photos are being
+        // checked, and a screen reader should not hear the number twice.
+        <View
+          pointerEvents="none"
+          style={styles.countRow}
+          accessibilityElementsHidden
+          importantForAccessibility="no-hide-descendants"
+        >
+          <View style={styles.countBadge} testID="scan-image-count">
+            <Text style={styles.countText}>{`${imageCount} photos`}</Text>
+          </View>
+        </View>
+      ) : null}
+
       <View pointerEvents="none" style={[styles.bracket, styles.topLeft]} />
       <View pointerEvents="none" style={[styles.bracket, styles.topRight]} />
       <View pointerEvents="none" style={[styles.bracket, styles.bottomLeft]} />
@@ -131,6 +156,24 @@ const styles = StyleSheet.create({
   image: {
     width: '100%',
     height: '100%',
+  },
+  countRow: {
+    position: 'absolute',
+    left: 0,
+    right: 0,
+    bottom: EDGE,
+    alignItems: 'center',
+  },
+  countBadge: {
+    paddingHorizontal: spacing.md,
+    paddingVertical: 3,
+    borderRadius: radius.pill,
+    backgroundColor: 'rgba(28, 28, 30, 0.72)',
+  },
+  countText: {
+    ...typography.caption,
+    fontWeight: '600',
+    color: '#FFFFFF',
   },
   sweep: {
     position: 'absolute',

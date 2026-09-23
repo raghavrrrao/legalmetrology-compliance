@@ -19,12 +19,16 @@ import type {
   FindingWire,
   ProductClassificationWire,
   ProductImageWire,
+  RunImageWire,
 } from '../src/types/api';
 import type { SelectedImage } from '../src/services/imageValidation';
 
 export const RUN_ID = '99999999-8888-7777-6666-555555555555';
 export const CHECK_ID = '11111111-2222-3333-4444-555555555555';
 export const IMAGE_ID = '77777777-6666-5555-4444-333333333333';
+/** The second and third photographs of a multi-image inspection. */
+export const IMAGE_ID_2 = '88888888-7777-6666-5555-444444444444';
+export const IMAGE_ID_3 = '99999999-8888-7777-6666-555555555556';
 
 export function imageBody(overrides: Partial<ProductImageWire> = {}): ProductImageWire {
   return {
@@ -38,6 +42,41 @@ export function imageBody(overrides: Partial<ProductImageWire> = {}): ProductIma
     status: 'processed',
     ...overrides,
   };
+}
+
+/**
+ * One entry of a run's image set, as `RunImageSerializer` shapes it.
+ *
+ * `position` is 1-based and is the number a person is shown; `status` is that
+ * one photograph's own outcome, which may be `failed` while the run as a whole
+ * is `completed`.
+ */
+export function runImageBody(overrides: Partial<RunImageWire> = {}): RunImageWire {
+  return {
+    position: 1,
+    status: 'completed',
+    error_code: '',
+    error_message: '',
+    processing_ms: 2202,
+    image: imageBody(),
+    ...overrides,
+  };
+}
+
+/**
+ * The image set of an inspection that photographed three panels.
+ *
+ * Deliberately not three copies of one image: the ids differ, because the
+ * whole point of the set is that a reading can be traced to the panel it came
+ * from, and a fixture whose photographs were indistinguishable could not tell
+ * a correct attribution from a broken one.
+ */
+export function imageSetBody(): RunImageWire[] {
+  return [
+    runImageBody({ position: 1, image: imageBody({ id: IMAGE_ID, original_filename: 'front.jpg' }) }),
+    runImageBody({ position: 2, image: imageBody({ id: IMAGE_ID_2, original_filename: 'back.jpg' }) }),
+    runImageBody({ position: 3, image: imageBody({ id: IMAGE_ID_3, original_filename: 'side.jpg' }) }),
+  ];
 }
 
 /** The example in docs/api.md under `POST /api/v1/extraction/`. */
@@ -81,6 +120,7 @@ export function extractionRunBody(overrides: Partial<ExtractionRunWire> = {}): E
         normalized_value: { quantity: 500, unit: 'g', uncertain: false },
         confidence: 0.87,
         bounding_box: { x: 4, y: 4, width: 300, height: 18 },
+        image_id: IMAGE_ID,
       },
       {
         field_key: 'mrp',
@@ -88,8 +128,10 @@ export function extractionRunBody(overrides: Partial<ExtractionRunWire> = {}): E
         normalized_value: { amount: 149, currency: 'INR', inclusive_of_taxes: true },
         confidence: 0.91,
         bounding_box: null,
+        image_id: IMAGE_ID,
       },
     ],
+    images: [runImageBody()],
     unread_declarations: [],
     product_classification: classificationBody(),
     ...overrides,
@@ -205,7 +247,17 @@ export function complianceBody(overrides: Partial<ComplianceCheckWire> = {}): Co
         severity: 'high',
         field_key: 'manufacture_date',
         message: 'No month and year of manufacture was found on the label.',
-        evidence: [{ excerpt: 'Net Qty: 500 g MRP Rs. 149.00', bounding_box: null, note: 'Text read from the label' }],
+        evidence: [
+          {
+            excerpt: 'Net Qty: 500 g MRP Rs. 149.00',
+            bounding_box: null,
+            note: 'Text read from the label',
+            // A finding of absence: the backend falls back to the primary
+            // photograph, which is not a claim about where the declaration
+            // should have been.
+            image_id: IMAGE_ID,
+          },
+        ],
       },
     ],
     findings: [
@@ -265,8 +317,65 @@ export function complianceBody(overrides: Partial<ComplianceCheckWire> = {}): Co
     ],
     extraction: extractionRunBody(),
     image: imageBody(),
+    images: [runImageBody()],
     ...overrides,
   };
+}
+
+/**
+ * A result made from three photographs of one package.
+ *
+ * One verdict, one summary, one set of findings - and three images. That is the
+ * shape a screen has to render correctly: the count changes, nothing else does.
+ */
+export function multiImageComplianceBody(
+  overrides: Partial<ComplianceCheckWire> = {},
+): ComplianceCheckWire {
+  const images = imageSetBody();
+  return complianceBody({
+    images,
+    extraction: extractionRunBody({
+      images,
+      fields_read: [
+        {
+          field_key: 'net_quantity',
+          raw_value: 'Net Qty: 500 g',
+          normalized_value: { quantity: 500, unit: 'g', uncertain: false },
+          confidence: 0.87,
+          bounding_box: { x: 4, y: 4, width: 300, height: 18 },
+          image_id: IMAGE_ID,
+        },
+        {
+          field_key: 'mrp',
+          raw_value: 'MRP Rs. 149.00 (incl. of all taxes)',
+          normalized_value: { amount: 149, currency: 'INR', inclusive_of_taxes: true },
+          confidence: 0.91,
+          bounding_box: null,
+          // Read off the back panel, not the front.
+          image_id: IMAGE_ID_2,
+        },
+      ],
+    }),
+    violations: [
+      {
+        id: 10,
+        rule_code: 'LMPC-MFG-DATE-001',
+        legal_reference: 'Rule 6(1)(c)',
+        severity: 'high',
+        field_key: 'manufacture_date',
+        message: 'No month and year of manufacture was found on the label.',
+        evidence: [
+          {
+            excerpt: 'Net Qty: 500 g MRP Rs. 149.00',
+            bounding_box: null,
+            note: 'Text read from the label',
+            image_id: IMAGE_ID_2,
+          },
+        ],
+      },
+    ],
+    ...overrides,
+  });
 }
 
 export function selectedImage(overrides: Partial<SelectedImage> = {}): SelectedImage {
@@ -279,6 +388,22 @@ export function selectedImage(overrides: Partial<SelectedImage> = {}): SelectedI
     height: 1200,
     ...overrides,
   };
+}
+
+/**
+ * `count` distinct picked photographs of one package.
+ *
+ * Distinct `uri`s, because that is what the inspection de-duplicates on - a
+ * helper that handed back the same uri twice would make every set collapse to
+ * one and hide the bug it was meant to catch.
+ */
+export function selectedImages(count: number): SelectedImage[] {
+  return Array.from({ length: count }, (_value, index) =>
+    selectedImage({
+      uri: `file:///cache/ImagePicker/panel-${index + 1}.jpg`,
+      name: `panel-${index + 1}.jpg`,
+    }),
+  );
 }
 
 /** A minimal `Response` for a stubbed `fetch`. */

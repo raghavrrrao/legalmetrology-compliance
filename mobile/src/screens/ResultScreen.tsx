@@ -11,12 +11,13 @@ import { KeyValue } from '../components/KeyValue';
 import { Screen } from '../components/Screen';
 import { StatusBadge } from '../components/StatusBadge';
 import { VerdictPanel } from '../components/VerdictPanel';
-import { useAnalysis } from '../hooks/AnalysisContext';
+import { useAnalysis, useStartOver } from '../hooks/AnalysisContext';
 import type { RootScreenProps } from '../navigation/types';
 import { colors, MIN_TOUCH_TARGET, spacing, typography } from '../theme';
-import type { ComplianceResult } from '../types/api';
+import type { ComplianceResult, Finding } from '../types/api';
 import { describeError } from '../utils/errors';
 import { formatDuration, humaniseCode } from '../utils/format';
+import { imageLabel, imagePositions } from '../utils/images';
 import { findingStatusLabel, groupFindingsByStatus, toneForResult } from '../utils/status';
 
 /**
@@ -35,22 +36,32 @@ import { findingStatusLabel, groupFindingsByStatus, toneForResult } from '../uti
  *    labelled as a suggestion.
  * 4. **No score.** Nothing here counts, averages or grades. The counts shown
  *    are the backend's own `rules_*` numbers.
+ * 5. **One result, however many photographs.** The screen says how many images
+ *    were checked and shows one verdict. It never shows a verdict per
+ *    photograph, because the backend computed one verdict about the package -
+ *    presenting several would describe an analysis that did not happen.
+ * 6. **A photograph is named only where the backend named it.** Evidence drawn
+ *    from a reading cites the panel that reading came from; a finding of
+ *    absence cites none, because the declaration was absent from the whole
+ *    package and naming a panel would invent a claim about where it should
+ *    have been printed.
  */
 export function ResultScreen({ navigation }: RootScreenProps<'Result'>) {
   const analysis = useAnalysis();
-  const { result, extraction, complianceError, isEvaluating, evaluate, retry, reset } = analysis;
+  const { result, extraction, complianceError, isEvaluating, evaluate, retry } = analysis;
+  const startOver = useStartOver();
   const [showTechnical, setShowTechnical] = useState(false);
 
   const scanAnother = () => {
-    reset();
+    startOver();
     navigation.popToTop();
   };
 
   if (!result) {
     return (
       <Screen testID="result-screen">
-        <Callout title="No result to show" message="Scan a label to see its result here." tone="neutral">
-          <Button label="Scan a label" onPress={scanAnother} />
+        <Callout title="No result to show" message="Scan a package to see its result here." tone="neutral">
+          <Button label="Scan a package" onPress={scanAnother} />
         </Callout>
       </Screen>
     );
@@ -62,10 +73,27 @@ export function ResultScreen({ navigation }: RootScreenProps<'Result'>) {
   const verdictLabel = result.resultDisplay || humaniseCode(result.result) || 'Unknown';
   const groups = groupFindingsByStatus(result.findings);
 
+  // Prefer the result's own set; fall back to the reading's, which carries the
+  // same list, for a backend that sends `images` on the run but not beside the
+  // verdict.
+  const images = result.images.length > 0 ? result.images : (reading?.images ?? []);
+  const positions = imagePositions(images);
+  // Which photograph, if any, each finding's evidence came from. Resolved
+  // through the violation the finding became, because that is where the
+  // backend attributes evidence to an image.
+  const evidenceImages = new Map<number, string | null>(
+    result.violations.map((violation) => [
+      violation.id,
+      imageLabel(violation.evidence[0]?.imageId, positions),
+    ]),
+  );
+  const labelFor = (finding: Finding): string | null =>
+    finding.violationId === null ? null : (evidenceImages.get(finding.violationId) ?? null);
+
   return (
     <Screen
       testID="result-screen"
-      footer={<Button label="Scan another label" onPress={scanAnother} testID="scan-another" />}
+      footer={<Button label="Scan another package" onPress={scanAnother} testID="scan-another" />}
     >
       <Text accessibilityRole="header" style={styles.title}>
         Result
@@ -73,6 +101,13 @@ export function ResultScreen({ navigation }: RootScreenProps<'Result'>) {
 
       <VerdictPanel tone={toneForResult(result.result)} testID="verdict-card">
         <StatusBadge label={verdictLabel} tone={toneForResult(result.result)} size="large" testID="verdict-badge" />
+        {images.length > 0 ? (
+          <Text style={styles.imageCount} testID="images-checked">
+            {images.length === 1
+              ? '1 image checked'
+              : `${images.length} images checked — one package, one result`}
+          </Text>
+        ) : null}
         {result.summary ? (
           <Text style={styles.summary} testID="verdict-summary">
             {result.summary}
@@ -150,7 +185,11 @@ export function ResultScreen({ navigation }: RootScreenProps<'Result'>) {
                 {findingStatusLabel(group.status)} ({group.items.length})
               </Text>
               {group.items.map((finding) => (
-                <FindingCard key={finding.id} finding={finding} />
+                <FindingCard
+                  key={finding.id}
+                  finding={finding}
+                  evidenceImageLabel={labelFor(finding)}
+                />
               ))}
             </View>
           ))
@@ -190,10 +229,14 @@ export function ResultScreen({ navigation }: RootScreenProps<'Result'>) {
 
       <Card
         title="What was read from the label"
-        description="The declarations recognised in the photo. Observations, not conclusions."
+        description={
+          images.length > 1
+            ? 'The declarations recognised across the photos, each with the one it came from. Observations, not conclusions.'
+            : 'The declarations recognised in the photo. Observations, not conclusions.'
+        }
         testID="extracted-card"
       >
-        <ExtractedFieldsList fields={reading?.fieldsRead ?? []} />
+        <ExtractedFieldsList fields={reading?.fieldsRead ?? []} positions={positions} />
         {reading && reading.unreadDeclarations.length > 0 ? (
           <Text style={styles.muted}>
             {reading.unreadDeclarations.length} declaration(s) were named on the label but their values could
@@ -201,6 +244,36 @@ export function ResultScreen({ navigation }: RootScreenProps<'Result'>) {
           </Text>
         ) : null}
       </Card>
+
+      {/*
+        Which photographs were used, and how each one fared on its own. The
+        run's `status` above says whether the package was read well enough to
+        judge against; this says whether any individual photograph contributed
+        nothing - which is the difference between "retake this one" and "the
+        whole thing was unreadable".
+      */}
+      {images.length > 1 ? (
+        <Card
+          title="Photos used"
+          description="All of these were read together as one package. A photo that could not be read is listed here rather than hidden."
+          testID="images-card"
+        >
+          {images.map((entry) => (
+            <KeyValue
+              key={entry.image.id}
+              label={`Image ${entry.position}`}
+              value={
+                entry.status === 'failed'
+                  ? `Could not be read${entry.errorCode ? ` (${humaniseCode(entry.errorCode)})` : ''}`
+                  : entry.status === 'empty'
+                    ? 'Read, but no text was recognised'
+                    : 'Read'
+              }
+              testID={`image-outcome-${entry.position}`}
+            />
+          ))}
+        </Card>
+      ) : null}
 
       <Pressable
         accessibilityRole="button"
@@ -295,6 +368,11 @@ const styles = StyleSheet.create({
     color: colors.textSecondary,
     marginTop: spacing.md,
     marginBottom: spacing.md,
+  },
+  imageCount: {
+    ...typography.caption,
+    color: colors.textSecondary,
+    marginTop: spacing.sm,
   },
   group: {
     marginBottom: spacing.md,
