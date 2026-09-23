@@ -59,10 +59,25 @@
   --colour-border: #e4e5ea;
   --colour-border-strong: #d3d5dc;
 
-  /* Translucent surfaces. Used only where content scrolls underneath. */
+  /* --- glass --------------------------------------------------------------
+     Three translucencies, not one, because the surfaces that earn a blur do
+     different jobs. `chrome` is for the sticky header, which content scrolls
+     beneath. `panel` is for the composed surfaces - the hero card, the
+     workflow tiles, the verdict - which sit over the background's green
+     atmosphere and are supposed to let a little of it through. `veil` is the
+     faintest, for a surface nested inside another glass one, where a second
+     full-strength layer would read as grey.
+
+     They are applied to a bounded list of elements (see the `.glass` rule),
+     never to a paragraph, a list or the page. A frosted rectangle behind every
+     block is the failure mode this direction is most likely to produce. */
   --colour-glass: rgba(255, 255, 255, 0.82);
   --colour-glass-border: rgba(0, 0, 0, 0.07);
+  --colour-glass-panel: rgba(255, 255, 255, 0.72);
+  --colour-glass-veil: rgba(255, 255, 255, 0.55);
+  --colour-glass-edge: rgba(255, 255, 255, 0.85);
   --blur-glass: saturate(180%) blur(20px);
+  --blur-panel: saturate(140%) blur(14px);
 
   /* --- text ---------------------------------------------------------------
      Three levels, all AA on white and on the page ground. Measured, not
@@ -154,7 +169,15 @@
   --ease: cubic-bezier(0.32, 0.72, 0, 1);
   --duration: 180ms;
 
-  --content-width: 70rem;
+  /* 78rem is 1248px, which is the figure a 1440 and a 1920 monitor both want:
+     wide enough that the page is not a column stranded in whitespace, narrow
+     enough that a line of body text stays under about 90 characters. The
+     previous 70rem left roughly 500px of empty ground either side at 1920 and
+     read as an unfinished admin page because of it. */
+  --content-width: 78rem;
+  /* Prose inside a wide layout still needs a measure. Applied to ledes and
+     long paragraphs, never to the layout itself. */
+  --measure: 34rem;
   /* The one gutter. Every full-bleed element uses it, which is what keeps the
      left edges of the header, the content and the footer on one line. */
   --gutter: var(--space-5);
@@ -183,6 +206,41 @@ body {
   background: var(--colour-page);
   -webkit-font-smoothing: antialiased;
   -moz-osx-font-smoothing: grayscale;
+}
+
+/*
+ * The atmosphere the glass surfaces sit on.
+ *
+ * Three very soft radial washes on a near-white base - two green, one cool -
+ * placed off the top corners and low on the page, so a translucent panel has
+ * something to pick up and the ground stops reading as flat grey. The strongest
+ * is 7% opacity.
+ *
+ * One fixed, non-repeating painted layer on a pseudo-element behind everything:
+ * no image request, no extra DOM, nothing animated, and `pointer-events: none`
+ * so it can never intercept a click. It is decorative and marked so - there is
+ * no information in it, and it degrades to the flat `--colour-page` wherever
+ * gradients are unavailable.
+ */
+body::before {
+  content: '';
+  position: fixed;
+  inset: 0;
+  z-index: -1;
+  pointer-events: none;
+  background-image: radial-gradient(
+      60rem 40rem at 82% -8%,
+      rgba(14, 124, 80, 0.07),
+      transparent 60%
+    ),
+    radial-gradient(48rem 34rem at 4% 4%, rgba(14, 124, 80, 0.045), transparent 58%),
+    radial-gradient(70rem 40rem at 50% 108%, rgba(58, 76, 99, 0.05), transparent 62%);
+}
+
+@media (forced-colors: active) {
+  body::before {
+    display: none;
+  }
 }
 
 code,
@@ -314,8 +372,18 @@ img {
   color: var(--colour-accent);
 }
 
-.app-nav__cta,
-.app-nav__cta[aria-current='page'] {
+/*
+ * `.app-nav a.app-nav__cta`, not `.app-nav__cta`.
+ *
+ * `.app-nav a` is (0,1,1) and the bare class is (0,1,0), so the generic
+ * navigation colour won every time and the call to action rendered its label
+ * in muted grey on a solid green pill - all but unreadable, and caught only by
+ * looking at a screenshot. Matching the element as well as the class puts this
+ * rule at (0,2,1), which beats both the generic rule and the `aria-current`
+ * one below it.
+ */
+.app-nav a.app-nav__cta,
+.app-nav a.app-nav__cta[aria-current='page'] {
   margin-left: var(--space-2);
   padding: 0 var(--space-4);
   background: var(--colour-primary);
@@ -323,7 +391,7 @@ img {
   box-shadow: var(--shadow-card);
 }
 
-.app-nav__cta:hover {
+.app-nav a.app-nav__cta:hover {
   background: var(--colour-primary-hover);
   color: var(--colour-on-primary);
 }
@@ -336,15 +404,63 @@ img {
   flex: 1;
 }
 
+/*
+ * The footer carries a legal disclaimer that belongs on every page and must
+ * never be dropped. What changed is its weight, not its presence: the one
+ * line a reader needs is always visible, and the full paragraph is one click
+ * away in a `<details>` - still in the DOM, still findable by a page search,
+ * still read by a screen reader that opens it.
+ *
+ * A four-line block of grey legal text under every screen trains people to
+ * stop reading it, which is the opposite of what it is for.
+ */
 .app-footer {
   border-top: 1px solid var(--colour-border);
   background: var(--colour-surface);
-  padding: var(--space-5) var(--gutter);
+  padding: var(--space-4) var(--gutter);
+}
+
+.app-footer__inner {
+  max-width: var(--content-width);
+  margin: 0 auto;
+}
+
+.app-footer__summary {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  min-height: var(--tap);
+  list-style: none;
+  color: var(--colour-muted);
+  font-size: 0.82rem;
+  cursor: pointer;
+}
+
+.app-footer__summary::-webkit-details-marker {
+  display: none;
+}
+
+.app-footer__summary::after {
+  content: 'Read the full notice';
+  color: var(--colour-accent);
+  font-weight: 600;
+  text-decoration: underline;
+  text-underline-offset: 2px;
+}
+
+.app-footer details[open] > .app-footer__summary::after {
+  content: 'Hide the full notice';
+}
+
+.app-footer__dot {
+  color: var(--colour-border-strong);
 }
 
 .app-footer__disclaimer {
-  max-width: var(--content-width);
-  margin: 0 auto;
+  max-width: 56rem;
+  margin: 0 0 var(--space-2);
+  padding-top: var(--space-2);
+  border-top: 1px solid var(--colour-border);
   color: var(--colour-muted);
   font-size: 0.82rem;
   line-height: 1.6;
@@ -379,13 +495,25 @@ img {
    Typography
    ========================================================================== */
 
+/*
+ * The wrapper every screen except the home page renders into. It carried no
+ * rule at all before, so each page's sections were spaced by whatever margins
+ * their own children happened to have; one flow gap here is what makes the
+ * rhythm the same on the scan, result and inspections screens.
+ */
+.page {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-5);
+}
+
 .page-header {
   display: flex;
   flex-wrap: wrap;
   align-items: flex-end;
   justify-content: space-between;
   gap: var(--space-4);
-  margin-bottom: var(--space-5);
+  margin: 0;
   padding-bottom: var(--space-4);
   border-bottom: 1px solid var(--colour-border);
 }
@@ -498,6 +626,54 @@ img {
   clip-path: inset(50%);
   white-space: nowrap;
   border: 0;
+}
+
+/* ==========================================================================
+   Glass
+   ==========================================================================
+   One rule, applied by adding `.glass` to a surface that already has its own
+   layout. It is deliberately a modifier and not a base: the list of elements
+   that carry it is short and visible in the markup, which is what stops
+   "subtle glassmorphism" turning into a frosted rectangle behind every
+   paragraph.
+
+   Carried by: the hero card, the workflow tiles, the recent-inspections
+   surface, the verdict panel, and the scan flow's checkpoint. Nothing else.
+
+   The blur is behind `@supports`, and the fallback is not a transparent panel
+   with no blur - it is an opaque white one, because a see-through card over
+   text is worse than a solid card.
+   ========================================================================== */
+
+.glass {
+  background: var(--colour-surface);
+  border: 1px solid var(--colour-border);
+  box-shadow: var(--shadow-raised);
+}
+
+@supports ((backdrop-filter: blur(1px)) or (-webkit-backdrop-filter: blur(1px))) {
+  .glass {
+    background: var(--colour-glass-panel);
+    /* A brighter hairline along the top edge is what reads as a pane catching
+       the light; a uniform border reads as a box. */
+    border-color: var(--colour-glass-border);
+    border-top-color: var(--colour-glass-edge);
+    -webkit-backdrop-filter: var(--blur-panel);
+    backdrop-filter: var(--blur-panel);
+  }
+
+  .glass--veil {
+    background: var(--colour-glass-veil);
+  }
+}
+
+@media (forced-colors: active) {
+  .glass {
+    -webkit-backdrop-filter: none;
+    backdrop-filter: none;
+    background: Canvas;
+    border: 1px solid CanvasText;
+  }
 }
 
 /* ==========================================================================
@@ -772,18 +948,46 @@ img {
   color: var(--colour-faint);
 }
 
+/*
+ * A summary tile. The number is set large and tabular; the word under it is
+ * what actually carries the meaning, which is why the tint is never asked to
+ * do that job on its own.
+ */
+/*
+ * A count with a coloured dot and its own word - "2 passed", "1 violation".
+ * Compact by default, because most of the places it appears are dense: a
+ * history row, a card header. The verdict's summary row enlarges it into a
+ * tile; see `.verdict__counts .count-chip` below.
+ */
 .count-chip {
   display: inline-flex;
   align-items: center;
   gap: var(--space-2);
-  padding: 0.28rem var(--space-3);
+  padding: 0.3rem var(--space-3);
   border: 1px solid var(--colour-border-strong);
   border-radius: var(--radius-pill);
   background: var(--colour-surface);
   color: var(--colour-text);
-  font-size: 0.8rem;
+  font-size: 0.82rem;
   font-weight: 600;
+  font-variant-numeric: tabular-nums;
   white-space: nowrap;
+}
+
+/*
+ * The verdict's summary tiles. Same chip, given room: this is the one place
+ * the counts are the content rather than an annotation on it.
+ */
+.verdict__counts .count-chip {
+  display: flex;
+  justify-content: flex-start;
+  padding: var(--space-3) var(--space-4);
+  border-radius: var(--radius);
+  border-color: var(--colour-border);
+  font-size: 0.95rem;
+  font-weight: 650;
+  letter-spacing: -0.012em;
+  white-space: normal;
 }
 
 .count-chip__dot {
@@ -792,6 +996,11 @@ img {
   flex: none;
   border-radius: 50%;
   background: var(--tone-neutral);
+}
+
+.count-chip--success {
+  border-color: var(--tone-success-border);
+  color: var(--tone-success);
 }
 
 .count-chip--success .count-chip__dot {
@@ -807,11 +1016,22 @@ img {
   background: var(--tone-error);
 }
 
+.count-chip--review {
+  border-color: var(--tone-review-border);
+  color: var(--tone-review);
+}
+
 .count-chip--review .count-chip__dot {
   background: var(--tone-review);
 }
 
+/*
+ * "Did not apply" keeps the dashed edge the not-applicable tone carries
+ * everywhere else, so an exemption never reads as a pass - not even as a
+ * number in a summary row, and not in greyscale.
+ */
 .count-chip--muted {
+  border-style: dashed;
   color: var(--colour-faint);
 }
 
@@ -835,6 +1055,435 @@ img {
   border-color: var(--colour-primary-soft);
   background: var(--colour-primary-soft);
   color: var(--colour-accent);
+}
+
+/* ==========================================================================
+   Home
+   ==========================================================================
+   The composition, not a stack of cards. The page answers three questions in
+   order - what is this for, how does it work, what have I done already - and
+   the diagnostics that used to open the page are now a closed disclosure at
+   the bottom, where they belong for everyone who is not debugging.
+   ========================================================================== */
+
+.home {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-6);
+}
+
+/* --- hero ----------------------------------------------------------------- */
+
+/*
+ * Two columns: the sentence and the actions on the left, the illustrative
+ * inspection card on the right. `1.05fr / 1fr` rather than an even split -
+ * the copy is the point and wants slightly more room, and an even split made
+ * the headline wrap awkwardly at 1280.
+ */
+.hero {
+  display: grid;
+  grid-template-columns: minmax(0, 1.05fr) minmax(0, 1fr);
+  align-items: center;
+  gap: var(--space-7);
+  padding: var(--space-5) 0 var(--space-2);
+}
+
+.hero__copy {
+  min-width: 0;
+}
+
+.hero__eyebrow {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-2);
+  margin: 0 0 var(--space-4);
+  padding: 0.3rem var(--space-3);
+  border: 1px solid var(--colour-primary-soft);
+  border-radius: var(--radius-pill);
+  background: var(--colour-primary-softer);
+  color: var(--colour-accent);
+  font-size: 0.76rem;
+  font-weight: 650;
+  letter-spacing: 0.01em;
+}
+
+/*
+ * `20ch` and a 2.9rem ceiling, measured on a rendered 1440 screenshot rather
+ * than guessed: at 16ch/3.5rem the headline broke into three lines with
+ * "label." alone on the last, which reads as a layout accident. Two lines is
+ * the shape this sentence wants.
+ */
+.hero__title {
+  margin: 0 0 var(--space-4);
+  max-width: 20ch;
+  font-size: clamp(2.05rem, 1.35rem + 2.2vw, 2.9rem);
+  font-weight: 700;
+  line-height: 1.08;
+  letter-spacing: -0.035em;
+}
+
+.hero__lede {
+  margin: 0 0 var(--space-5);
+  max-width: var(--measure);
+  font-size: 1.08rem;
+  line-height: 1.6;
+  color: var(--colour-muted);
+}
+
+.hero__actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-3);
+}
+
+.hero__note {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  margin: var(--space-5) 0 0;
+  color: var(--colour-faint);
+  font-size: 0.84rem;
+}
+
+.hero__visual {
+  min-width: 0;
+}
+
+/* --- the illustrative label card ------------------------------------------ */
+
+/*
+ * A drawing of what the tool does, not a product.
+ *
+ * It shows the *shape* of a label inspection - a panel, a scan frame over it,
+ * the declaration names this system actually looks for, and a tick where one
+ * has been read. The values beside those names are deliberately blank bars
+ * rather than numbers: inventing "₹350" or "500 g" here would put fabricated
+ * product data on the landing page of a compliance tool, which is the one
+ * thing this project does not do anywhere else either.
+ *
+ * Entirely decorative and marked `aria-hidden` in the markup - everything it
+ * conveys is said in words in the column beside it.
+ */
+.label-card {
+  position: relative;
+  padding: var(--space-5);
+  border-radius: var(--radius-xl);
+}
+
+.label-card__panel {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-3);
+  padding: var(--space-5);
+  border: 1px solid var(--colour-border);
+  border-radius: var(--radius-lg);
+  background: var(--colour-surface);
+  box-shadow: var(--shadow-card);
+}
+
+.label-card__brand {
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+  padding-bottom: var(--space-3);
+  border-bottom: 1px solid var(--colour-border);
+}
+
+.label-card__swatch {
+  width: 2.5rem;
+  height: 2.5rem;
+  flex: none;
+  border-radius: var(--radius-sm);
+  background: linear-gradient(
+    145deg,
+    var(--colour-primary-soft),
+    var(--colour-surface-sunken)
+  );
+  border: 1px solid var(--colour-border);
+}
+
+.label-card__bars {
+  display: flex;
+  flex-direction: column;
+  gap: 0.3rem;
+  flex: 1;
+}
+
+/* The blank value bars. A shape where a value would be, never a value. */
+.label-card__bar {
+  height: 0.5rem;
+  border-radius: var(--radius-pill);
+  background: var(--colour-surface-sunken);
+}
+
+.label-card__bar--short {
+  width: 45%;
+}
+
+.label-card__bar--medium {
+  width: 68%;
+}
+
+.label-card__row {
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+}
+
+.label-card__field {
+  flex: none;
+  width: 7.5rem;
+  color: var(--colour-faint);
+  font-size: 0.68rem;
+  font-weight: 700;
+  letter-spacing: 0.07em;
+  text-transform: uppercase;
+}
+
+.label-card__tick {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 1.15rem;
+  height: 1.15rem;
+  flex: none;
+  border-radius: 50%;
+  background: var(--tone-success-bg);
+  color: var(--tone-success);
+  font-size: 0.66rem;
+  font-weight: 700;
+}
+
+/*
+ * The scan frame: four corner brackets over the panel, drawn with one element
+ * and two gradients per corner rather than four elements.
+ */
+.label-card__frame {
+  position: absolute;
+  inset: var(--space-3);
+  border-radius: var(--radius);
+  pointer-events: none;
+  background-image: linear-gradient(var(--colour-primary), var(--colour-primary)),
+    linear-gradient(var(--colour-primary), var(--colour-primary)),
+    linear-gradient(var(--colour-primary), var(--colour-primary)),
+    linear-gradient(var(--colour-primary), var(--colour-primary));
+  background-size: 1.4rem 2px, 2px 1.4rem, 1.4rem 2px, 2px 1.4rem;
+  background-position: left top, left top, right bottom, right bottom;
+  background-repeat: no-repeat;
+  opacity: 0.55;
+}
+
+.label-card__chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-2);
+  margin-top: var(--space-4);
+}
+
+.label-card__chip {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-1);
+  padding: 0.22rem var(--space-3);
+  border: 1px solid var(--colour-border);
+  border-radius: var(--radius-pill);
+  background: var(--colour-surface);
+  color: var(--colour-muted);
+  font-size: 0.74rem;
+  font-weight: 600;
+  white-space: nowrap;
+}
+
+.label-card__chip--read {
+  border-color: var(--tone-success-border);
+  background: var(--tone-success-bg);
+  color: var(--tone-success);
+}
+
+/* --- a titled band on the home page --------------------------------------- */
+
+.home-section__head {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: var(--space-3);
+  margin-bottom: var(--space-4);
+}
+
+.home-section__head .section-heading {
+  margin: 0;
+}
+
+.home-section__lede {
+  margin: 0;
+  max-width: var(--measure);
+  color: var(--colour-muted);
+  font-size: 0.94rem;
+}
+
+/* --- how it works --------------------------------------------------------- */
+
+.flow {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: var(--space-3);
+}
+
+.flow__step {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+  padding: var(--space-5) var(--space-4);
+  border-radius: var(--radius-lg);
+}
+
+.flow__num {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 2rem;
+  height: 2rem;
+  margin-bottom: var(--space-2);
+  border-radius: var(--radius-sm);
+  background: var(--colour-primary-soft);
+  color: var(--colour-accent);
+  font-size: 0.82rem;
+  font-weight: 700;
+  font-variant-numeric: tabular-nums;
+}
+
+.flow__body {
+  min-width: 0;
+}
+
+.flow__title {
+  margin: 0 0 var(--space-1);
+  font-size: 1.02rem;
+  font-weight: 650;
+  letter-spacing: -0.016em;
+}
+
+.flow__text {
+  margin: 0;
+  color: var(--colour-muted);
+  font-size: 0.9rem;
+  line-height: 1.55;
+}
+
+/* --- recent inspections --------------------------------------------------- */
+
+.recent {
+  padding: var(--space-5);
+  border-radius: var(--radius-xl);
+}
+
+.recent__empty {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: var(--space-2);
+  padding: var(--space-6) var(--space-4);
+  text-align: center;
+}
+
+.recent__empty-mark {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 3rem;
+  height: 3rem;
+  margin-bottom: var(--space-2);
+  border-radius: var(--radius);
+  background: var(--colour-surface-sunken);
+  color: var(--colour-faint);
+}
+
+.recent__empty-title {
+  margin: 0;
+  font-size: 1.1rem;
+  font-weight: 650;
+  letter-spacing: -0.018em;
+}
+
+.recent__empty-text {
+  margin: 0 0 var(--space-3);
+  max-width: 26rem;
+  color: var(--colour-muted);
+  font-size: 0.92rem;
+}
+
+/* --- system status -------------------------------------------------------- */
+
+/*
+ * The diagnostics. Closed by default and last on the page: an API version, a
+ * database ping and a Tesseract build are what a developer needs on a bad day,
+ * not what a reviewer opens the application to find out.
+ *
+ * Closed, not removed - `<details>` keeps its contents in the DOM, so the
+ * information is still reachable, still findable by a page search, and still
+ * announced to a screen reader that opens the disclosure.
+ */
+.system-status {
+  border: 1px solid var(--colour-border);
+  border-radius: var(--radius-lg);
+  background: var(--colour-surface);
+}
+
+.system-status > summary {
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+  min-height: var(--tap);
+  padding: var(--space-3) var(--space-4);
+  list-style: none;
+  color: var(--colour-muted);
+  font-size: 0.9rem;
+  font-weight: 600;
+  cursor: pointer;
+}
+
+.system-status > summary::-webkit-details-marker {
+  display: none;
+}
+
+.system-status > summary::after {
+  content: '';
+  width: 0.45rem;
+  height: 0.45rem;
+  margin-left: auto;
+  border-right: 2px solid currentColor;
+  border-bottom: 2px solid currentColor;
+  transform: rotate(45deg) translate(-0.1rem, -0.1rem);
+  transition: transform var(--duration) var(--ease);
+}
+
+.system-status[open] > summary::after {
+  transform: rotate(225deg) translate(-0.1rem, -0.1rem);
+}
+
+.system-status__body {
+  padding: var(--space-4);
+  border-top: 1px solid var(--colour-border);
+}
+
+/* A small dot beside the summary, so the health is visible without opening
+   it. It is never the only signal: the badge inside says the word. */
+.system-status__dot {
+  width: 0.5rem;
+  height: 0.5rem;
+  flex: none;
+  border-radius: 50%;
+  background: var(--colour-border-strong);
+}
+
+.system-status__dot--ok {
+  background: var(--tone-success);
+}
+
+.system-status__dot--bad {
+  background: var(--tone-error);
 }
 
 /* ==========================================================================
@@ -1467,13 +2116,17 @@ img {
 
 /* --- the checkpoint ------------------------------------------------------- */
 
+/*
+ * The checkpoint - the scan flow's primary action surface, and one of the five
+ * places glass is used. `.glass` supplies the surface, the hairline and the
+ * lift; all this adds is the accent rule along the top that marks it as the
+ * end of the form. The `border-top` is declared after `.glass` in the cascade
+ * on purpose, so it survives the modifier's own border colour.
+ */
 .ready {
   padding: var(--space-5);
-  border: 1px solid var(--colour-border);
+  border-radius: var(--radius-xl);
   border-top: 3px solid var(--colour-primary);
-  border-radius: var(--radius-lg);
-  background: var(--colour-surface);
-  box-shadow: var(--shadow-raised);
 }
 
 .ready__title {
@@ -1578,7 +2231,7 @@ img {
 }
 
 .verdict__eyebrow {
-  margin: 0 0 var(--space-3);
+  margin: 0 0 var(--space-1);
   color: var(--colour-muted);
   font-size: 0.72rem;
   font-weight: 700;
@@ -1589,33 +2242,86 @@ img {
 .verdict__head {
   display: flex;
   flex-wrap: wrap;
-  align-items: center;
+  align-items: flex-start;
   justify-content: space-between;
   gap: var(--space-3);
 }
 
-.verdict__title {
+.verdict__identity {
   display: flex;
   align-items: center;
-  gap: var(--space-3);
-  margin: 0;
-  font-size: clamp(1.5rem, 1.1rem + 1.4vw, 2rem);
-  font-weight: 700;
-  line-height: 1.15;
-  letter-spacing: -0.03em;
+  gap: var(--space-4);
+  min-width: 0;
 }
 
+.verdict__words {
+  min-width: 0;
+}
+
+.verdict__title {
+  margin: 0;
+  font-size: clamp(1.6rem, 1.1rem + 1.6vw, 2.15rem);
+  font-weight: 700;
+  line-height: 1.1;
+  letter-spacing: -0.032em;
+}
+
+/* What was inspected and when. Quiet, because the outcome above it is the
+   headline - but present, because a report without a subject is a status. */
+.verdict__subject {
+  margin: var(--space-1) 0 0;
+  color: var(--colour-muted);
+  font-size: 0.88rem;
+}
+
+/*
+ * The status mark: a filled disc rather than an outlined one, so the outcome
+ * has a shape at a glance from across a room. It is never the only signal -
+ * the word is beside it at 2rem.
+ */
 .verdict__mark {
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  width: 2.4rem;
-  height: 2.4rem;
+  width: 3.25rem;
+  height: 3.25rem;
   flex: none;
-  border: 2px solid currentColor;
+  border: 1px solid currentColor;
   border-radius: 50%;
-  font-size: 1.25rem;
+  background: var(--colour-surface);
+  font-size: 1.6rem;
   font-weight: 700;
+  box-shadow: var(--shadow-card);
+}
+
+.verdict__mark--success {
+  background: var(--tone-success);
+  border-color: var(--tone-success);
+  color: #ffffff;
+}
+
+.verdict__mark--error {
+  background: var(--tone-error);
+  border-color: var(--tone-error);
+  color: #ffffff;
+}
+
+.verdict__mark--warning {
+  background: var(--tone-warning);
+  border-color: var(--tone-warning);
+  color: #ffffff;
+}
+
+.verdict__mark--review {
+  background: var(--tone-review);
+  border-color: var(--tone-review);
+  color: #ffffff;
+}
+
+.verdict__mark--neutral {
+  background: var(--tone-neutral);
+  border-color: var(--tone-neutral);
+  color: #ffffff;
 }
 
 .verdict__meta {
@@ -1638,11 +2344,19 @@ img {
   line-height: 1.65;
 }
 
+/*
+ * The summary row: one tile per count, on a grid that fits as many as the
+ * width allows and wraps the rest. `auto-fit` with a 8.5rem floor gives five
+ * across on a desktop, three on a tablet and two on a phone without a
+ * breakpoint for each.
+ */
 .verdict__counts {
-  display: flex;
-  flex-wrap: wrap;
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(8.5rem, 1fr));
   gap: var(--space-2);
-  margin-top: var(--space-4);
+  margin-top: var(--space-5);
+  padding-top: var(--space-4);
+  border-top: 1px solid var(--colour-glass-border);
 }
 
 .verdict__note {
@@ -2331,12 +3045,39 @@ img {
   text-underline-offset: 2px;
 }
 
+/*
+ * Three label/value pairs on one line, each a `<div>` inside the `<dl>`.
+ *
+ * `dd { margin: 0 }` is doing real work: the user-agent stylesheet indents a
+ * `dd` by 40px, which put every value in this row a centimetre to the right of
+ * its own label. Visible immediately in a rendered screenshot and invisible in
+ * the markup.
+ */
 .history-item__meta {
   display: flex;
   flex-wrap: wrap;
-  gap: var(--space-1) var(--space-3);
+  gap: var(--space-2) var(--space-5);
+  margin: 0;
   color: var(--colour-muted);
   font-size: 0.84rem;
+}
+
+.history-item__meta > div {
+  min-width: 0;
+}
+
+.history-item__meta dt {
+  font-size: 0.7rem;
+  font-weight: 700;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--colour-faint);
+}
+
+.history-item__meta dd {
+  margin: 0;
+  color: var(--colour-text);
+  font-weight: 600;
 }
 
 .history-item__counts {
@@ -2445,7 +3186,26 @@ label:focus-visible,
    break with `overflow-wrap: anywhere`.
    ========================================================================== */
 
-/* --- tablet: the content column stops being wider than the text ----------- */
+/* --- large desktop: 1440 and 1920 ----------------------------------------- */
+@media (min-width: 90rem) {
+  :root {
+    --gutter: var(--space-6);
+  }
+
+  .hero {
+    gap: var(--space-7);
+    padding-top: var(--space-7);
+  }
+}
+
+/* --- laptop: the hero still holds two columns, the flow drops to two ------ */
+@media (max-width: 75rem) {
+  .flow {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+}
+
+/* --- tablet: the hero stacks --------------------------------------------- */
 @media (max-width: 64rem) {
   :root {
     --gutter: var(--space-4);
@@ -2454,6 +3214,30 @@ label:focus-visible,
   .app-main {
     padding-top: var(--space-5);
     padding-bottom: var(--space-6);
+  }
+
+  .home {
+    gap: var(--space-6);
+  }
+
+  /*
+   * One column, copy first. The illustration is the first thing to lose its
+   * share of the width, because it carries nothing the sentence above it does
+   * not already say - and a two-column hero at 1024 leaves the headline
+   * wrapping every three words.
+   */
+  .hero {
+    grid-template-columns: minmax(0, 1fr);
+    gap: var(--space-5);
+    padding-top: var(--space-4);
+  }
+
+  .hero__title {
+    max-width: 20ch;
+  }
+
+  .hero__visual {
+    max-width: 30rem;
   }
 }
 
@@ -2511,6 +3295,52 @@ label:focus-visible,
 
   .page-header__actions .button {
     flex: 1 1 auto;
+  }
+
+  /* --- home ---------------------------------------------------------------
+     The hero keeps its order and loses its ornament: the illustration is
+     hidden below 768, where it would be a third of a phone screen spent on a
+     picture of the thing the two buttons under it already do. */
+  .hero {
+    padding-top: var(--space-2);
+  }
+
+  .hero__visual {
+    display: none;
+  }
+
+  .hero__title {
+    max-width: none;
+  }
+
+  .hero__actions .button {
+    flex: 1 1 100%;
+  }
+
+  .flow {
+    grid-template-columns: minmax(0, 1fr);
+    gap: var(--space-2);
+  }
+
+  .flow__step {
+    flex-direction: row;
+    align-items: flex-start;
+    gap: var(--space-3);
+    padding: var(--space-4);
+  }
+
+  /* Side by side on a phone: four stacked tiles with the number above the
+     title is four screenfuls of scrolling for four sentences. */
+  .flow__num {
+    margin-bottom: 0;
+  }
+
+  .flow__body {
+    min-width: 0;
+  }
+
+  .recent {
+    padding: var(--space-4);
   }
 
   .verdict {

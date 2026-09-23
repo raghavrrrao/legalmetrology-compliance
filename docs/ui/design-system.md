@@ -47,6 +47,7 @@ iOS 18, read as a set of constraints rather than a skin:
 | **Accent** | one restrained green, used for actions and wayfinding only |
 | **Type** | one optical family (system/SF), hierarchy by size, weight and tracking |
 | **Translucency** | exactly two places, both of them surfaces content scrolls *under* |
+| **Background** | three radial washes at ≤7% on one fixed pseudo-element — depth, not a landing page |
 | **Motion** | one duration (180ms), one curve, and all of it switchable off |
 
 Deliberately avoided: neon, gradients as decoration, glass everywhere, a
@@ -60,6 +61,14 @@ navigation legible over whatever is scrolling under it. It sits behind an
 `@supports` query, so a browser without `backdrop-filter` gets an opaque header
 rather than a see-through one, and it is dropped entirely under
 `forced-colors: active`.
+
+Glass is carried by a `.glass` modifier on exactly five kinds of surface — the
+hero label card, the four workflow tiles, the recent-inspections panel, the
+verdict, and the scan flow's checkpoint. It is a modifier rather than a base
+style so the list is visible in the markup; that is what stops "subtle
+glassmorphism" becoming a frosted rectangle behind every paragraph. Its
+`@supports` fallback is an *opaque* white card, not a transparent one, because
+a see-through panel over text is worse than a solid panel.
 
 Everywhere else is opaque, and that is a performance decision rather than a
 stylistic one. A full-viewport `backdrop-filter` costs a recomposited layer per
@@ -147,6 +156,87 @@ below, where tightening costs legibility.
 
 ---
 
+## 3a. Composition
+
+Tokens were not the problem the first pass left behind. The home page was a
+page header, a "Backend connection" card and two warning panels — correct,
+honest, and indistinguishable from an admin console. Colour and radius cannot
+fix that; the arrangement had to change.
+
+### Home
+
+    HEADER      mark · LM Metrology / Compliance Assistant     Home  Inspections  [+ New scan]
+
+    HERO        § Legal Metrology (Packaged Commodities) Rules, 2011
+                Check a package before you trust the label.        ┌──────────────┐
+                Scan or upload a packaged-product label…           │ label card   │
+                [ Scan a label ]  [ Upload images ]                │ scan frame   │
+                ⓘ Automated assistance — never a legal             │ field rows   │
+                  determination.                                   └──────────────┘
+
+    NOTICES     placeholder engine / no verified rules / cannot reach backend
+
+    HOW IT      01 Scan   02 Extract   03 Check   04 Review
+    WORKS       four glass tiles
+
+    RECENT      real rows from GET /api/v1/compliance/, or a polished empty
+                state with one button
+
+    STATUS      ▸ System status                     (closed <details>, last)
+
+    FOOTER      Automated assistance only · Not a legal determination · Read the full notice
+
+Three things about this are deliberate:
+
+**The diagnostics moved, the honesty notices did not.** API version, database
+ping and Tesseract build are now a closed `<details>` at the bottom. The two
+notices that say the system *cannot currently produce a real finding* stay
+directly under the hero, because they are not diagnostics — they are the
+difference between "this label was checked" and "nothing here is a real
+reading".
+
+**The hero illustration asserts nothing.** It draws the shape of a reading: the
+declaration names this extractor actually looks for, blank bars where values
+would be, a scan frame, and ticks. No MRP, no net quantity, no brand. Putting a
+fabricated `₹350` on the front page of a tool that exists to check real ones
+would be absurd, and it is `aria-hidden` because the sentence beside it already
+says everything it shows.
+
+**Recent inspections are real or absent.** The rows come from the same endpoint
+and the same `InspectionRow` the Inspections screen uses. There is no
+inspection count, no pass rate, no score.
+
+### Result
+
+    Inspection report
+      breadcrumb · title · "A saved record of one label check…"
+
+    VERDICT (glass, tone-tinted)
+      (?)  AUTOMATED COMPLIANCE CHECK
+           Requires review
+           Packaged food · Checked 23 Sept 2026, 4:11 pm       engine v0.3.0 · 214 ms
+      1 requirement failed · 3 require review · 4 passed.
+      <the engine's own summary sentence>
+      ─────────────────────────────────────────────
+      [4 passed] [1 failed] [3 require review] [2 did not apply] [8 examined]
+      <notes: human review recommended / N/A is not a pass / review is not a pass>
+
+    CLASSIFICATION      suggestion · model confidence · label phrases · confirmation state
+    REQUIREMENTS        finding cards, failures first
+    EVIDENCE            photo with the read regions outlined
+    EXTRACTION          what was read
+    DECLARATIONS        what a person stated
+
+The report header is what makes this read as a record rather than a row: a
+filled status disc, the outcome as a word at ~2rem, and under it what was
+inspected and when. **No product name is shown, because the API does not carry
+one** — this system reads labels, it does not identify products.
+
+The summary tiles are the engine's own `rules_*` counts and nothing else. There
+is no percentage, no score, and no derived rate anywhere on the screen.
+
+---
+
 ## 4. Components
 
 | Web class | Mobile component | Notes |
@@ -217,24 +307,40 @@ system: 4.54 : 1.** Nothing falls back to "AA for large text only".
 
 ## 6. Responsive behaviour (web)
 
-Three breakpoints. The layout is fluid between them, so none is a
-pixel-perfect target for one device — each is the width at which a particular
-arrangement stops working.
-
 | Width | What changes |
 |---|---|
-| **> 1024px** | full layout, 70rem content column, gutter 24px |
-| **≤ 1024px** | gutter drops to 16px, vertical padding tightens |
-| **≤ 768px** | header becomes two rows (identity, then nav across the full width, each item an equal share so all three stay over 44px); tagline hidden; answer pills go two-per-row; `read-field`, `status-list`, `review-summary` and `suggestion` collapse to one column; the workflow connector is dropped; pagination stacks |
-| **≤ 424px** | gutter 12px; answer pills go one-per-row (two 0.86rem pills start truncating "Not answered", and a truncated answer is worse than a taller form); count chips go full width |
+| **≥ 1440px** | gutter 32px; the hero gets its full 48px column gap |
+| **1024–1440px** | two-column hero, four workflow tiles across, 78rem (1248px) content column |
+| **≤ 1200px** | workflow drops to two across |
+| **≤ 1024px** | gutter 16px; the hero stacks, copy first, illustration below at ≤30rem |
+| **≤ 768px** | illustration hidden; hero buttons go full width; header becomes two rows with each nav item an equal share (keeps all three over 44px); workflow tiles become one column with the number beside the title; `read-field`, `status-list`, `review-summary`, `suggestion` collapse to one column; pagination stacks |
+| **≤ 424px** | gutter 12px; answer pills one per row; count tiles full width |
 
-**No horizontal scrolling at 1440, 1280, 1024, 768, 430, 390 or 375px.** Every
-grid track is `minmax(0, 1fr)`, long values break with `overflow-wrap: anywhere`,
-and the one element that genuinely cannot reflow — the declarations table, which
-has a `min-width: 32rem` — is wrapped in `.table-scroll` so it scrolls inside
-its own container rather than taking the page with it.
+### How this was verified, and what could not be
 
----
+Rendered in headless Edge against a stub API and inspected as images at
+**1920, 1440, 1280, 1024, 768 and 492 CSS px** — no horizontal scrolling at any
+of them, the hero stays balanced, buttons stay over 44px, and no text
+truncates.
+
+**430, 390 and 375 could not be rendered on this machine.** Windows clamps a
+browser window to a minimum width, so the smallest layout viewport obtainable
+is **492 CSS px** — measured, not assumed:
+
+    --window-size=375  ->  document.documentElement.clientWidth = 492
+
+This matters more than it sounds, because it produced a false alarm worth
+recording: screenshots taken at `--window-size=375` *looked* like a page
+overflowing horizontally, with the nav CTA and body text clipped on the right.
+They were not. They were 375px-wide captures of a 492px layout, and "fixing"
+the overflow they appeared to show would have been fixing nothing.
+
+So the three phone widths are verified by rule inspection only: every grid
+track is `minmax(0, 1fr)`, long values break with `overflow-wrap: anywhere`,
+and the one element that cannot reflow — the declarations table, `min-width:
+32rem` — is wrapped in `.table-scroll` so it scrolls inside its own container
+rather than taking the page with it. **They should be confirmed on a real
+phone, or in a browser with device emulation, before a demonstration.**
 
 ## 7. Mobile behaviour
 
@@ -278,20 +384,32 @@ green.
 
 ## 9. Known limitations
 
-- **No screenshots.** No browser automation is installed in this environment and
-  adding Playwright plus its browsers for image capture was not a dependency
-  worth taking. The responsive claims above are from the stylesheet's own rules
-  and a static check for fixed widths, not from rendered captures — they should
-  be confirmed by eye before a demonstration.
+- **Phone widths below 492 CSS px are unverified visually.** See §6. Everything
+  from 492px up was rendered and inspected; 430/390/375 were not, because this
+  machine cannot produce a layout viewport that narrow.
+- **Screenshots were taken with the Edge that ships with Windows**, driven by a
+  throwaway static server that stubs the two endpoints the app calls. No
+  browser-automation dependency was added. The stub bodies are shaped like the
+  real serializers and exist only to make the screens render; none of that data
+  is in the repository or presented anywhere as a real reading.
+- **The mobile client has no "recent inspections".** The brief asked for one,
+  and it is deliberately not built: `mobile/src/api/` has no history call, so
+  it would need a new endpoint integration, a new screen and navigation to
+  reach it. That is a feature, not a restyle, and it is out of scope for a
+  UI pass.
 - **No visual regression testing.** The 243 web and 203 mobile tests assert
   behaviour, text and semantics; none asserts on appearance. A styling
-  regression would not fail a test.
+  regression would not fail a test — which is why this pass was checked by
+  looking at rendered pages, and why doing so found two bugs the suite could
+  not: a nav CTA rendering muted grey on a green pill (a specificity defect),
+  and every value in a history row indented 40px by the user agent's `dd`
+  margin.
 - **Dark mode is not implemented.** The tokens are structured for it — every
   colour is a variable — but no `prefers-color-scheme: dark` block exists, and
   shipping a half-checked dark palette on a compliance tool is worse than
   shipping none.
-- **The header blur is the one translucent surface on the web** and is absent
-  on browsers without `backdrop-filter`. That is a deliberate graceful
-  degradation, not a gap.
+- **Glass degrades to opaque white** on browsers without `backdrop-filter`, and
+  is dropped entirely under forced colours. Deliberate graceful degradation,
+  not a gap.
 - **Mobile has no backdrop blur at all.** See §2.
 - **Icons are inline SVG and platform glyphs.** No icon set was added.

@@ -259,7 +259,7 @@ export function ScanPage() {
             disabled={isBusy}
           />
 
-          <section className="ready">
+          <section className="ready glass">
             <h2 className="ready__title">Ready to check</h2>
             <p className="ready__text">
               Review the information above, then run the compliance check. We

@@ -41,14 +41,22 @@ permissions. Synchronous analysis, ~2 s median.
 **Frontend:** React 19 + Vite. Scan, result, permalink and history screens
 against the real API, with the applicability declaration form and the full
 finding trace. No login screen (see *Known security limitations*).
-**Redesigned 2026-09-23** onto an iOS 18-inspired system — near-white ground,
-one restrained green accent, large radii, hairline separators, translucency on
-the sticky header only — shared with the mobile client, which previously used a
-blue primary. The stylesheet was three stacked layers in which 118 of 211
-selectors were declared more than once; it is now one pass with every selector
-declared once, and 680 lines and 7.5 kB smaller. Appearance only: no API
-contract, backend behaviour or compliance logic was touched, and the four
-outcomes keep their own tone, word and symbol. See
+**Redesigned 2026-09-23** onto an iOS 18-inspired system shared with the mobile
+client: near-white ground with a faint green atmosphere, one restrained green
+accent, large radii, hairline separators, and glass on five named surfaces
+rather than everywhere. The home page was recomposed rather than restyled — a
+hero with the product's one sentence and its primary action, an illustrative
+label card that asserts no product data, four workflow tiles, real recent
+inspections or a polished empty state, and the backend diagnostics demoted to a
+closed disclosure at the bottom. The result screen reads as an inspection
+report: a status disc, the verdict as a word, what was inspected and when, then
+the engine's own counts as tiles. The stylesheet was three stacked layers in
+which 118 of 211 selectors were declared more than once; it is now one pass with
+every selector declared once. Appearance only: no API contract, backend
+behaviour or compliance logic was touched; there is still no compliance score
+anywhere; and the four outcomes keep their own tone, word and symbol. Rendered
+and checked at 1920/1440/1280/1024/768/492 px — phone widths under 492 could not
+be rendered on this machine and are unverified visually. See
 [`docs/ui/design-system.md`](docs/ui/design-system.md).
 
 **OCR/ML:** Working with Tesseract 5 (`eng` + `osd`) through the separate

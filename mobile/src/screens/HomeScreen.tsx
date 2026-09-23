@@ -11,7 +11,7 @@ import { useAnalysis } from '../hooks/AnalysisContext';
 import { useApiHealth } from '../hooks/useApiHealth';
 import { useImageSelection, type ImageSource, type SelectionIssue } from '../hooks/useImageSelection';
 import type { RootScreenProps } from '../navigation/types';
-import { colors, spacing, typography } from '../theme';
+import { colors, radius, spacing, typography } from '../theme';
 
 /**
  * The words for each way a pick can go wrong. Written for the person holding
@@ -46,6 +46,14 @@ export function describeIssue(issue: SelectionIssue): { title: string; message: 
   }
 }
 
+/** The same four steps the web client names, in the same words. */
+const STEPS = [
+  { number: '01', title: 'Scan', text: 'Capture or upload one or more images of the package label.' },
+  { number: '02', title: 'Extract', text: 'Text recognition locates the declarations printed on the package.' },
+  { number: '03', title: 'Check', text: 'Deterministic rules evaluate the requirements that apply to it.' },
+  { number: '04', title: 'Review', text: 'See every finding with its evidence, and what still needs a person.' },
+] as const;
+
 export function HomeScreen({ navigation }: RootScreenProps<'Home'>) {
   const { select, issue, isPicking, clearIssue } = useImageSelection();
   const analysis = useAnalysis();
@@ -68,15 +76,23 @@ export function HomeScreen({ navigation }: RootScreenProps<'Home'>) {
 
   return (
     <Screen testID="home-screen">
+      {/*
+        The hero, in the same words as the web client's. What a person needs in
+        the first three seconds is what this is for and the one button that
+        starts it - not the state of the analysis server, which used to sit
+        directly under the title and has moved below the fold with the other
+        secondary material.
+      */}
+      <Text style={styles.eyebrow}>
+        LEGAL METROLOGY (PACKAGED COMMODITIES) RULES, 2011
+      </Text>
       <Text accessibilityRole="header" style={styles.title}>
-        Scan a product label
+        Check a package before you trust the label.
       </Text>
       <Text style={styles.lede}>
-        Take a photo of the package label, or choose one from your gallery, and the label will be
-        checked against the Legal Metrology (Packaged Commodities) Rules, 2011.
+        Photograph a packaged-product label, or choose one from your gallery. Its declarations are
+        extracted and compared with the compliance requirements configured on the server.
       </Text>
-
-      <ServerStatus state={health} source={config.apiBaseUrlSource} onCheckAgain={check} />
 
       {described ? (
         <Callout title={described.title} message={described.message} tone="warning" testID="selection-issue">
@@ -117,9 +133,31 @@ export function HomeScreen({ navigation }: RootScreenProps<'Home'>) {
         />
       </View>
 
+      <Card
+        title="How an inspection works"
+        description="Four steps. Nothing is decided on this phone."
+      >
+        {STEPS.map((step) => (
+          <View key={step.number} style={styles.step}>
+            <Text style={styles.stepNumber}>{step.number}</Text>
+            <View style={styles.stepBody}>
+              <Text style={styles.stepTitle}>{step.title}</Text>
+              <Text style={styles.stepText}>{step.text}</Text>
+            </View>
+          </View>
+        ))}
+      </Card>
+
       <Card title="Tips for a readable photo">
         <PhotoTips />
       </Card>
+
+      {/*
+        Secondary, and placed accordingly. It is genuinely useful - an upload
+        that fails after this said "connected" is not a connectivity problem -
+        but it is diagnostics, and diagnostics do not open a screen.
+      */}
+      <ServerStatus state={health} source={config.apiBaseUrlSource} onCheckAgain={check} />
 
       <Text style={styles.footnote}>
         The photo is sent to the analysis server, which reads it and checks it. Nothing is analysed
@@ -130,15 +168,48 @@ export function HomeScreen({ navigation }: RootScreenProps<'Home'>) {
 }
 
 const styles = StyleSheet.create({
-  title: {
-    ...typography.title,
-    color: colors.text,
+  eyebrow: {
+    ...typography.overline,
+    color: colors.textMuted,
     marginBottom: spacing.sm,
+  },
+  title: {
+    ...typography.display,
+    color: colors.text,
+    marginBottom: spacing.md,
   },
   lede: {
     ...typography.body,
     color: colors.textSecondary,
     marginBottom: spacing.xl,
+  },
+  step: {
+    flexDirection: 'row',
+    alignItems: 'flex-start',
+    marginBottom: spacing.lg,
+  },
+  stepNumber: {
+    ...typography.caption,
+    fontWeight: '700',
+    color: colors.primary,
+    backgroundColor: colors.primarySoft,
+    borderRadius: radius.sm,
+    paddingVertical: spacing.xs,
+    paddingHorizontal: spacing.sm,
+    marginRight: spacing.md,
+    overflow: 'hidden',
+  },
+  stepBody: {
+    flex: 1,
+  },
+  stepTitle: {
+    ...typography.body,
+    fontWeight: '600',
+    color: colors.text,
+  },
+  stepText: {
+    ...typography.small,
+    color: colors.textSecondary,
   },
   actions: {
     gap: spacing.md,

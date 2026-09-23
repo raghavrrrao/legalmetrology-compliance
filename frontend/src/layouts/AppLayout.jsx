@@ -61,13 +61,33 @@ export function AppLayout() {
           Shown on every page, not just the results screen. This tool assists a
           human reviewer; it does not certify legal compliance, and a user must
           never be able to reach a verdict without seeing that stated.
+
+          The summary line carries the whole claim in eight words and is always
+          visible. The paragraph behind the disclosure is the same text it has
+          always been - `<details>` keeps it in the DOM, so it is still found by
+          a page search and still read out by a screen reader that opens it.
+          Nothing here is hidden from anyone; it is weighted, because a
+          four-line grey block under every screen is a thing people learn to
+          skip.
         */}
-        <p className="app-footer__disclaimer">
-          This tool provides automated assistance for reviewing packaged
-          commodity labels. It is not a legal determination and does not
-          certify compliance with the Legal Metrology (Packaged Commodities)
-          Rules, 2011. Always confirm findings against the authoritative rules.
-        </p>
+        <div className="app-footer__inner">
+          <details>
+            <summary className="app-footer__summary">
+              <strong>Automated assistance only</strong>
+              <span className="app-footer__dot" aria-hidden="true">
+                •
+              </span>
+              <span>Not a legal determination</span>
+            </summary>
+            <p className="app-footer__disclaimer">
+              This tool provides automated assistance for reviewing packaged
+              commodity labels. It is not a legal determination and does not
+              certify compliance with the Legal Metrology (Packaged
+              Commodities) Rules, 2011. Always confirm findings against the
+              authoritative rules.
+            </p>
+          </details>
+        </div>
       </footer>
     </div>
   );
