@@ -163,9 +163,33 @@ page header, a "Backend connection" card and two warning panels — correct,
 honest, and indistinguishable from an admin console. Colour and radius cannot
 fix that; the arrangement had to change.
 
+
+### The product name
+
+The application is **NIRIKSHAN**, presented as
+
+    NIRIKSHAN
+    Compliance Assistant
+
+in the web header and as `NIRIKSHAN` alone where there is no room for the
+tagline — the mobile home header, the phone-width web header, the browser tab,
+and the app's display name on a device.
+
+**"Legal Metrology" is not the product.** It is the name of the Rules the
+system checks against, and it stays wherever the law is being referred to: the
+hero eyebrow, the footer disclaimer, every finding's clause and legal
+reference. Renaming the product does not rename the legislation, and the two
+must never be collapsed into one string.
+
+Nothing internal was renamed. The Django project, Python packages, database
+tables, API paths, environment variables, the Expo `slug`, the iOS
+`bundleIdentifier` and the Android `package` are all unchanged — a bundle
+identifier is a registry key, and changing one publishes a different
+application rather than renaming this one.
+
 ### Home
 
-    HEADER      mark · LM Metrology / Compliance Assistant     Home  Inspections  [+ New scan]
+    HEADER      mark · NIRIKSHAN / Compliance Assistant       Home  Inspections  [+ New scan]
 
     HERO        § Legal Metrology (Packaged Commodities) Rules, 2011
                 Check a package before you trust the label.        ┌──────────────┐

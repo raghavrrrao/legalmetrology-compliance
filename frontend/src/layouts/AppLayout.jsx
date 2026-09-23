@@ -35,8 +35,20 @@ export function AppLayout() {
       <header className="app-header">
         <Link to="/" className="app-header__title">
           <BrandMark />
+          {/*
+            NIRIKSHAN is the product name; "Compliance Assistant" is what it
+            does. The two are separate elements so the tagline can drop on a
+            phone without touching the name.
+
+            This is the *application's* name and nothing else. "Legal
+            Metrology" remains the name of the Rules the system checks against,
+            and it still appears wherever the law is being referred to - the
+            hero eyebrow, the footer disclaimer, every finding's clause. The
+            two must not be conflated: renaming the product does not rename the
+            legislation.
+          */}
           <span className="app-header__words">
-            <span className="app-header__name">LM Metrology</span>
+            <span className="app-header__name">NIRIKSHAN</span>
             <span className="app-header__tagline">Compliance Assistant</span>
           </span>
         </Link>

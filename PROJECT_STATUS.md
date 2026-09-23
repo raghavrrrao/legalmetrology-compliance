@@ -105,7 +105,19 @@ quality claim: a passing suite bounds what is checked, not what is correct.
 **Documentation:** Checked against the code in Step 5. Where a document and the
 code disagreed, the document was corrected rather than the claim softened.
 
-**Deployment:** **Ready to deploy, not deployed.** `Dockerfile` (with the
+**Deployment:** **Deployed, and currently serving a broken endpoint.** A Railway
+service exists at `legalmetrology-compliance-production.up.railway.app` and
+answers `/api/v1/health/` with `200 {"status":"ok"}` — but
+`GET /api/v1/compliance/` returns **500**, and so does the detail route for an
+id that does not exist (which would otherwise be a 404). The cause is a
+database whose schema is behind the deployed code: `catalog.0003_product_category_source`
+has not been applied there, so every query that selects a `Product` column
+fails. The application code is correct and unchanged; this is database state.
+The fix is to run `python backend/manage.py deploy_setup` (or `migrate`) against
+the production database. See the section below, which had claimed no service
+existed at all.
+
+`Dockerfile` (with the
 Tesseract binary), `railway.json`, `gunicorn.conf.py` and the `deploy_setup`
 initialisation command all exist and were re-verified on 2026-09-09. No Railway
 project has been created from this repository and there is no URL. See
@@ -128,7 +140,7 @@ project has been created from this repository and there is no URL. See
 | Frontend | Working. Scan, result, permalink and history screens against the real API. | `frontend/src/` |
 | Mobile client | **Foundation.** React Native (Expo) app: camera or gallery → preview → upload to `POST /api/v1/extraction/` → `POST /api/v1/compliance/` → result with verdict, findings, reading and the classifier's suggestion when present. Shares the web's design language as of 2026-09-23 (same palette, rhythm and tones; native layout, no web CSS). 203 Jest tests; Android project generated and a debug APK built with Gradle; iOS configured but not built; not yet run on hardware. No sign-in - relies on the demonstration switch. | `mobile/`, `docs/mobile.md` |
 | Authentication UI | **Not built.** Session auth and deny-by-default permissions exist; there is no login screen, so a demonstration switch (`DEMO_PUBLIC_ANALYSIS_API`, default off) opens the analysis endpoints. | — |
-| Deployment | Configured and verified, **not deployed**. Container image, Railway config, gunicorn, one-command initialisation. No Railway project exists. | `Dockerfile`, `railway.json`, `backend/gunicorn.conf.py` |
+| Deployment | **Deployed, and currently broken.** A Railway service is live and healthy at the health endpoint, but `GET /api/v1/compliance/` returns 500 because `catalog.0003_product_category_source` is unapplied on that database. Not a code defect — run `deploy_setup` against it. | `Dockerfile`, `railway.json`, `backend/gunicorn.conf.py` |
 
 ---
 
@@ -335,10 +347,47 @@ and there is no measured end-to-end verdict accuracy at all.**
 
 ## Deployment status
 
-**READY FOR DEPLOYMENT — NOT DEPLOYED.** The configuration exists, and every
-check below has been run. No Railway project has been created from this
-repository, no `railway up` has been run, and there is no URL. Anyone saying
-"it's deployed" is wrong; the accurate sentence is "it is ready to deploy".
+**DEPLOYED, AND CURRENTLY BROKEN.** This section said the opposite until
+2026-09-23 — "no Railway project has been created from this repository ... and
+there is no URL" — and that was wrong. A service is live at
+`legalmetrology-compliance-production.up.railway.app`, found while
+investigating a 500 reported from the Inspections screen.
+
+What is true of it today:
+
+| Endpoint | Status |
+|---|---|
+| `GET /api/v1/health/` | **200** — `{"status":"ok"}`, database reported `ok` |
+| `GET /api/v1/compliance/applicability-conditions/` | **200** |
+| `GET /api/v1/compliance/` | **500** |
+| `GET /api/v1/compliance/<unknown-uuid>/` | **500** (should be 404) |
+
+The last row is the diagnostic one. A UUID that matches no row should produce a
+404; a 500 means the `SELECT` itself failed, which puts the fault in the schema
+rather than in the data. The deployed code has `Product.category_source` and
+`Product.category_basis`; that database does not, because
+`catalog.0003_product_category_source` was never applied to it. Every query
+selecting a `Product` column therefore fails, which is every compliance
+endpoint that joins the product.
+
+**No application code is at fault and none was changed.** `railway.json`
+already declares the right `preDeployCommand`
+(`python /app/backend/manage.py deploy_setup`, which runs `migrate` first), so
+either that step did not run for the deploy that shipped this code, or it ran
+against a different database. Which of the two cannot be determined from here:
+this environment has no Railway CLI and no credentials, so the platform's logs
+were not readable.
+
+**The fix is operational, not a patch:** run
+`python backend/manage.py deploy_setup` (or `migrate`) against the production
+database, then re-check the four endpoints above.
+
+**Note the health check did not catch this.** It reports `database: ok` from a
+connection test, and Railway's `healthcheckPath` points at it — so the platform
+considered a deploy healthy while the main list endpoint was returning 500.
+Reporting unapplied migrations there would have surfaced it immediately; that
+change is *not* made here, because it is a new behaviour rather than a fix to
+this incident, and it is recorded as a recommendation instead.
 
 Target: the backend as a container on **Railway**, with **Railway PostgreSQL**;
 the React bundle hosted separately. Full runbook:

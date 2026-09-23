@@ -31,7 +31,7 @@ export function RootNavigator() {
         contentStyle: { backgroundColor: colors.background },
       }}
     >
-      <Stack.Screen name="Home" component={HomeScreen} options={{ title: 'Label Check' }} />
+      <Stack.Screen name="Home" component={HomeScreen} options={{ title: 'NIRIKSHAN' }} />
       <Stack.Screen name="Preview" component={PreviewScreen} options={{ title: 'Preview' }} />
       <Stack.Screen
         name="Analysis"
