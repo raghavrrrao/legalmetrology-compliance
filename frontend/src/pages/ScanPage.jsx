@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useState } from 'react';
 import { Link } from 'react-router-dom';
 
+import { AnalysisPanel } from '../components/AnalysisPanel.jsx';
 import { ApplicabilityForm } from '../components/ApplicabilityForm.jsx';
 import { ComplianceResult } from '../components/ComplianceResult.jsx';
 import { ConfigurationPanel } from '../components/ConfigurationPanel.jsx';
@@ -226,7 +227,28 @@ export function ScanPage() {
         hasResult={Boolean(result)}
       />
 
-      {!result && (
+      {/*
+        While a request is in flight the form is replaced rather than merely
+        disabled. A greyed-out form with a spinner on its submit button tells a
+        user what they cannot do; this tells them what the system is doing, and
+        does it with their own photograph in front of them.
+
+        It is not a step the flow has to pass through - the moment either
+        request settles this unmounts and the form or the result takes its
+        place, so nothing is gated behind an animation.
+      */}
+      {!result && isBusy && (
+        <AnalysisPanel
+          previewUrl={previewUrl}
+          fileName={file?.name}
+          phase={phase}
+          // Counted from the extraction response once it exists, and undefined
+          // until then. Never estimated: an unknown count shows no count.
+          declarationsRead={extraction?.fieldsRead?.length}
+        />
+      )}
+
+      {!result && !isBusy && (
         <form className="scan-flow" onSubmit={handleSubmit}>
           <UploadPanel
             file={file}

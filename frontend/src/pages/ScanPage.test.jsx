@@ -1183,7 +1183,12 @@ describe('automatic applicability', () => {
     renderPage();
     await uploadAndSubmit();
 
-    await screen.findByText(/review required/i);
+    // Wait on the verdict heading specifically. A bare text query for "review
+    // required" also matches the phrase inside a question's help text, so it
+    // only ever passed because of which render it happened to poll on - and it
+    // started failing the moment the scan flow gained an intermediate state.
+    // The assertion below is what this test is actually for.
+    await screen.findByRole('heading', { name: /review required/i });
     expect(screen.queryByTestId('applicability-assessment')).not.toBeInTheDocument();
   });
 });

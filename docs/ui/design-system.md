@@ -261,10 +261,81 @@ is no percentage, no score, and no derived rate anywhere on the screen.
 
 ---
 
+## 3b. Motion, and the analysis state
+
+### What moves, and why
+
+Six things animate. Nothing else does.
+
+| Element | Motion | What it communicates |
+|---|---|---|
+| Buttons | scale to 0.975 on press | the control yielding under the finger |
+| Dropzone | lift + brackets close in on hover/drag | the target becoming live |
+| Finding / history cards | shadow lift on hover | the row is a link |
+| Verdict | `settle`, 320ms | a conclusion arriving |
+| Findings | `rise`, staggered 45ms, capped at six | a list settling, in reading order |
+| Analysis frame | a scan sweep, 2.4s | that work is in progress |
+
+Everything above is decoration over a state that is already legible without
+it. That is the test a motion has to pass here, and it is why
+`prefers-reduced-motion` can switch the whole set off without the interface
+losing information. Under that query the animated elements are **removed or
+stilled rather than sped up** — the blanket `0.01ms` cap that most resets use
+would leave the scan line flickering at the top of the frame and the stage
+marker spinning imperceptibly, both worse than stillness.
+
+Nothing animates on load. An interface that moves when you have not touched it
+reads as unfinished, not as premium.
+
+### The analysis state
+
+While a request is in flight the scan form is **replaced**, not disabled: the
+photograph appears in a dark well with a sweep travelling over it, and the
+pipeline's stages are listed beside it.
+
+**Four stages, not five, and the difference is the point.** A five-step list —
+image received, reading label, extracting declarations, checking requirements,
+preparing findings — would look better and would be a lie. The client makes
+exactly two requests:
+
+    POST /api/v1/extraction/   recognises text AND extracts declarations
+    POST /api/v1/compliance/   evaluates rules AND assembles findings
+
+so "reading" and "extracting" are one server call whose intermediate state the
+browser cannot observe, and so are "checking" and "preparing". Splitting either
+would be an animation pretending to be telemetry — the progress-bar equivalent
+of a fabricated confidence.
+
+So each stage corresponds to a state the client genuinely knows it is in, and
+a completed stage reports only what it actually has: the declaration count is
+read off the extraction response, and is absent rather than zero when the
+response did not carry one.
+
+**No percentage, no bar, no estimate, and no `progressbar` role**, on either
+platform. The pipeline does not report progress and the clients do not invent
+it. `AnalysisPanel.test.jsx` and `ScanPreview.test.tsx` assert exactly that,
+including that no `%`, no "n of m" and no time estimate can appear.
+
+The mobile screen does the same thing natively: `Animated` with
+`useNativeDriver`, so the sweep runs on the UI thread rather than competing
+with the upload for the JavaScript one, and `AccessibilityInfo.isReduceMotionEnabled`
+(plus its change event) rather than a media query.
+
+### The scanner language
+
+Corner brackets appear in three places — the hero illustration, the upload
+target, and the analysis frame. They are the one motif that ties "the thing you
+are about to scan", "the surface you drop it on" and "the picture being read"
+into a single act. Each is drawn with one element and a set of gradients: no
+extra DOM, no image request, and nothing for assistive technology to announce.
+
+---
+
 ## 4. Components
 
 | Web class | Mobile component | Notes |
 |---|---|---|
+| `.analysis` | `AnalysisPanel` / `ScanPreview` | the scanning state: photograph, sweep, real stages |
 | `.card` | `Card` | hairline + soft shadow, 18px radius, tinted header band |
 | `.button`, `--primary`, `--quiet`, `--link`, `--large`, `--block` | `Button` (`primary`/`secondary`/`text`) | ≥44/48px tall, visible pressed state |
 | `.status-badge` | `StatusBadge` | tone + symbol + word |

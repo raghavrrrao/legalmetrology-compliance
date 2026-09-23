@@ -109,7 +109,13 @@ export function VerdictBanner({ result }) {
             label="did not apply"
           />
         )}
-        <Tile value={result.rulesEvaluated} label="requirements examined" />
+        {/*
+          "examined", not "requirements examined". The longer label was the one
+          tile in the row that wrapped to two lines, which left the summary
+          looking ragged for no gain - the heading above the row already says
+          these are requirements.
+        */}
+        <Tile value={result.rulesEvaluated} label="examined" />
       </div>
 
       {result.rulesInconclusive > 0 && (

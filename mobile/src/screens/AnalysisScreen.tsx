@@ -4,6 +4,7 @@ import { StyleSheet, Text } from 'react-native';
 import { Button } from '../components/Button';
 import { Callout } from '../components/Callout';
 import { Card } from '../components/Card';
+import { ScanPreview } from '../components/ScanPreview';
 import { ProgressSteps, type ProgressStep } from '../components/ProgressSteps';
 import { Screen } from '../components/Screen';
 import { useAnalysis } from '../hooks/AnalysisContext';
@@ -108,6 +109,16 @@ export function AnalysisScreen({ navigation }: RootScreenProps<'Analysis'>) {
           ? 'The label could not be fully checked.'
           : 'The photo is being read and checked on the analysis server. This usually takes a few seconds.'}
       </Text>
+
+      {/*
+        The photograph under a sweep, the same treatment the web client's
+        analysis frame uses. It shows what is being worked on; the steps below
+        say what is being done. Neither claims progress the pipeline does not
+        report.
+      */}
+      {image ? (
+        <ScanPreview uri={image.uri} scanning={isBusy} testID="scan-preview" />
+      ) : null}
 
       <Card>
         <ProgressSteps steps={steps} />

@@ -1612,7 +1612,13 @@ img {
   display: flex;
   flex-direction: column;
   align-items: center;
-  padding: var(--space-7) var(--space-5);
+  /*
+   * `space-5`, not `space-7`. At 1440 the original padding made this a 350px
+   * panel holding an icon, two short lines and a button - the emptiest
+   * rectangle on the screen, and the first thing a reader saw on the scan
+   * page. Generous spacing is not the same as a large void.
+   */
+  padding: var(--space-5);
   border: 1.5px dashed var(--colour-border-strong);
   border-radius: var(--radius-xl);
   background: var(--colour-surface);
@@ -1649,10 +1655,10 @@ img {
   inset: 0;
   z-index: -1;
   background-image: linear-gradient(
-      rgba(14, 124, 80, 0.05) 1px,
+      rgba(14, 124, 80, 0.07) 1px,
       transparent 1px
     ),
-    linear-gradient(90deg, rgba(14, 124, 80, 0.05) 1px, transparent 1px);
+    linear-gradient(90deg, rgba(14, 124, 80, 0.07) 1px, transparent 1px);
   background-size: 22px 22px;
   -webkit-mask-image: radial-gradient(
     ellipse at center,
@@ -1671,6 +1677,51 @@ img {
   opacity: 0.5;
 }
 
+/*
+ * Corner brackets, the same marks the analysis frame carries.
+ *
+ * They do two jobs. They tie the surface you drop a photograph onto to the
+ * surface that photograph then appears in, so the scan reads as one continuous
+ * act rather than two unrelated screens. And they make a large empty rectangle
+ * read as a *target* instead of as a gap - which is what it was, and the main
+ * reason this screen felt unfinished.
+ *
+ * One element, eight gradients, no extra DOM. Decorative, so it is drawn on a
+ * pseudo-element that assistive technology never sees.
+ */
+.upload__dropzone::after {
+  content: '';
+  position: absolute;
+  inset: var(--space-4);
+  pointer-events: none;
+  border-radius: var(--radius);
+  background-image: linear-gradient(var(--colour-primary), var(--colour-primary)),
+    linear-gradient(var(--colour-primary), var(--colour-primary)),
+    linear-gradient(var(--colour-primary), var(--colour-primary)),
+    linear-gradient(var(--colour-primary), var(--colour-primary)),
+    linear-gradient(var(--colour-primary), var(--colour-primary)),
+    linear-gradient(var(--colour-primary), var(--colour-primary)),
+    linear-gradient(var(--colour-primary), var(--colour-primary)),
+    linear-gradient(var(--colour-primary), var(--colour-primary));
+  background-size: 1.5rem 1.5px, 1.5px 1.5rem, 1.5rem 1.5px, 1.5px 1.5rem,
+    1.5rem 1.5px, 1.5px 1.5rem, 1.5rem 1.5px, 1.5px 1.5rem;
+  background-position: left top, left top, right top, right top, left bottom,
+    left bottom, right bottom, right bottom;
+  background-repeat: no-repeat;
+  opacity: 0.35;
+  transition: opacity var(--duration) var(--ease), inset var(--duration) var(--ease);
+}
+
+/* The brackets close in and brighten as the target becomes live. */
+.upload__dropzone:hover::after {
+  opacity: 0.65;
+}
+
+.upload__dropzone--active::after {
+  inset: var(--space-3);
+  opacity: 0.85;
+}
+
 .upload__inner {
   display: flex;
   flex-direction: column;
@@ -1681,9 +1732,9 @@ img {
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  width: 3.5rem;
-  height: 3.5rem;
-  margin-bottom: var(--space-4);
+  width: 3rem;
+  height: 3rem;
+  margin-bottom: var(--space-3);
   border-radius: var(--radius);
   background: var(--colour-primary-soft);
   color: var(--colour-accent);
@@ -1705,6 +1756,7 @@ img {
 .upload__text {
   margin: 0 0 var(--space-4);
   color: var(--colour-muted);
+  font-size: 0.95rem;
 }
 
 /* The dropzone label is the click target, so the button inside it is a
@@ -1715,7 +1767,7 @@ img {
 
 .upload__formats {
   max-width: 24rem;
-  margin: var(--space-4) 0 0;
+  margin: var(--space-3) 0 0;
   color: var(--colour-faint);
   font-size: 0.82rem;
   line-height: 1.5;
@@ -1832,6 +1884,260 @@ img {
 
 .upload > .technical-details > summary:hover {
   color: var(--colour-muted);
+}
+
+/* ==========================================================================
+   Analysis
+   ==========================================================================
+   The screen while a check is running: the photograph, a scan line over it,
+   and the stages in words. Everything animated here is decoration over a state
+   that is already written out, which is what makes it safe to switch off
+   wholesale under `prefers-reduced-motion`.
+   ========================================================================== */
+
+.analysis {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+  align-items: center;
+  gap: var(--space-6);
+  padding: var(--space-5);
+  border: 1px solid var(--colour-glass-border);
+  border-radius: var(--radius-xl);
+  background: var(--colour-surface);
+  box-shadow: var(--shadow-raised);
+  animation: rise var(--duration) var(--ease) both;
+}
+
+@supports ((backdrop-filter: blur(1px)) or (-webkit-backdrop-filter: blur(1px))) {
+  .analysis {
+    background: var(--colour-glass-panel);
+    border-top-color: var(--colour-glass-edge);
+    -webkit-backdrop-filter: var(--blur-panel);
+    backdrop-filter: var(--blur-panel);
+  }
+}
+
+.analysis__stage-wrap {
+  min-width: 0;
+}
+
+/*
+ * The photograph well. Dark, so a pale label has an edge and the scan line has
+ * something to travel over.
+ */
+.analysis__frame {
+  position: relative;
+  overflow: hidden;
+  border-radius: var(--radius-lg);
+  background: #23262b;
+  aspect-ratio: 4 / 3;
+  box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.08);
+}
+
+.analysis__image {
+  display: block;
+  width: 100%;
+  height: 100%;
+  object-fit: contain;
+}
+
+.analysis__placeholder {
+  width: 100%;
+  height: 100%;
+  background: linear-gradient(135deg, #2a2d33, #1d2024);
+}
+
+/*
+ * The scan line: one soft green band travelling top to bottom, with a brighter
+ * hairline at its leading edge. Two seconds, `ease-in-out`, infinite - slow
+ * enough to read as deliberate rather than urgent.
+ *
+ * It animates `transform` only, so it runs on the compositor and costs nothing
+ * per frame on the main thread.
+ */
+.analysis__scanline {
+  position: absolute;
+  left: 0;
+  right: 0;
+  top: 0;
+  height: 14%;
+  pointer-events: none;
+  /*
+   * A soft trail with a bright hairline at its leading edge - the shape a
+   * scanner's beam actually has. An earlier version was 28% tall and read as a
+   * green wash sliding down the picture rather than as a line; the height and
+   * the alpha of the trail are what separate "instrument" from "gradient".
+   */
+  background: linear-gradient(
+    to bottom,
+    rgba(14, 124, 80, 0) 0%,
+    rgba(14, 124, 80, 0.1) 70%,
+    rgba(52, 199, 123, 0.35) 96%,
+    rgba(180, 255, 214, 0.95) 100%
+  );
+  will-change: transform;
+  animation: scan 2.4s var(--ease) infinite;
+}
+
+@keyframes scan {
+  0% {
+    transform: translateY(-100%);
+  }
+  /* A beat at the bottom, so the sweep reads as a pass rather than a loop. */
+  85%,
+  100% {
+    transform: translateY(714%);
+  }
+}
+
+/* Corner brackets: the framing marks of a scanner, drawn with one element. */
+.analysis__brackets {
+  position: absolute;
+  inset: var(--space-3);
+  pointer-events: none;
+  border-radius: var(--radius-sm);
+  background-image: linear-gradient(rgba(255, 255, 255, 0.75), rgba(255, 255, 255, 0.75)),
+    linear-gradient(rgba(255, 255, 255, 0.75), rgba(255, 255, 255, 0.75)),
+    linear-gradient(rgba(255, 255, 255, 0.75), rgba(255, 255, 255, 0.75)),
+    linear-gradient(rgba(255, 255, 255, 0.75), rgba(255, 255, 255, 0.75)),
+    linear-gradient(rgba(255, 255, 255, 0.75), rgba(255, 255, 255, 0.75)),
+    linear-gradient(rgba(255, 255, 255, 0.75), rgba(255, 255, 255, 0.75)),
+    linear-gradient(rgba(255, 255, 255, 0.75), rgba(255, 255, 255, 0.75)),
+    linear-gradient(rgba(255, 255, 255, 0.75), rgba(255, 255, 255, 0.75));
+  background-size: 1.25rem 2px, 2px 1.25rem, 1.25rem 2px, 2px 1.25rem,
+    1.25rem 2px, 2px 1.25rem, 1.25rem 2px, 2px 1.25rem;
+  background-position: left top, left top, right top, right top, left bottom,
+    left bottom, right bottom, right bottom;
+  background-repeat: no-repeat;
+  opacity: 0.55;
+}
+
+.analysis__body {
+  min-width: 0;
+}
+
+.analysis__eyebrow {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-2);
+  margin: 0 0 var(--space-2);
+  color: var(--colour-accent);
+  font-size: 0.72rem;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+
+/* A slow pulse on the eyebrow's dot: the one "it is alive" signal on screen. */
+.analysis__eyebrow::before {
+  content: '';
+  width: 0.45rem;
+  height: 0.45rem;
+  border-radius: 50%;
+  background: currentColor;
+  animation: pulse 1.6s ease-in-out infinite;
+}
+
+@keyframes pulse {
+  0%,
+  100% {
+    opacity: 1;
+  }
+  50% {
+    opacity: 0.25;
+  }
+}
+
+.analysis__title {
+  margin: 0 0 var(--space-2);
+  font-size: 1.5rem;
+  font-weight: 650;
+  letter-spacing: -0.026em;
+}
+
+.analysis__note {
+  margin: 0 0 var(--space-5);
+  max-width: 28rem;
+  color: var(--colour-muted);
+  font-size: 0.9rem;
+}
+
+.analysis__stages {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-1);
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.analysis__stage {
+  display: flex;
+  align-items: flex-start;
+  gap: var(--space-3);
+  padding: var(--space-2) var(--space-3);
+  border-radius: var(--radius-sm);
+  transition: background var(--duration) var(--ease);
+}
+
+.analysis__stage--active {
+  background: var(--colour-primary-softer);
+}
+
+.analysis__marker {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 1.15rem;
+  height: 1.15rem;
+  flex: none;
+  margin-top: 0.15rem;
+  border: 1.5px solid var(--colour-border-strong);
+  border-radius: 50%;
+  font-size: 0.66rem;
+  font-weight: 700;
+  transition: background var(--duration) var(--ease),
+    border-color var(--duration) var(--ease), color var(--duration) var(--ease);
+}
+
+.analysis__stage--done .analysis__marker {
+  border-color: var(--tone-success);
+  background: var(--tone-success);
+  color: #ffffff;
+}
+
+/* The running stage's marker is a ring that fills - the only spinner here. */
+.analysis__stage--active .analysis__marker {
+  border-color: var(--colour-primary);
+  border-right-color: transparent;
+  animation: spin 0.8s linear infinite;
+}
+
+.analysis__stage-text {
+  display: flex;
+  flex-direction: column;
+  gap: 0.05rem;
+  min-width: 0;
+}
+
+.analysis__stage-label {
+  font-size: 0.95rem;
+  font-weight: 600;
+  color: var(--colour-muted);
+}
+
+.analysis__stage--done .analysis__stage-label,
+.analysis__stage--active .analysis__stage-label {
+  color: var(--colour-text);
+}
+
+.analysis__stage--active .analysis__stage-label {
+  font-weight: 700;
+}
+
+.analysis__stage-detail {
+  color: var(--colour-faint);
+  font-size: 0.82rem;
 }
 
 /* ==========================================================================
@@ -2359,13 +2665,29 @@ img {
   border-top: 1px solid var(--colour-glass-border);
 }
 
+/*
+ * The caveats under the counts: what "requires review" means, that an
+ * exemption is not a pass, that an unrecognised verdict was not interpreted.
+ *
+ * **Every word of these stays.** What changed is their weight. As filled
+ * white boxes they were three stacked cards between the verdict and the
+ * findings, and on a result with all three the first finding was below the
+ * fold - so the screen buried the thing it exists to show behind advice about
+ * how to read it. They are now a leading rule and a line of text: quieter than
+ * the counts above, louder than nothing, and no longer competing with the
+ * findings for the reader's first glance.
+ */
 .verdict__note {
-  margin: var(--space-4) 0 0;
-  padding: var(--space-3) var(--space-4);
-  border-radius: var(--radius);
-  background: rgba(255, 255, 255, 0.6);
-  font-size: 0.9rem;
-  line-height: 1.6;
+  margin: var(--space-3) 0 0;
+  padding: 0 0 0 var(--space-3);
+  border-left: 2px solid currentColor;
+  font-size: 0.86rem;
+  line-height: 1.55;
+  opacity: 0.92;
+}
+
+.verdict__note + .verdict__note {
+  margin-top: var(--space-2);
 }
 
 .verdict__note--muted {
@@ -3133,6 +3455,63 @@ img {
 }
 
 /* ==========================================================================
+   Entrances
+   ==========================================================================
+   Two keyframes, used in three places, all of them the arrival of something
+   the user asked for: the verdict after a check, each finding under it, and
+   the analysis panel. Nothing on the page animates on load for its own sake -
+   an interface that moves when you have not touched it reads as unfinished,
+   not as premium.
+
+   `both` so the element holds its start frame before the delay elapses;
+   without it a staggered list flashes at full opacity and then animates.
+   ========================================================================== */
+
+@keyframes rise {
+  from {
+    opacity: 0;
+    transform: translateY(8px);
+  }
+  to {
+    opacity: 1;
+    transform: none;
+  }
+}
+
+@keyframes settle {
+  from {
+    opacity: 0;
+    transform: translateY(10px) scale(0.995);
+  }
+  to {
+    opacity: 1;
+    transform: none;
+  }
+}
+
+.verdict {
+  animation: settle 320ms var(--ease) both;
+}
+
+/*
+ * The findings reveal in sequence rather than all at once, which is how a
+ * person reads them anyway. Six steps of 45ms - the whole stagger is over in
+ * about a quarter of a second, so it reads as the list settling rather than as
+ * something to wait for. `:nth-child` beyond six gets no delay, because a
+ * twelfth card arriving half a second late is a queue, not a flourish.
+ */
+.findings > * {
+  animation: rise 260ms var(--ease) both;
+}
+
+.findings > *:nth-child(1) { animation-delay: 0ms; }
+.findings > *:nth-child(2) { animation-delay: 45ms; }
+.findings > *:nth-child(3) { animation-delay: 90ms; }
+.findings > *:nth-child(4) { animation-delay: 135ms; }
+.findings > *:nth-child(5) { animation-delay: 180ms; }
+.findings > *:nth-child(n + 6) { animation-delay: 225ms; }
+
+/* ==========================================================================
    Focus
    ==========================================================================
    One visible ring for everything that takes focus. `:focus-visible` rather
@@ -3522,6 +3901,32 @@ label:focus-visible,
   .button:active:not(:disabled),
   .upload__dropzone:hover,
   .history-item:hover {
+    transform: none;
+  }
+
+  /*
+   * The animated elements are turned off rather than sped up. The blanket rule
+   * above caps every duration at 0.01ms, which would leave the scan line
+   * flickering at the top of the frame and the stage marker spinning
+   * imperceptibly - both worse than still. Everything they conveyed is in the
+   * words beside them, so removing them costs nothing.
+   */
+  .analysis__scanline,
+  .analysis__eyebrow::before,
+  .analysis__stage--active .analysis__marker {
+    animation: none;
+  }
+
+  .analysis__scanline {
+    display: none;
+  }
+
+  /* Entrances become instant rather than fast: a 0.01ms fade is a flash. */
+  .verdict,
+  .findings > *,
+  .analysis {
+    animation: none;
+    opacity: 1;
     transform: none;
   }
 }
