@@ -15,11 +15,38 @@ tests in `apps/extraction/tests/test_extraction_integration.py`.
 
 Responsibilities, in order:
 
-    1. Turn a `ProductImage` row into a `labelextract.ImageRef`.
+    1. Turn each `ProductImage` row into a `labelextract.ImageRef`.
     2. Resolve the configured pipeline by name and version.
-    3. Run it.
-    4. Check the returned result against the contract before trusting it.
-    5. Persist the structured result as an `ExtractionRun` plus its fields.
+    3. Run it over every photograph in the set.
+    4. Check each returned result against the contract before trusting it.
+    5. Persist the merged result as one `ExtractionRun` plus its fields, each
+       field carrying the photograph it was read from.
+
+One run, several photographs
+----------------------------
+A packaged commodity declares different things on different panels, so an
+inspection may carry more than one photograph of the same package. They are
+read into **one** `ExtractionRun`, not one run each, because the rule engine
+judges the package: a net quantity printed on the back is a declaration the
+package makes, and a run per photograph would report the front as failing to
+declare it.
+
+The pipeline is still run once per photograph - it reads one image, and
+pretending otherwise would mean inventing an engine capability. What this
+module does is merge what came back:
+
+- every declaration is stored with `ExtractedLabelField.image` set to the
+  photograph it was read from, so a finding can cite image 2;
+- the run's status is the best outcome of the set, because "was this label
+  read well enough to judge against" is a question about the package and one
+  unreadable close-up does not make the answer no;
+- each photograph's own outcome is kept on its `ExtractionRunImage` row, so a
+  submitter can still be told that image 3 was unreadable.
+
+Nothing here decides which of two conflicting readings of the same declaration
+to believe. That is a question about evidence, and it is answered once, in
+`apps.rules.checks.base.CheckContext.from_run`, where every validator sees the
+same answer.
 
 Explicitly NOT its responsibility: deciding what the readings mean. That is
 `apps.compliance`. A run recorded here is an observation - "this is what we
@@ -66,7 +93,12 @@ from labelextract.contracts import (
 )
 from labelextract.exceptions import InvalidImageError, LabelExtractError
 
-from apps.extraction.models import ExtractedLabelField, ExtractionRun
+from apps.extraction.models import (
+    ExtractedLabelField,
+    ExtractionRun,
+    ExtractionRunImage,
+)
+from apps.images.constants import MAX_IMAGES_PER_INSPECTION
 from apps.images.models import ProductImage
 
 logger = logging.getLogger(__name__)
@@ -109,10 +141,22 @@ class ExtractionOutcome:
     Deliberately thin. Everything else worth knowing hangs off `run` - its
     status, its error code, its `raw_output`, and `run.fields` - and copying any
     of that here would create a second version of it that can drift.
+
+    `image` is the primary photograph and `images` is the whole set in the
+    order it was supplied. `image` is not deprecated by `images`: it is
+    position 1, it is what `ExtractionRun.image` points at, and a single-image
+    inspection is a set of one where the two say the same thing.
     """
 
     image: ProductImage
     run: ExtractionRun
+    #: Every photograph of this inspection, in position order. Always at least
+    #: one, and `images[0] is image`.
+    images: tuple[ProductImage, ...] = ()
+
+    def __post_init__(self) -> None:
+        if not self.images:
+            object.__setattr__(self, "images", (self.image,))
 
     @property
     def succeeded(self) -> bool:
@@ -268,6 +312,11 @@ def run_extraction(
 ) -> ExtractionRun:
     """Run extraction over `image` and persist the result.
 
+    One photograph. `run_extraction_over` is the same operation for a set of
+    them, and this is the set of one - it delegates rather than repeating the
+    sequence, so the two can never drift into reading a single image
+    differently depending on which door the caller came through.
+
     Always returns a saved `ExtractionRun`, including when extraction failed - a
     failure is a fact about the image worth recording, and silently returning
     nothing would leave the UI unable to explain why no result appeared.
@@ -290,45 +339,144 @@ def run_extraction(
         MalformedExtractionResult: the engine broke its output contract. A
             failed run is recorded first, then this is re-raised.
     """
-    image = _require_saved_image(image)
+    return run_extraction_over(
+        [image], engine_name=engine_name, engine_version=engine_version
+    )
+
+
+def run_extraction_over(
+    images: Sequence[ProductImage],
+    *,
+    engine_name: str | None = None,
+    engine_version: str | None = None,
+) -> ExtractionRun:
+    """Read every photograph in `images` into one persisted `ExtractionRun`.
+
+    The photographs are read in the order given, and that order is the
+    `position` on each `ExtractionRunImage` row - the number a person is shown
+    beside a piece of evidence. `images[0]` becomes `ExtractionRun.image`, the
+    primary photograph.
+
+    A photograph that cannot be read does not fail the inspection. Its own
+    membership row records `failed` with the reason, and the run carries on
+    with the rest - because a blurred close-up alongside two readable panels is
+    a worse photograph, not an unreadable package. Only when *every* photograph
+    failed is the run itself FAILED, which is the same outcome a single
+    unreadable image has always produced.
+
+    Args:
+        images: One or more saved `ProductImage` rows. Duplicates are rejected:
+            the same photograph twice is a submission mistake, and storing it
+            would double-count its declarations.
+        engine_name: Override the configured pipeline. For comparing engines.
+        engine_version: Override the configured pipeline version.
+
+    Returns:
+        A saved `ExtractionRun` whose `fields` each name the photograph they
+        were read from.
+
+    Raises:
+        ValueError: the set is empty, too large, holds a duplicate, or holds
+            something that is not a saved `ProductImage`. All programming or
+            request errors rather than extraction outcomes, so there is no run
+            to record them against.
+        MalformedExtractionResult: an engine broke its output contract. A
+            failed run is recorded first, then this is re-raised.
+    """
+    images = _require_image_set(images)
 
     engine_name = engine_name or settings.DEFAULT_EXTRACTION_ENGINE_NAME
     engine_version = engine_version or settings.DEFAULT_EXTRACTION_ENGINE_VERSION
 
     run = ExtractionRun.objects.create(
-        image=image,
+        image=images[0],
         engine_name=engine_name,
         engine_version=engine_version,
         status=ExtractionRun.Status.RUNNING,
         started_at=timezone.now(),
     )
 
-    _set_image_status(image, ProductImage.Status.PROCESSING)
+    for image in images:
+        _set_image_status(image, ProductImage.Status.PROCESSING)
 
     try:
         pipeline = registry.get_pipeline(engine_name, engine_version)
-        result = _checked_result(pipeline.run(build_image_ref(image)))
+        readings = [
+            _read_one_image(pipeline, image, position)
+            for position, image in enumerate(images, start=1)
+        ]
         # Scoped to the write, so a database error part-way through cannot leave
         # a run marked COMPLETED with only half its fields. The savepoint is
         # released on the way out, before either `except` clause below touches
         # the connection again.
         with transaction.atomic():
-            return _persist_result(run, image, result)
+            return _persist_readings(run, readings)
     except LabelExtractError as exc:
-        # A known extraction failure: recorded, not raised. One unreadable image
-        # must not fail the whole request.
-        logger.warning("Extraction failed for image %s: %s", image.pk, exc.code)
-        return _finalise_failure(run, image, code=exc.code, message=str(exc))
+        # Reachable only from resolving the pipeline: a failure to read one
+        # photograph is handled per image in `_read_one_image` and never
+        # arrives here. An unresolvable pipeline is a fact about the whole
+        # run, so it is recorded against all of its images.
+        logger.warning(
+            "Extraction pipeline unavailable for run %s: %s", run.pk, exc.code
+        )
+        return _finalise_failure(run, images, code=exc.code, message=str(exc))
     except Exception as exc:
         # Unexpected - a bug in an engine, a broken result contract, or the
-        # database itself. Record what we can so the image does not sit in
+        # database itself. Record what we can so the images do not sit in
         # PROCESSING forever, then re-raise so the bug is not quietly absorbed
-        # into a "this image was unreadable" result.
-        logger.exception("Unexpected error extracting image %s", image.pk)
+        # into a "these photographs were unreadable" result.
+        logger.exception("Unexpected error extracting run %s", run.pk)
         _record_failure_best_effort(
-            run, image, code="internal_error", message=exc.__class__.__name__
+            run, images, code="internal_error", message=exc.__class__.__name__
         )
         raise
+
+
+@dataclass(frozen=True)
+class _ImageReading:
+    """What the pipeline made of one photograph of the set.
+
+    Exactly one of `result` and `error_code` is set. A private value: it never
+    leaves this module, and everything it carries is either persisted onto an
+    `ExtractionRunImage` row or merged into the run.
+    """
+
+    image: ProductImage
+    position: int
+    result: ExtractionResult | None = None
+    error_code: str = ""
+    error_message: str = ""
+
+    @property
+    def succeeded(self) -> bool:
+        return self.result is not None
+
+
+def _read_one_image(pipeline, image: ProductImage, position: int) -> _ImageReading:
+    """Run the pipeline over one photograph, recording a failure as a value.
+
+    A `LabelExtractError` is caught here rather than propagating, because one
+    unreadable photograph in a set of three is an outcome for that photograph
+    and not for the inspection. A `MalformedExtractionResult` is deliberately
+    *not* caught: an engine that broke its own output contract is a bug, and
+    `run_extraction_over` re-raises it after recording the run as failed.
+    """
+    try:
+        result = _checked_result(pipeline.run(build_image_ref(image)))
+    except LabelExtractError as exc:
+        logger.warning(
+            "Extraction failed for image %s (position %d): %s",
+            image.pk,
+            position,
+            exc.code,
+        )
+        return _ImageReading(
+            image=image,
+            position=position,
+            error_code=exc.code,
+            error_message=str(exc),
+        )
+    return _ImageReading(image=image, position=position, result=result)
 
 
 def ingest_and_extract(
@@ -348,6 +496,10 @@ def ingest_and_extract(
     can reach extraction with a file that never went through
     `apps.images.validators`.
 
+    One photograph. `ingest_and_extract_all` is the same call for a set of
+    them, and this delegates to it, so a single upload takes exactly the path a
+    set of one does.
+
     Ingestion and extraction stay separate underneath. A caller that already
     holds a stored image calls `run_extraction` directly, and re-running an old
     image must not re-upload it.
@@ -356,18 +508,89 @@ def ingest_and_extract(
         ValidationError: the upload was rejected. Nothing is stored and no run
             is created - there is no image for a run to be about.
     """
+    return ingest_and_extract_all(
+        [upload],
+        product=product,
+        uploaded_by=uploaded_by,
+        view_types=[view_type],
+        engine_name=engine_name,
+        engine_version=engine_version,
+    )
+
+
+def ingest_and_extract_all(
+    uploads: Sequence,
+    *,
+    product=None,
+    uploaded_by=None,
+    view_types: Sequence[str] | None = None,
+    engine_name: str | None = None,
+    engine_version: str | None = None,
+) -> ExtractionOutcome:
+    """Store every photograph of one inspection, then read them into one run.
+
+    Args:
+        uploads: The files as received, in the order the submitter supplied
+            them. The first is the primary photograph.
+        product: The commodity these photographs show, when already known.
+        uploaded_by: The user, when the request is authenticated.
+        view_types: Which panel each photograph shows, positionally. A shorter
+            sequence leaves the rest `unspecified`; None leaves them all so.
+            Padded rather than repeated, because "the first one is the front"
+            says nothing about the second and copying the value across would
+            record a claim the submitter did not make.
+        engine_name: Override the configured pipeline. For comparing engines.
+        engine_version: Override the configured pipeline version.
+
+    Returns:
+        An `ExtractionOutcome` whose `images` are the stored photographs in
+        order and whose `run` read all of them.
+
+    Raises:
+        ValidationError: an upload was rejected, or a view type is not a
+            recognised value. **Ingestion stops at the first rejection**, so
+            the photographs before it are already stored while the rest are
+            not, and no run exists. They are orphaned rows, not a half-made
+            inspection: nothing points at them, the next attempt stores its own
+            copies, and the alternative - deleting what was already written -
+            would destroy an image on a path where no result was produced to
+            justify it. The API reports the rejection against the whole
+            request, which is what the submitter needs to act on.
+        ValueError: the set is empty or larger than
+            `MAX_IMAGES_PER_INSPECTION`.
+    """
     # Imported here rather than at module scope: keeping the service-level
     # dependency local makes it visible that this one function is the only
     # thing in the extraction app that ingests.
     from apps.images.services.ingestion import ingest_product_image
 
-    image = ingest_product_image(
-        upload, product=product, uploaded_by=uploaded_by, view_type=view_type
+    uploads = list(uploads)
+    if not uploads:
+        raise ValueError("An inspection needs at least one photograph.")
+    if len(uploads) > MAX_IMAGES_PER_INSPECTION:
+        raise ValueError(
+            f"An inspection may carry at most {MAX_IMAGES_PER_INSPECTION} "
+            f"photographs; {len(uploads)} were supplied."
+        )
+
+    panels = list(view_types or ())
+    images = [
+        ingest_product_image(
+            upload,
+            product=product,
+            uploaded_by=uploaded_by,
+            view_type=(
+                panels[index]
+                if index < len(panels) and panels[index]
+                else ProductImage.ViewType.UNSPECIFIED
+            ),
+        )
+        for index, upload in enumerate(uploads)
+    ]
+    run = run_extraction_over(
+        images, engine_name=engine_name, engine_version=engine_version
     )
-    run = run_extraction(
-        image, engine_name=engine_name, engine_version=engine_version
-    )
-    return ExtractionOutcome(image=image, run=run)
+    return ExtractionOutcome(image=images[0], run=run, images=tuple(images))
 
 
 # --- input guards -----------------------------------------------------------
@@ -396,6 +619,36 @@ def _require_saved_image(image: ProductImage) -> ProductImage:
             "been written to the database"
         )
     return image
+
+
+def _require_image_set(images: Sequence[ProductImage]) -> list[ProductImage]:
+    """Reject a set that could never produce a coherent inspection.
+
+    Bounded because every photograph costs a full pipeline pass inside the same
+    synchronous request. De-duplicated because the same photograph twice would
+    have its declarations counted twice and would breach the membership row's
+    own uniqueness constraint - as an IntegrityError, after a run row had
+    already been written.
+    """
+    if images is None:
+        raise ValueError("run_extraction_over requires images, got None")
+    images = [_require_saved_image(image) for image in images]
+    if not images:
+        raise ValueError("run_extraction_over requires at least one image")
+    if len(images) > MAX_IMAGES_PER_INSPECTION:
+        raise ValueError(
+            f"An inspection may carry at most {MAX_IMAGES_PER_INSPECTION} "
+            f"photographs; {len(images)} were supplied."
+        )
+    seen: set = set()
+    for image in images:
+        if image.pk in seen:
+            raise ValueError(
+                f"Image {image.pk} was supplied more than once; a photograph "
+                "may appear in an inspection only once."
+            )
+        seen.add(image.pk)
+    return images
 
 
 # --- the engine's half of the contract --------------------------------------
@@ -562,34 +815,252 @@ def _set_image_status(image: ProductImage, status: str) -> None:
     image.status = status
 
 
-def _persist_result(
-    run: ExtractionRun, image: ProductImage, result: ExtractionResult
+#: Sentinel for "the engine did not send this key", distinct from a key it
+#: sent as None. Only `_merged_metadata` needs the distinction, and only for
+#: `unread_declarations`, where absent and empty mean different things.
+_ABSENT = object()
+
+
+#: Per-image status for a photograph the pipeline could not read.
+_IMAGE_STATUS_MAP = {
+    ExtractionRun.Status.COMPLETED: ExtractionRunImage.Status.COMPLETED,
+    ExtractionRun.Status.EMPTY: ExtractionRunImage.Status.EMPTY,
+    ExtractionRun.Status.FAILED: ExtractionRunImage.Status.FAILED,
+}
+
+
+def _merged_status(readings: list[_ImageReading]) -> str:
+    """The run's status, from the outcomes of the photographs it read.
+
+    The best outcome of the set wins, and that is the whole decision worth
+    understanding here. `produced_usable_output` - which is `status ==
+    COMPLETED` - is what tells the compliance engine whether an absent
+    declaration is evidence about the *package* or only about the
+    *photograph*. For a set, the honest answer is that the label was read well
+    enough to judge against as soon as any one photograph was read well enough,
+    because the declarations it found are declarations the package makes.
+
+    Taking the worst outcome instead would mean a submitter who adds a blurred
+    close-up to two good panels gets every finding downgraded to "could not be
+    decided" - punished for supplying more evidence, which is precisely
+    backwards.
+
+    What the unreadable photograph is *not* allowed to do is disappear: its own
+    `ExtractionRunImage` row records `failed` and why, and the interface shows
+    it. This function decides the verdict-affecting question only.
+    """
+    statuses = {
+        _STATUS_MAP[reading.result.status]
+        for reading in readings
+        if reading.succeeded
+    }
+    if ExtractionRun.Status.COMPLETED in statuses:
+        return ExtractionRun.Status.COMPLETED
+    if ExtractionRun.Status.EMPTY in statuses:
+        return ExtractionRun.Status.EMPTY
+    return ExtractionRun.Status.FAILED
+
+
+def _merged_processing_ms(readings: list[_ImageReading]) -> int | None:
+    """Total time the pipeline spent, across every photograph it read.
+
+    A sum rather than a maximum or an average: the photographs are read one
+    after another in the same request, so the sum is the time that actually
+    passed inside the pipeline. Per-photograph figures are kept on the
+    membership rows, so nothing is lost by totalling them here.
+
+    None when no photograph produced a measurement, which is what the column
+    means - never 0, which would be a measurement nobody took. Clamped at the
+    column's ceiling rather than overflowing it; reaching that would need
+    roughly 25 days of extraction in one request.
+    """
+    measured = [
+        reading.result.processing_ms
+        for reading in readings
+        if reading.succeeded and reading.result.processing_ms is not None
+    ]
+    if not measured:
+        return None
+    return min(sum(measured), _MAX_PROCESSING_MS)
+
+
+def _merged_metadata(readings: list[_ImageReading]) -> dict:
+    """One `metadata` mapping for the set, from each photograph's own.
+
+    Two rules, and both exist to keep the ml/ package's vocabulary intact:
+
+    **`unread_declarations` is concatenated**, in position order. Each entry is
+    a declaration some photograph named but could not read, and that stays true
+    of every entry however many photographs there were. The entries keep the
+    shape `labelextract.contracts.UnreadDeclaration` defines - no key is added
+    to say which photograph an entry came from, because that would be this
+    layer editing a contract written on the other side of the ML boundary. The
+    structured channel for image attribution is `ExtractedLabelField.image`.
+
+    **Everything else is taken from the earliest photograph that reported it.**
+    `product_classification` is the key that matters: the classifier runs per
+    photograph, so a set of three produces three classifications of the same
+    package, and there is no honest way to merge them into a fourth. Position
+    order is used because position 1 is the primary photograph, and because a
+    rule a person can predict beats one they cannot. The classification is a
+    suggestion that decides nothing - `apps.compliance` never reads it - so
+    selecting one is a display choice, not a determination.
+
+    For a single photograph this returns that photograph's metadata unchanged,
+    which is what it has always been.
+    """
+    merged: dict = {}
+    unread: list = []
+    reported_unread = False
+    for reading in readings:
+        if not reading.succeeded:
+            continue
+        metadata = dict(reading.result.metadata)
+        declarations = metadata.pop("unread_declarations", _ABSENT)
+        if isinstance(declarations, list):
+            reported_unread = True
+            unread.extend(declarations)
+        elif declarations is not _ABSENT:
+            # An engine reported something that is not a list under this key.
+            # Kept, first-wins, rather than dropped: `raw_output` is stored
+            # verbatim everywhere else, and a reshape here is exactly what
+            # would lose the "named but illegible" channel silently.
+            merged.setdefault("unread_declarations", declarations)
+        for key, value in metadata.items():
+            merged.setdefault(key, value)
+    if reported_unread:
+        # Set even when empty, because an engine that reported an empty list
+        # said something ("I read everything I saw named") that an absent key
+        # does not. Never invented: absent stays absent.
+        merged["unread_declarations"] = unread
+    return merged
+
+
+def _persist_readings(
+    run: ExtractionRun, readings: list[_ImageReading]
 ) -> ExtractionRun:
+    """Write the run, its membership rows and every declaration that was read.
+
+    One write of the run, one `bulk_create` of the membership rows and one of
+    the fields, whatever the size of the set - so a five-image inspection costs
+    the same number of statements as a one-image one.
+    """
+    succeeded = [reading for reading in readings if reading.succeeded]
+    first = succeeded[0] if succeeded else None
+
     raw_output = {
-        "engine_raw": dict(result.ocr.raw),
+        # The primary reading's diagnostics, unchanged. `engine_raw` has always
+        # been one engine's raw output and stays that; the per-photograph
+        # breakdown is `images` below, added rather than folded in, so a reader
+        # of an old run and a reader of a new one see the same key mean the
+        # same thing.
+        "engine_raw": dict(first.result.ocr.raw) if first else {},
         # Carries `unread_declarations` - declarations the label named whose
         # values could not be read. Stored verbatim because that distinction
         # ("absent" versus "printed but illegible") exists nowhere else in the
         # schema, and losing it turns a request to retake a photograph into a
         # reported violation.
-        "metadata": dict(result.metadata),
-        "block_count": len(result.ocr.blocks),
+        "metadata": _merged_metadata(readings),
+        "block_count": sum(
+            len(reading.result.ocr.blocks) for reading in succeeded
+        ),
     }
+    if len(readings) > 1:
+        # Added only for a genuine set. A single-image run's `raw_output` keeps
+        # exactly the three keys it has always had, so nothing that reads one
+        # has to learn a new shape to go on working.
+        raw_output["images"] = [
+            {
+                "position": reading.position,
+                "image_id": str(reading.image.pk),
+                "status": (
+                    _STATUS_MAP[reading.result.status]
+                    if reading.succeeded
+                    else ExtractionRun.Status.FAILED
+                ),
+                "error_code": (
+                    reading.result.error_code or ""
+                    if reading.succeeded
+                    else reading.error_code
+                ),
+                "block_count": (
+                    len(reading.result.ocr.blocks) if reading.succeeded else 0
+                ),
+                "processing_ms": (
+                    reading.result.processing_ms if reading.succeeded else None
+                ),
+            }
+            for reading in readings
+        ]
     _require_json_safe(raw_output, what="raw_output")
 
-    run.status = _STATUS_MAP[result.status]
-    run.is_placeholder = result.is_placeholder
-    run.processing_ms = result.processing_ms
+    failures = [reading for reading in readings if not reading.succeeded]
+
+    run.status = _merged_status(readings)
+    # One pipeline read every photograph, so `is_placeholder` is the same
+    # answer for all of them; the first that ran is as good as any. False when
+    # none ran, which is the safe direction: it is never a claim that real
+    # recognition happened.
+    run.is_placeholder = bool(first.result.is_placeholder) if first else False
+    run.processing_ms = _merged_processing_ms(readings)
     run.completed_at = timezone.now()
-    run.recognised_text = result.ocr.full_text
+    # Joined in position order. The declarations of one package, printed across
+    # several panels, read as one label - which is what this column is for.
+    run.recognised_text = "\n".join(
+        reading.result.ocr.full_text
+        for reading in succeeded
+        if reading.result.ocr.full_text
+    )
     run.raw_output = raw_output
-    run.error_code = result.error_code or ""
-    run.error_message = result.error_message or ""
+    if first is not None:
+        # The set produced a reading, so the run did not fail. An error from a
+        # photograph that could not be read belongs to that photograph's own
+        # row, not to the run - putting it here would report a whole
+        # inspection as failed because one close-up was blurred.
+        run.error_code = first.result.error_code or ""
+        run.error_message = first.result.error_message or ""
+    else:
+        run.error_code = failures[0].error_code if failures else ""
+        run.error_message = failures[0].error_message if failures else ""
     run.save()
+
+    ExtractionRunImage.objects.bulk_create(
+        [
+            ExtractionRunImage(
+                run=run,
+                image=reading.image,
+                position=reading.position,
+                status=(
+                    _IMAGE_STATUS_MAP[_STATUS_MAP[reading.result.status]]
+                    if reading.succeeded
+                    else ExtractionRunImage.Status.FAILED
+                ),
+                error_code=(
+                    reading.result.error_code or ""
+                    if reading.succeeded
+                    else reading.error_code
+                ),
+                error_message=(
+                    reading.result.error_message or ""
+                    if reading.succeeded
+                    else reading.error_message
+                ),
+                processing_ms=(
+                    reading.result.processing_ms if reading.succeeded else None
+                ),
+            )
+            for reading in readings
+        ]
+    )
 
     fields = [
         ExtractedLabelField(
             run=run,
+            # The photograph this declaration was actually read from. Set here
+            # rather than inferred later: once the readings are merged there is
+            # no way back to which image produced which, and a finding that
+            # cited the wrong panel would be worse than one citing none.
+            image=reading.image,
             field_key=_validated_key(extracted.key),
             raw_value=extracted.raw_value,
             normalized_value=(
@@ -600,34 +1071,69 @@ def _persist_result(
             confidence=extracted.confidence,
             bounding_box=extracted.box.as_dict() if extracted.box else None,
         )
-        for extracted in result.fields
+        for reading in succeeded
+        for extracted in reading.result.fields
     ]
     if fields:
         ExtractedLabelField.objects.bulk_create(fields)
 
-    _set_image_status(
-        image,
-        ProductImage.Status.FAILED
-        if run.status == ExtractionRun.Status.FAILED
-        else ProductImage.Status.PROCESSED,
-    )
+    for reading in readings:
+        _set_image_status(
+            reading.image,
+            ProductImage.Status.PROCESSED
+            if reading.succeeded
+            and _STATUS_MAP[reading.result.status] != ExtractionRun.Status.FAILED
+            else ProductImage.Status.FAILED,
+        )
     return run
 
 
 def _finalise_failure(
-    run: ExtractionRun, image: ProductImage, *, code: str, message: str
+    run: ExtractionRun,
+    images: Sequence[ProductImage],
+    *,
+    code: str,
+    message: str,
 ) -> ExtractionRun:
+    """Record a run that produced no reading at all, and say why.
+
+    Reached when the pipeline itself could not be resolved, so no photograph
+    was read and every one of them shares the reason. Membership rows are still
+    written: an inspection that failed still had a set, and a submitter looking
+    at it needs to see which photographs they sent.
+    """
     run.status = ExtractionRun.Status.FAILED
     run.completed_at = timezone.now()
     run.error_code = code
     run.error_message = message
     run.save()
-    _set_image_status(image, ProductImage.Status.FAILED)
+
+    if not run.run_images.exists():
+        ExtractionRunImage.objects.bulk_create(
+            [
+                ExtractionRunImage(
+                    run=run,
+                    image=image,
+                    position=position,
+                    status=ExtractionRunImage.Status.FAILED,
+                    error_code=code,
+                    error_message=message,
+                )
+                for position, image in enumerate(images, start=1)
+            ]
+        )
+
+    for image in images:
+        _set_image_status(image, ProductImage.Status.FAILED)
     return run
 
 
 def _record_failure_best_effort(
-    run: ExtractionRun, image: ProductImage, *, code: str, message: str
+    run: ExtractionRun,
+    images: Sequence[ProductImage],
+    *,
+    code: str,
+    message: str,
 ) -> None:
     """Record a failure without letting the attempt replace the real error.
 
@@ -637,7 +1143,7 @@ def _record_failure_best_effort(
     is the one worth seeing, so a secondary failure is logged and dropped.
     """
     try:
-        _finalise_failure(run, image, code=code, message=message)
+        _finalise_failure(run, images, code=code, message=message)
     except Exception:
         logger.exception(
             "Could not record the failed extraction run %s; the original error "

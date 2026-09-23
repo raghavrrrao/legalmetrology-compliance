@@ -1,6 +1,7 @@
 import { StatusBadge } from './StatusBadge.jsx';
 import { formatConfidence } from '../utils/compliance.js';
 import { humaniseCode } from '../utils/format.js';
+import { imageLabel, imagePositions } from '../utils/images.js';
 
 /**
  * What the pipeline read off the label.
@@ -18,6 +19,13 @@ import { humaniseCode } from '../utils/format.js';
  * `producedUsableOutput` - whether the label was read well enough to be judged
  * against at all - not from anything a rule concluded.
  *
+ * **A declaration may legitimately appear twice.** An inspection can carry
+ * several photographs, and a declaration printed on two photographed panels is
+ * read once per panel. Both readings are listed, each against the photograph it
+ * came from, because both are real observations - and deciding which panel of a
+ * package to believe is not this browser's job. Which one the rule engine
+ * judged against is the backend's answer, on the finding.
+ *
  * **The meaningful fields come first; the raw recognised text is a disclosure.**
  * The OCR dump is genuinely useful — it is how somebody checks a reading that
  * looks wrong — but it is a wall of broken words, and printed in full above the
@@ -28,6 +36,10 @@ export function ExtractionPanel({ extraction }) {
   if (!extraction) {
     return null;
   }
+
+  // Named only when there is more than one photograph to tell apart; with a
+  // single one "Image 1" is noise. `imageLabel` enforces that itself.
+  const positions = imagePositions(extraction.images ?? []);
 
   return (
     <>
@@ -51,10 +63,18 @@ export function ExtractionPanel({ extraction }) {
           </div>
         ) : (
           <ul className="read-fields" aria-label="What we read from the label">
-            {extraction.fieldsRead.map((field) => (
-              <li className="read-field" key={field.fieldKey}>
+            {extraction.fieldsRead.map((field, index) => (
+              // Keyed by index as well as by field key: the same declaration
+              // can be read off two panels, and two <li>s with one key is a
+              // React collision that silently drops the second.
+              <li className="read-field" key={`${field.fieldKey}-${index}`}>
                 <span className="read-field__name">
                   {humaniseCode(field.fieldKey)}
+                  {imageLabel(field.imageId, positions) && (
+                    <span className="read-field__source">
+                      {` · ${imageLabel(field.imageId, positions)}`}
+                    </span>
+                  )}
                 </span>
                 <span className="read-field__value">{field.rawValue}</span>
                 {field.normalizedValue?.uncertain && (

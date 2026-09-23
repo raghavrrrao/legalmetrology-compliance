@@ -30,6 +30,21 @@ export const MAX_UPLOAD_SIZE_MB = 10;
 export const MAX_UPLOAD_SIZE_BYTES = MAX_UPLOAD_SIZE_MB * 1024 * 1024;
 
 /**
+ * Most photographs one inspection may carry.
+ *
+ * Mirrors the backend's `MAX_IMAGES_PER_INSPECTION`
+ * (`backend/apps/images/constants.py`) so the user is stopped while they are
+ * choosing rather than after a multi-megabyte upload. The backend remains the
+ * authority: if its limit is lower the request is still rejected there, and
+ * this number never makes an over-long set acceptable.
+ *
+ * Six covers front, back, two side panels, a bottom label and a close-up. It
+ * is not derived from the Rules, which say nothing about how many photographs
+ * anybody takes.
+ */
+export const MAX_INSPECTION_IMAGES = 6;
+
+/**
  * Normalise a base URL to exactly one trailing slash.
  *
  * Without this, `${base}health/` produces either a double slash or a missing

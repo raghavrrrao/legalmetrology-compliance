@@ -63,3 +63,19 @@ def extension_for_upload(filename: str) -> str:
     if canonical is None:
         return ".jpg"
     return ALLOWED_FORMATS[canonical]
+
+
+#: Most photographs one inspection may carry.
+#:
+#: A packaged commodity declares different things on different panels, so an
+#: inspection is allowed several photographs of the same package - front, back,
+#: a side panel, the declaration panel, a close-up. Six covers that with room
+#: to spare; it is not derived from the Rules, which say nothing about how many
+#: photographs anybody takes.
+#:
+#: There is a bound at all because every image is validated, stored and read by
+#: the OCR pipeline in the same synchronous request. Each one costs the
+#: extraction median again, so an unbounded set is a request that never
+#: returns. Raising it is a one-line change here and in the mobile client's
+#: mirror of it (`mobile/src/config/env.ts`).
+MAX_IMAGES_PER_INSPECTION = 6

@@ -44,7 +44,11 @@ from __future__ import annotations
 
 from rest_framework import serializers
 
-from apps.extraction.models import ExtractedLabelField, ExtractionRun
+from apps.extraction.models import (
+    ExtractedLabelField,
+    ExtractionRun,
+    ExtractionRunImage,
+)
 from apps.images.api.serializers import ProductImageSerializer
 
 
@@ -55,7 +59,32 @@ class ExtractedFieldSerializer(serializers.ModelSerializer):
     `labelextract.fields.normalisation` made of it, and carries the extractor's
     own `uncertain` flag when it was not sure. Both are exposed because a
     reviewer checking a finding needs the reading, not only its interpretation.
+
+    `image_id` says which photograph of the package this was read from, and is
+    what lets an interface put a declaration and a piece of evidence against
+    the right panel. It matches one of the `images[].image.id` values in the
+    same response.
+
+    **`null` means the source was not recorded, never that no photograph was
+    involved.** Every reading made before a run could hold more than one
+    photograph has a null here, and so does one whose image row has since been
+    deleted. A client must not render null as "no image": the honest rendering
+    is to say nothing about which image, and the run's own image set is still
+    the set the reading came from.
+
+    An inspection may report the **same `field_key` more than once** - a
+    declaration printed on two panels, photographed twice. Each row is a real
+    reading with its own image and its own confidence, and none of them is the
+    "wrong" one. Which reading the rule engine judged against is a separate
+    question, answered on the finding, which links to the exact reading it
+    used.
     """
+
+    image_id = serializers.UUIDField(
+        read_only=True,
+        allow_null=True,
+        help_text="The photograph this declaration was read from, or null.",
+    )
 
     class Meta:
         model = ExtractedLabelField
@@ -65,8 +94,89 @@ class ExtractedFieldSerializer(serializers.ModelSerializer):
             "normalized_value",
             "confidence",
             "bounding_box",
+            "image_id",
         ]
         read_only_fields = fields
+
+
+class RunImageSerializer(serializers.ModelSerializer):
+    """One photograph of the inspection, and how reading that one went.
+
+    `position` is 1-based and is the number an interface shows: "Evidence ·
+    Image 2" means the entry whose `position` is 2. It is the order the
+    submitter sent the photographs in, not a ranking.
+
+    `status`, `error_code` and `error_message` are about **this photograph
+    alone**. They are not the run's - and the distinction is the point of the
+    row. A run whose `status` is `completed` may still hold a photograph that
+    was too blurred to read: the package was read well enough to judge against,
+    *and* one of the submitter's photographs contributed nothing. Reporting
+    only the run's status would hide the second; reporting only the
+    photographs' would make an inspection look failed because one close-up was
+    out of focus.
+    """
+
+    image = ProductImageSerializer(read_only=True)
+
+    class Meta:
+        model = ExtractionRunImage
+        fields = [
+            "position",
+            "status",
+            "error_code",
+            "error_message",
+            "processing_ms",
+            "image",
+        ]
+        read_only_fields = fields
+
+
+def run_image_entries(run: ExtractionRun) -> list[dict]:
+    """Every photograph a run read, in the order it was submitted.
+
+    Always at least one entry, and `entries[0]["image"]` is the run's primary
+    photograph. A client counting photographs counts this list; a client
+    resolving a reading's `image_id` or a piece of evidence's `image_id` looks
+    it up here.
+
+    A module-level function rather than a method, because the extraction
+    response and the compliance result both publish this list and neither may
+    disagree with the other about how many photographs an inspection had. The
+    alternative - the compliance serializer rendering a whole
+    `ExtractionRunSerializer` to pull one key out of it - would serialise every
+    declaration of the run a second time for nothing.
+
+    Falls back to describing the primary photograph alone when a run has no
+    membership rows. That is not a hypothetical: a run built directly in a test
+    or a fixture has none, and a response must still describe the photograph it
+    read rather than claim it read none. Runs that existed before the set was
+    modelled were backfilled by migration, so they have real rows.
+    """
+    links = list(run.run_images.all())
+    if links:
+        return RunImageSerializer(links, many=True).data
+    return [
+        {
+            "position": 1,
+            # The run's own status, because for a single photograph the two
+            # statements are the same statement. Not a guess: this branch is
+            # only reached when the run read exactly one image.
+            "status": (
+                run.status
+                if run.status
+                in {
+                    ExtractionRun.Status.COMPLETED,
+                    ExtractionRun.Status.EMPTY,
+                    ExtractionRun.Status.FAILED,
+                }
+                else ExtractionRunImage.Status.FAILED
+            ),
+            "error_code": run.error_code or "",
+            "error_message": run.error_message or "",
+            "processing_ms": run.processing_ms,
+            "image": ProductImageSerializer(run.image).data,
+        }
+    ]
 
 
 class ExtractionRunSerializer(serializers.ModelSerializer):
@@ -87,6 +197,7 @@ class ExtractionRunSerializer(serializers.ModelSerializer):
     fields_read = ExtractedFieldSerializer(
         source="fields", many=True, read_only=True
     )
+    images = serializers.SerializerMethodField()
     unread_declarations = serializers.SerializerMethodField()
     product_classification = serializers.SerializerMethodField()
     produced_usable_output = serializers.BooleanField(read_only=True)
@@ -105,10 +216,14 @@ class ExtractionRunSerializer(serializers.ModelSerializer):
             "error_code",
             "error_message",
             "fields_read",
+            "images",
             "unread_declarations",
             "product_classification",
         ]
         read_only_fields = fields
+
+    def get_images(self, run: ExtractionRun) -> list[dict]:
+        return run_image_entries(run)
 
     def get_unread_declarations(self, run: ExtractionRun) -> list[dict]:
         """Read the unread-declaration channel out of the run's raw output.
@@ -172,6 +287,13 @@ class ExtractionResponseSerializer(ExtractionRunSerializer):
     uploaded it and has no other way to learn what was stored - the measured
     format and dimensions, and the id it will need to refer to the photograph
     again.
+
+    `image` is the **primary** photograph, position 1 of the set. `images`, on
+    the run above, is all of them. Both are present and neither is redundant:
+    `image` is what this endpoint has always returned and what
+    `ExtractionRun.image` points at, and a client written before inspections
+    could carry several photographs keeps working unchanged against a
+    single-image upload.
 
     There is deliberately no `compliance` key, and there never should be. A
     caller that wants a verdict calls `POST /api/v1/images/`, which runs the

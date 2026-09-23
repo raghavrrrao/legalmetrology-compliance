@@ -55,10 +55,16 @@ logger = logging.getLogger(__name__)
 
 
 class LabelExtractionView(APIView):
-    """Upload a label photograph and receive what was read off it.
+    """Upload one or more photographs of a package and receive what was read.
 
     Returns **201** with the `ExtractionRun`, its declarations, and the stored
-    image.
+    images.
+
+    Repeat the `image` part to send several photographs of the same package.
+    They become **one** run, not one each: a packaged commodity declares
+    different things on different panels, and a caller asking what a package
+    says needs one answer about the package rather than one per photograph.
+    Each declaration in the response carries the `image_id` it was read from.
 
     A 201 even when nothing could be read. An unreadable photograph still
     produces a real, stored, retrievable run whose `status` is `empty` or
@@ -90,17 +96,20 @@ class LabelExtractionView(APIView):
         validated = request_data.validated_data
 
         try:
-            outcome = extraction_service.ingest_and_extract(
-                validated["image"],
+            outcome = extraction_service.ingest_and_extract_all(
+                validated["images"],
                 uploaded_by=(
                     request.user if request.user.is_authenticated else None
                 ),
-                view_type=validated["view_type"],
+                view_types=validated["view_types"],
             )
         except DjangoValidationError as exc:
             # The upload was rejected by apps.images.validators - too large,
-            # not a decodable image, a format we do not accept. Nothing was
-            # stored and no run exists.
+            # not a decodable image, a format we do not accept. No run exists.
+            # For a set, the photographs before the rejected one were stored
+            # before it was reached; they are orphans that nothing points at,
+            # not a half-made inspection, and the submitter is told their
+            # request was rejected as a whole. See `ingest_and_extract_all`.
             #
             # Re-raised as a DRF ValidationError keyed to the request field so
             # the standard envelope stays structured (details.image=[...]).

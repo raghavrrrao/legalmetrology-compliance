@@ -7,48 +7,25 @@ import { PhotoTips } from '../components/PhotoTips';
 import { Screen } from '../components/Screen';
 import { ServerStatus } from '../components/ServerStatus';
 import { config } from '../config/env';
-import { useAnalysis } from '../hooks/AnalysisContext';
 import { useApiHealth } from '../hooks/useApiHealth';
-import { useImageSelection, type ImageSource, type SelectionIssue } from '../hooks/useImageSelection';
+import { useImageSelection, type ImageSource } from '../hooks/useImageSelection';
+import { useInspectionSelection, useStartOver } from '../hooks/AnalysisContext';
 import type { RootScreenProps } from '../navigation/types';
 import { colors, radius, spacing, typography } from '../theme';
+import { describeIssue } from './ScanScreen';
 
 /**
- * The words for each way a pick can go wrong. Written for the person holding
- * the phone; the technical reason is in `SelectionIssue.kind` for a test.
+ * The words for each way a pick can go wrong.
+ *
+ * Written once, on the scan screen, and re-exported here rather than copied:
+ * both screens can start a selection, and two sets of these sentences would
+ * drift into saying different things about the same refusal.
  */
-export function describeIssue(issue: SelectionIssue): { title: string; message: string } {
-  const thing = issue.source === 'camera' ? 'camera' : 'photos';
-  switch (issue.kind) {
-    case 'permission_denied':
-      return issue.canAskAgain
-        ? {
-            title: `${issue.source === 'camera' ? 'Camera' : 'Photo'} access needed`,
-            message: `Allow access to your ${thing} to scan a label this way.`,
-          }
-        : {
-            title: `${issue.source === 'camera' ? 'Camera' : 'Photo'} access is turned off`,
-            message: `Access to your ${thing} has been turned off for this app. You can turn it back on in your phone’s Settings.`,
-          };
-    case 'unavailable':
-      return {
-        title: 'Camera not available',
-        message: 'No camera could be opened on this device. You can still choose a photo from your gallery.',
-      };
-    case 'rejected':
-      return { title: 'This photo cannot be used', message: issue.message };
-    case 'error':
-    default:
-      return {
-        title: 'Could not open that',
-        message: `Something went wrong while opening your ${thing}. Please try again.`,
-      };
-  }
-}
+export { describeIssue };
 
 /** The same four steps the web client names, in the same words. */
 const STEPS = [
-  { number: '01', title: 'Scan', text: 'Capture or upload one or more images of the package label.' },
+  { number: '01', title: 'Scan', text: 'Capture or upload every panel of the package that carries a declaration.' },
   { number: '02', title: 'Extract', text: 'Text recognition locates the declarations printed on the package.' },
   { number: '03', title: 'Check', text: 'Deterministic rules evaluate the requirements that apply to it.' },
   { number: '04', title: 'Review', text: 'See every finding with its evidence, and what still needs a person.' },
@@ -56,19 +33,23 @@ const STEPS = [
 
 export function HomeScreen({ navigation }: RootScreenProps<'Home'>) {
   const { select, issue, isPicking, clearIssue } = useImageSelection();
-  const analysis = useAnalysis();
+  const selection = useInspectionSelection();
+  const startOver = useStartOver();
   // The same client, the same base URL: if this says "connected", an upload
   // that then fails is not a connectivity problem.
   const { check, ...health } = useApiHealth();
 
   const choose = async (source: ImageSource) => {
-    const image = await select(source);
-    if (image) {
-      // A new photograph means a new analysis; nothing from the last one may
-      // sit beside it.
-      analysis.reset();
-      navigation.navigate('Preview', { image });
+    const picked = await select(source);
+    if (picked.length === 0) {
+      return;
     }
+    // Starting from here is starting a new inspection: the previous result and
+    // any photographs left over from it are cleared before these are added, so
+    // nothing from the last package can sit beside this one.
+    startOver();
+    selection.add(picked);
+    navigation.navigate('Scan');
   };
 
   const described = issue ? describeIssue(issue) : null;
@@ -90,8 +71,9 @@ export function HomeScreen({ navigation }: RootScreenProps<'Home'>) {
         Check a package before you trust the label.
       </Text>
       <Text style={styles.lede}>
-        Photograph a packaged-product label, or choose one from your gallery. Its declarations are
-        extracted and compared with the compliance requirements configured on the server.
+        Photograph a packaged product, or choose pictures from your gallery. Add as many panels as
+        carry a declaration — they are checked together, as one package, against the compliance
+        requirements configured on the server.
       </Text>
 
       {described ? (
@@ -114,7 +96,7 @@ export function HomeScreen({ navigation }: RootScreenProps<'Home'>) {
       <View style={styles.actions}>
         <Button
           label="Take photo"
-          accessibilityHint="Opens the camera to photograph the label"
+          accessibilityHint="Opens the camera to photograph a panel of the package"
           onPress={() => {
             void choose('camera');
           }}
@@ -123,8 +105,8 @@ export function HomeScreen({ navigation }: RootScreenProps<'Home'>) {
         />
         <Button
           variant="secondary"
-          label="Choose from gallery"
-          accessibilityHint="Opens your photos to pick an existing picture of the label"
+          label="Choose photos"
+          accessibilityHint="Opens your photos so you can pick one or more pictures of the package"
           onPress={() => {
             void choose('library');
           }}
@@ -160,8 +142,8 @@ export function HomeScreen({ navigation }: RootScreenProps<'Home'>) {
       <ServerStatus state={health} source={config.apiBaseUrlSource} onCheckAgain={check} />
 
       <Text style={styles.footnote}>
-        The photo is sent to the analysis server, which reads it and checks it. Nothing is analysed
-        on this phone, and no result is produced without a connection.
+        The photos are sent to the analysis server, which reads them and checks them as one package.
+        Nothing is analysed on this phone, and no result is produced without a connection.
       </Text>
     </Screen>
   );

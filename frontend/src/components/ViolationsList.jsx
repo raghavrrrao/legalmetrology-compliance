@@ -1,5 +1,6 @@
 import { StatusBadge } from './StatusBadge.jsx';
 import { humaniseCode } from '../utils/format.js';
+import { imageLabel } from '../utils/images.js';
 
 /**
  * The rules this package was found to fail, with the evidence behind each.
@@ -11,6 +12,15 @@ import { humaniseCode } from '../utils/format.js';
  * filtering a longer list themselves. `FindingCard` names the violation a
  * failure became, so the two are navigable in both directions.
  *
+ * When an inspection carries several photographs, each evidence row names the
+ * one it came from. Only where the backend attributed it: `image_id` is what is
+ * rendered, and a row without one says nothing about images rather than
+ * defaulting to the first. For a finding of absence the backend falls back to
+ * the primary photograph, which is not a claim that the declaration should have
+ * been on that panel - so the label is suppressed there too, by
+ * `imagePositions` being given fewer than two photographs or by the id simply
+ * not resolving.
+ *
  * An empty list is not a clean bill of health, and the copy says so without
  * guessing at why it is empty. It used to say "with no verified rules loaded
  * this is expected", which was written when this was the only list on the
@@ -18,7 +28,7 @@ import { humaniseCode } from '../utils/format.js';
  * something false. The verdict states what was concluded and the findings list
  * shows what was examined; this section says only what it knows.
  */
-export function ViolationsList({ violations }) {
+export function ViolationsList({ violations, imagePositions }) {
   if (violations.length === 0) {
     return (
       <div className="empty-state">
@@ -65,18 +75,24 @@ export function ViolationsList({ violations }) {
             {violation.evidence.length === 0 ? (
               <p className="hint">No evidence excerpt was recorded.</p>
             ) : (
-              violation.evidence.map((item, index) => (
-                <div key={index}>
-                  {item.excerpt ? (
-                    <blockquote className="evidence">{item.excerpt}</blockquote>
-                  ) : (
-                    <p className="hint">
-                      Evidence recorded without a text excerpt.
-                    </p>
-                  )}
-                  {item.note && <p className="hint">{item.note}</p>}
-                </div>
-              ))
+              violation.evidence.map((item, index) => {
+                const source = imageLabel(item.imageId, imagePositions);
+                return (
+                  <div key={index}>
+                    {source && (
+                      <p className="evidence__source">{`Evidence · ${source}`}</p>
+                    )}
+                    {item.excerpt ? (
+                      <blockquote className="evidence">{item.excerpt}</blockquote>
+                    ) : (
+                      <p className="hint">
+                        Evidence recorded without a text excerpt.
+                      </p>
+                    )}
+                    {item.note && <p className="hint">{item.note}</p>}
+                  </div>
+                );
+              })
             )}
           </div>
         </article>

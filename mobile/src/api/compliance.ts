@@ -17,7 +17,7 @@
  */
 
 import { ApiError, apiClient, type RequestOptions } from './client';
-import { mapExtractionRun, mapImage } from './extraction';
+import { mapExtractionRun, mapImage, mapInspectionImages } from './extraction';
 import type {
   ApplicabilityAssessment,
   ApplicabilityAssessmentWire,
@@ -49,6 +49,9 @@ export function mapViolation(violation: ViolationWire): Violation {
           excerpt: item.excerpt || '',
           boundingBox: item.bounding_box ?? null,
           note: item.note || '',
+          // Which photograph to show this against. Null means the backend did
+          // not say, which the UI renders as no image label at all.
+          imageId: typeof item.image_id === 'string' ? item.image_id : null,
         }))
       : [],
   };
@@ -195,6 +198,10 @@ export function mapResult(data: ComplianceCheckWire | null | undefined): Complia
     violations: Array.isArray(data.violations) ? data.violations.map(mapViolation) : [],
     extraction: mapExtractionRun(data.extraction),
     image: mapImage(data.image),
+    // The photographs this one result was made from. The `image` above is the
+    // primary one and stays for the parts of the UI that want a single
+    // thumbnail; this is what the screen counts.
+    images: mapInspectionImages(data.images, data.image),
   };
 }
 

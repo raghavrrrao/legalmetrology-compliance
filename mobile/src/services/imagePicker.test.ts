@@ -11,7 +11,7 @@
 import * as ImagePicker from 'expo-image-picker';
 import { Platform } from 'react-native';
 
-import { captureFromCamera, pickFromLibrary } from './imagePicker';
+import { captureFromCamera, MAX_SELECTION, pickFromLibrary } from './imagePicker';
 import { cameraPermission, libraryPermission } from '../../tests/fixtures';
 
 const picker = ImagePicker as jest.Mocked<typeof ImagePicker>;
@@ -40,7 +40,11 @@ describe('captureFromCamera', () => {
     expect(picker.launchCameraAsync).toHaveBeenCalledTimes(1);
     expect(result).toEqual({
       kind: 'selected',
-      asset: { uri: asset.uri, fileName: 'abc.jpg', mimeType: 'image/jpeg', fileSize: 123456, width: 3000, height: 4000 },
+      // A list even for the camera, which returns exactly one: one result
+      // vocabulary, so no caller branches on which source it asked for.
+      assets: [
+        { uri: asset.uri, fileName: 'abc.jpg', mimeType: 'image/jpeg', fileSize: 123456, width: 3000, height: 4000 },
+      ],
     });
   });
 
@@ -104,7 +108,7 @@ describe('captureFromCamera', () => {
 
     await expect(captureFromCamera()).resolves.toEqual({
       kind: 'selected',
-      asset: { uri: 'file:///x.jpg', fileName: null, mimeType: null, fileSize: null, width: null, height: null },
+      assets: [{ uri: 'file:///x.jpg', fileName: null, mimeType: null, fileSize: null, width: null, height: null }],
     });
   });
 });
@@ -145,14 +149,85 @@ describe('pickFromLibrary', () => {
     expect(result.kind).toBe('selected');
   });
 
-  it('opens the picker for a single still image', async () => {
+  it('opens the picker for still images, with multiple selection up to the limit', async () => {
     Object.defineProperty(Platform, 'OS', { value: 'ios', configurable: true });
     picker.launchImageLibraryAsync.mockResolvedValue({ canceled: true, assets: null });
 
     await expect(pickFromLibrary()).resolves.toEqual({ kind: 'cancelled' });
     expect(picker.launchImageLibraryAsync).toHaveBeenCalledWith(
-      expect.objectContaining({ mediaTypes: ['images'], allowsMultipleSelection: false, exif: false }),
+      expect.objectContaining({
+        mediaTypes: ['images'],
+        allowsMultipleSelection: true,
+        selectionLimit: MAX_SELECTION,
+        exif: false,
+      }),
     );
+  });
+
+  it('returns every photograph the user chose', async () => {
+    Object.defineProperty(Platform, 'OS', { value: 'ios', configurable: true });
+    picker.launchImageLibraryAsync.mockResolvedValue({
+      canceled: false,
+      assets: [asset, { ...asset, uri: 'file:///back.jpg', fileName: 'back.jpg' }],
+    });
+
+    const result = await pickFromLibrary();
+
+    expect(result.kind).toBe('selected');
+    expect(result.kind === 'selected' && result.assets.map((one) => one.uri)).toEqual([
+      asset.uri,
+      'file:///back.jpg',
+    ]);
+  });
+
+  it('narrows the picker to the room the inspection has left', async () => {
+    Object.defineProperty(Platform, 'OS', { value: 'ios', configurable: true });
+    picker.launchImageLibraryAsync.mockResolvedValue({ canceled: true, assets: null });
+
+    await pickFromLibrary(2);
+
+    // Stopping the user inside the picker is far better than accepting six and
+    // refusing three afterwards.
+    expect(picker.launchImageLibraryAsync).toHaveBeenCalledWith(
+      expect.objectContaining({ selectionLimit: 2, allowsMultipleSelection: true }),
+    );
+  });
+
+  it('never opens a multiple selection when there is room for one', async () => {
+    Object.defineProperty(Platform, 'OS', { value: 'ios', configurable: true });
+    picker.launchImageLibraryAsync.mockResolvedValue({ canceled: true, assets: null });
+
+    await pickFromLibrary(1);
+
+    expect(picker.launchImageLibraryAsync).toHaveBeenCalledWith(
+      expect.objectContaining({ selectionLimit: 1, allowsMultipleSelection: false }),
+    );
+  });
+
+  it('clamps a limit above the maximum rather than passing it through', async () => {
+    Object.defineProperty(Platform, 'OS', { value: 'ios', configurable: true });
+    picker.launchImageLibraryAsync.mockResolvedValue({ canceled: true, assets: null });
+
+    await pickFromLibrary(99);
+
+    expect(picker.launchImageLibraryAsync).toHaveBeenCalledWith(
+      expect.objectContaining({ selectionLimit: MAX_SELECTION }),
+    );
+  });
+
+  it('drops an asset with no uri rather than returning an unusable selection', async () => {
+    Object.defineProperty(Platform, 'OS', { value: 'ios', configurable: true });
+    picker.launchImageLibraryAsync.mockResolvedValue({
+      canceled: false,
+      // A uri-less asset is off-contract for `ImagePickerAsset`, which is the
+      // point: some Android content providers return one, and the cast is how
+      // a test reproduces what the platform actually does.
+      assets: [asset, { width: 10, height: 10 } as unknown as ImagePicker.ImagePickerAsset],
+    });
+
+    const result = await pickFromLibrary();
+
+    expect(result.kind === 'selected' && result.assets).toHaveLength(1);
   });
 
   it('reports a picker failure as an error', async () => {

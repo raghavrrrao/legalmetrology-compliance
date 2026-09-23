@@ -61,6 +61,21 @@ function resolveApiBaseUrl(value, isProduction) {
   return DEFAULT_API_BASE_URL;
 }
 
+/**
+ * Most photographs one inspection may carry.
+ *
+ * Mirrors the backend's `MAX_IMAGES_PER_INSPECTION`
+ * (`backend/apps/images/constants.py`), so the user is stopped while they are
+ * choosing rather than after a multi-megabyte upload. The backend remains the
+ * authority: a request over the limit is a 400 there whatever this says, and
+ * this number never makes an over-long set acceptable.
+ *
+ * Six covers front, back, two side panels, a bottom label and a close-up. It is
+ * not derived from the Rules, which say nothing about how many photographs
+ * anybody takes.
+ */
+export const MAX_INSPECTION_IMAGES = 6;
+
 export const config = Object.freeze({
   /** Base URL of the Django REST API, always with a trailing slash. */
   apiBaseUrl: resolveApiBaseUrl(

@@ -50,7 +50,7 @@ every response. See [docs/deployment.md](../docs/deployment.md).
 |---|---|
 | `/` | Backend health, and the honesty notices about the engine and the rule set. |
 | `/inspections` | The stored assessments, newest first. Each row opens its result. |
-| `/scan` | Upload a label, watch it be read, read the verdict. |
+| `/scan` | Upload the photos of a package, watch them be read, read the verdict. |
 | `/result/:checkId` | A stored result, fetched by id. What a shared link opens. |
 
 `Inspections` and `New scan` are separate navigation items because they are
@@ -61,19 +61,83 @@ parent; `/inspections` is the route that makes that name lead somewhere.
 ## The flow
 
 ```
-file  ->  POST /api/v1/extraction/  ->  ExtractionRun id
-                                    ->  POST /api/v1/compliance/  ->  verdict
+files  ->  POST /api/v1/extraction/  ->  ExtractionRun id
+   (repeated `image` parts)          ->  POST /api/v1/compliance/  ->  verdict
 ```
 
 Two steps rather than the one-shot `POST /api/v1/images/`, because the screen
 shows the reading next to the verdict and a reviewer has to be able to check a
 finding against the text it came from. `useLabelAnalysis` owns the run id and
-guarantees three things: the photograph is uploaded once, one compliance request
-is made per evaluation, and a failed verdict leaves the reading on screen with a
-retry that does not re-upload.
+guarantees three things: the photographs are uploaded once, one compliance
+request is made per evaluation, and a failed verdict leaves the reading on
+screen with a retry that does not re-upload.
 
 `analyseImage` (the one-shot path) is still exported and tested — a caller that
-wants only a verdict should not have to make two requests.
+wants only a verdict should not have to make two requests. It is deliberately
+single-photograph: nothing calls it, and an untested second way to build the
+same multipart body is worth less than none.
+
+## One inspection, several photos
+
+A packaged commodity declares different things on different panels — the net
+quantity on the back, the price on a side, a batch number in small print — so
+`/scan` gathers a **set** of up to six photographs and sends them in **one**
+request, by repeating the `image` part:
+
+```
+FormData
+  image      front.jpg
+  image      back.jpg
+  image      side.jpg
+  view_type  unspecified      ← positional, one per image part
+  view_type  back
+  view_type  unspecified
+```
+
+They become one `ExtractionRun` and one `ComplianceCheck`. Never one inspection
+per photograph, which would report the front panel as failing to declare a net
+quantity that is printed on the back — see
+[docs/api.md → Several photographs, one inspection](../docs/api.md#several-photographs-one-inspection)
+for the backend half.
+
+`useSelectedImages` owns the set: it holds the files, creates and revokes an
+object URL per thumbnail, and decides what may join. Its rules, in the order it
+applies them:
+
+| Refusal | Why, and what the user is told |
+|---|---|
+| Unsupported type | Checked first, because an HEIC is not "the seventh photo" and telling somebody to remove one to make room for it ends in the same refusal. The file is named. |
+| Empty file | A zero-byte file is something the browser genuinely knows about. |
+| Duplicate | Identity is name + size + last-modified — two `File` objects from separate picks are never `===`. A duplicate would have its declarations read and counted twice. |
+| Over six | `MAX_INSPECTION_IMAGES`, mirroring `backend/apps/images/constants.py`. Nothing is silently discarded: what did not fit is named, and the user can remove one and add another. |
+
+**Size is deliberately not checked here.** The limit is a backend environment
+variable that is not exposed to the client, and refusing a file against a number
+invented in the browser would reject uploads the server would have accepted. An
+oversized file is rejected by the API, whose message names the real limit, and
+the rest of the selection survives so the user can drop that one photograph and
+submit the others.
+
+**A failed upload keeps the photographs.** The set lives in the page, not inside
+`useLabelAnalysis`, so an error returns the user to the form with their
+selection intact and the same button resends it. Losing six photographs to a
+dropped connection is the worst thing this screen could do to somebody.
+
+**Which panel each photo shows is stated per photo**, on the thumbnail, because
+the API reads `view_type` positionally. That control used to be a single select
+in *Package details*, which was unambiguous only while an inspection could hold
+one photograph — one value for a set of six would have recorded a claim about
+five of them that nobody made. The sentence it carried moved with it: a
+declaration that is not in the photograph has not been shown to be missing from
+the package.
+
+Accessibility: every remove control is named for its photograph
+(`Remove image 2`), every panel select is named for its photograph, and the
+add-photos control is a `<label>` for the real file input — so it is reachable
+by keyboard and drag-and-drop is never the only way in. The input keeps exactly
+one accessible name at any moment, which is why the add tile stays rendered
+(dimmed, reading *All 6 added*) when the set is full rather than disappearing
+and leaving the input nameless.
 
 ## The history
 
@@ -156,19 +220,50 @@ every width, so the row reflows on a phone instead of scrolling sideways.
 ### The evidence overlay
 
 `ProductImageSerializer` exposes no URL and no endpoint serves the stored bytes
-back, so the picture under the bounding boxes is the `File` the user selected,
-held as an object URL. Boxes are positioned as percentages of
-`image.width` × `image.height`, which is the coordinate space `bounding_box` is
-expressed in, so they stay aligned at any display size with no measurement in
-JavaScript.
+back, so the pictures under the bounding boxes are the `File`s the user
+selected, held as object URLs in submission order. Boxes are positioned as
+percentages of `image.width` × `image.height`, which is the coordinate space
+`bounding_box` is expressed in, so they stay aligned at any display size with no
+measurement in JavaScript.
 
 A finding with no box gets no marker. A box that is not four finite positive
 numbers gets no marker. Coordinates are never inferred — a drawn rectangle is a
 claim about where on the package something was read, and a guessed one would be
 a false claim. On `/result/:checkId` there is no local file, and the panel says
-the photograph is unavailable rather than showing an empty frame.
+the photographs are unavailable rather than showing an empty frame.
+
+**With several photographs, nor is the one a box belongs to inferred.** There is
+one figure per photograph, and a box is drawn only on the one the backend
+attributed it to — a region measured on the back panel drawn over the front
+would point a reviewer at the wrong part of the package, which is worse than
+pointing at nothing because it looks authoritative. `utils/images.js`
+`findingImageId` resolves that from the two places the backend actually records
+it:
+
+1. the violation the finding became — `violations[].evidence[].image_id`;
+2. failing that, the reading it drew on — `extraction.fields_read[].image_id`,
+   matched on `field_key`, and **only when exactly one reading matches**. A
+   declaration printed on two photographed panels produces two readings with the
+   same key, and the engine chose between them by a rule this layer does not
+   reimplement, so nothing is named.
+
+Where neither resolves, no photograph is named anywhere: not on the figure, not
+beside the evidence excerpt, not beside the reading. That includes a finding of
+**absence**, where the backend falls back to the primary photograph — the
+declaration was absent from the whole set, and rendering that as "image 1 is
+missing the net quantity" would be a claim about where a declaration should
+appear on a package that this system has not made. With a single photograph
+nothing is named either, because "Image 1" is noise rather than information.
 
 ## Backward compatibility
+
+`images[]` and `image_id` were added to the extraction and compliance responses
+alongside multi-image support. Against a server that sends neither, the client
+maps the single `image` the response does carry into a set of one — never an
+empty set, which would make the screen say no images were checked — and
+`image_id` maps to `null`, which is rendered as no image label at all rather
+than as a default to the first photograph. A one-photograph upload is
+byte-for-byte the request this client has always sent.
 
 `findings[]` was added to the compliance response after the first version of
 this UI. Against a server that does not send the key at all, `findingsReported`

@@ -43,9 +43,16 @@ logger = logging.getLogger(__name__)
 
 
 class ImageAnalysisView(APIView):
-    """Upload a label photograph and receive its compliance result.
+    """Upload one or more photographs of a package; receive its result.
 
     Returns **201** with the complete `ComplianceCheck`.
+
+    Repeat the `image` part to send several photographs of the same package.
+    They are read into one `ExtractionRun` and evaluated as one inspection,
+    which is the only way a verdict about a *package* can be reached when its
+    declarations are spread across panels. There is no combining of separate
+    results: the rule engine sees every declaration at once, exactly as it does
+    for a single photograph that happens to show them all.
 
     A 201 even when nothing could be read: an unreadable photograph still
     creates a real, stored, retrievable result whose verdict is
@@ -72,8 +79,8 @@ class ImageAnalysisView(APIView):
         uploaded_by = request.user if request.user.is_authenticated else None
 
         try:
-            outcome = analysis_service.analyse_upload(
-                validated["image"],
+            outcome = analysis_service.analyse_uploads(
+                validated["images"],
                 category=category,
                 # Consulted only when no category was stated: the accepted
                 # classification policy may establish one from the reading.
@@ -81,7 +88,7 @@ class ImageAnalysisView(APIView):
                     auto_applicability.establish_category, created_by=uploaded_by
                 ),
                 uploaded_by=uploaded_by,
-                view_type=validated["view_type"],
+                view_types=validated["view_types"],
             )
         except DjangoValidationError as exc:
             # The upload was rejected by apps.images.validators.

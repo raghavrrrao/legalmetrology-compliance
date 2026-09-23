@@ -39,6 +39,18 @@ export interface ExtractedFieldWire {
   normalized_value?: Record<string, unknown> | null;
   confidence?: number | null;
   bounding_box?: BoundingBoxWire | null;
+  /**
+   * Which photograph of the package this was read from. Matches an
+   * `images[].image.id` on the same response.
+   *
+   * Absent on a backend that predates image sets, and null when the source was
+   * not recorded. Neither is a claim that no photograph was involved - the
+   * honest rendering of both is to say nothing about which image.
+   *
+   * The same `field_key` may appear more than once when a declaration is
+   * printed on two photographed panels. Every entry is a real reading.
+   */
+  image_id?: string | null;
 }
 
 export interface UnreadDeclarationWire {
@@ -77,9 +89,33 @@ export interface ExtractionRunWire {
   error_code?: string;
   error_message?: string;
   fields_read?: ExtractedFieldWire[];
+  /**
+   * Every photograph this run read, in submission order. Absent on a backend
+   * that predates image sets, which a client must read as "one photograph,
+   * the one in `image`" rather than as none.
+   */
+  images?: RunImageWire[];
   unread_declarations?: UnreadDeclarationWire[];
   /** Absent on a backend that predates the classifier; null when none was made. */
   product_classification?: ProductClassificationWire | null;
+}
+
+/**
+ * One photograph of an inspection, with how reading that one went.
+ *
+ * `status` here is about this photograph alone and is not the run's. A run may
+ * be `completed` - the label was read well enough to judge against - while one
+ * of its photographs is `failed`, because it was too blurred to contribute.
+ * Both facts are true and the interface shows both.
+ */
+export interface RunImageWire {
+  /** 1-based, and the number shown to a person: "Evidence · Image 2". */
+  position: number;
+  status: string;
+  error_code?: string;
+  error_message?: string;
+  processing_ms?: number | null;
+  image: ProductImageWire;
 }
 
 export interface ProductImageWire {
@@ -102,6 +138,16 @@ export interface EvidenceWire {
   excerpt?: string;
   bounding_box?: BoundingBoxWire | null;
   note?: string;
+  /**
+   * The photograph this evidence should be shown against.
+   *
+   * For a finding drawn from a reading it is the photograph that reading came
+   * from. For a finding of **absence** it is the primary photograph and means
+   * nothing more: the declaration was absent from the whole set, and no panel
+   * is more its evidence than another. A client must never render it as "this
+   * panel is missing the declaration".
+   */
+  image_id?: string | null;
 }
 
 export interface ViolationWire {
@@ -202,7 +248,16 @@ export interface ComplianceCheckWire {
   violations?: ViolationWire[];
   findings?: FindingWire[];
   extraction?: ExtractionRunWire | null;
+  /** The primary photograph - `images[0].image`. Kept for older clients. */
   image?: ProductImageWire | null;
+  /**
+   * Every photograph this one inspection was made from, in order.
+   *
+   * One result for the set, never one per photograph. A client says "3 images
+   * checked" and shows one verdict; showing three would describe something the
+   * backend did not do.
+   */
+  images?: RunImageWire[];
 }
 
 /** The JSON body of `POST /api/v1/compliance/`. */
@@ -232,6 +287,12 @@ export interface ExtractedField {
   /** Null means "not reported", never zero. */
   confidence: number | null;
   boundingBox: BoundingBox | null;
+  /**
+   * Which photograph this was read from, or null when the backend did not say.
+   * Null is "not stated", never "no photograph"; the interface shows no image
+   * label rather than inventing one.
+   */
+  imageId: string | null;
 }
 
 export interface UnreadDeclaration {
@@ -267,12 +328,29 @@ export interface ExtractionRun {
   errorCode: string;
   errorMessage: string;
   fieldsRead: ExtractedField[];
+  /**
+   * Every photograph this reading was made from, in order. Always at least
+   * one against any backend that returned a reading at all - a backend without
+   * image sets is mapped to the single photograph it did report.
+   */
+  images: InspectionImage[];
   unreadDeclarations: UnreadDeclaration[];
   /**
    * Null means no classification was made - an older backend, a pipeline
    * without a classifier, or a classifier that failed. It is never a category.
    */
   productClassification: ProductClassification | null;
+}
+
+/** One photograph of an inspection, and how reading that one went. */
+export interface InspectionImage {
+  /** 1-based, and what a person is shown: "Image 2". */
+  position: number;
+  /** This photograph's own outcome, not the run's. */
+  status: string;
+  errorCode: string;
+  processingMs: number | null;
+  image: ProductImage;
 }
 
 export interface ProductImage {
@@ -290,6 +368,12 @@ export interface Evidence {
   excerpt: string;
   boundingBox: BoundingBox | null;
   note: string;
+  /**
+   * The photograph this evidence belongs to, or null when the backend did not
+   * say. Null is not "no photograph": it is "not stated", and the interface
+   * shows no image label rather than inventing one.
+   */
+  imageId: string | null;
 }
 
 export interface Violation {
@@ -414,5 +498,14 @@ export interface ComplianceResult {
   findings: Finding[];
   violations: Violation[];
   extraction: ExtractionRun | null;
+  /** The primary photograph. `images[0].image` where there is a set. */
   image: ProductImage | null;
+  /**
+   * Every photograph this one inspection was made from, in order.
+   *
+   * One result for the set. The screen says how many images were checked and
+   * shows one verdict - never one verdict per photograph, which is not what
+   * the backend computed.
+   */
+  images: InspectionImage[];
 }

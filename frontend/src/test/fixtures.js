@@ -15,6 +15,11 @@
  * run, not a child of it. `extractionBody` below adds it, because the response
  * to `POST /api/v1/extraction/` does.
  */
+/** The primary photograph's id, and the second and third of a set. */
+export const IMAGE_ID = '77777777-6666-5555-4444-333333333333';
+export const IMAGE_ID_2 = '88888888-7777-6666-5555-444444444444';
+export const IMAGE_ID_3 = '99999999-8888-7777-6666-555555555556';
+
 export function extractionRunBody(overrides = {}) {
   return {
     id: '99999999-8888-7777-6666-555555555555',
@@ -34,11 +39,57 @@ export function extractionRunBody(overrides = {}) {
         normalized_value: { value: 500, unit: 'g' },
         confidence: 0.91,
         bounding_box: { x: 40, y: 60, width: 200, height: 24 },
+        image_id: IMAGE_ID,
       },
     ],
+    images: [runImageBody()],
     unread_declarations: [],
     ...overrides,
   };
+}
+
+/**
+ * One entry of a run's image set, as `RunImageSerializer` shapes it.
+ *
+ * `position` is 1-based and is the number a person is shown; `status` is that
+ * one photograph's own outcome, which may be `failed` while the run as a whole
+ * is `completed`.
+ */
+export function runImageBody(overrides = {}) {
+  return {
+    position: 1,
+    status: 'completed',
+    error_code: '',
+    error_message: '',
+    processing_ms: 1100,
+    image: imageBody(),
+    ...overrides,
+  };
+}
+
+/**
+ * The image set of an inspection that photographed three panels.
+ *
+ * Deliberately not three copies of one image: the ids differ, because the whole
+ * point of the set is that a reading can be traced to the panel it came from,
+ * and a fixture whose photographs were indistinguishable could not tell a
+ * correct attribution from a broken one.
+ */
+export function imageSetBody() {
+  return [
+    runImageBody({
+      position: 1,
+      image: imageBody({ id: IMAGE_ID, original_filename: 'front.png' }),
+    }),
+    runImageBody({
+      position: 2,
+      image: imageBody({ id: IMAGE_ID_2, original_filename: 'back.png' }),
+    }),
+    runImageBody({
+      position: 3,
+      image: imageBody({ id: IMAGE_ID_3, original_filename: 'side.png' }),
+    }),
+  ];
 }
 
 /** The body of `POST /api/v1/extraction/`: the run, plus the image it read. */
@@ -48,7 +99,7 @@ export function extractionBody(overrides = {}) {
 
 export function imageBody(overrides = {}) {
   return {
-    id: '77777777-6666-5555-4444-333333333333',
+    id: IMAGE_ID,
     original_filename: 'label.png',
     image_format: 'png',
     width: 800,
@@ -282,8 +333,64 @@ export function complianceBody(overrides = {}) {
     findings: [],
     extraction: extractionRunBody(),
     image: imageBody(),
+    images: [runImageBody()],
     ...overrides,
   };
+}
+
+/**
+ * A result made from three photographs of one package.
+ *
+ * One verdict, one summary, one set of findings — and three images. That is the
+ * shape a screen has to render correctly: the count changes, nothing else does.
+ * The MRP is read off the back panel and the failing finding's evidence is
+ * attributed there, so a test can tell a correct attribution from a default.
+ */
+export function multiImageComplianceBody(overrides = {}) {
+  const images = imageSetBody();
+  return complianceBody({
+    images,
+    extraction: extractionRunBody({
+      images,
+      fields_read: [
+        {
+          field_key: 'net_quantity',
+          raw_value: 'Net Qty: 500 g',
+          normalized_value: { value: 500, unit: 'g' },
+          confidence: 0.91,
+          bounding_box: { x: 40, y: 60, width: 200, height: 24 },
+          image_id: IMAGE_ID,
+        },
+        {
+          field_key: 'retail_sale_price',
+          raw_value: 'MRP Rs. 149.00',
+          normalized_value: { amount: 149 },
+          confidence: 0.88,
+          bounding_box: { x: 10, y: 20, width: 120, height: 20 },
+          image_id: IMAGE_ID_2,
+        },
+      ],
+    }),
+    violations: [
+      {
+        id: 10,
+        rule_code: 'LM-PC-0002',
+        legal_reference: 'Rule 6(1)(e)',
+        severity: 'high',
+        field_key: 'retail_sale_price',
+        message: 'The retail sale price is not declared as inclusive of taxes.',
+        evidence: [
+          {
+            excerpt: 'MRP Rs. 149.00',
+            bounding_box: { x: 10, y: 20, width: 120, height: 20 },
+            note: '',
+            image_id: IMAGE_ID_2,
+          },
+        ],
+      },
+    ],
+    ...overrides,
+  });
 }
 
 /**

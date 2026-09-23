@@ -23,6 +23,23 @@
  *   is requested, so the app never asks for access to the whole library it
  *   has no need to read.
  *
+ * Selecting more than one
+ * -----------------------
+ * An inspection may carry several photographs of the same package, so the
+ * photo picker is opened with multiple selection enabled and a limit. Both
+ * system pickers support it natively - iOS PHPicker and the Android Photo
+ * Picker - so this needs no custom grid and no extra permission.
+ *
+ * The **camera** stays one photograph per launch, and that is the platform's
+ * shape rather than a limitation of this file: neither system camera returns a
+ * batch. Taking several is taking one, returning to the app, and tapping add
+ * again - which is also the only arrangement in which the user gets to see
+ * each photograph before deciding to keep it.
+ *
+ * `PickResult` carries a list in every case, including the camera's one. A
+ * separate single-asset shape would mean two result vocabularies for the same
+ * question, and every caller branching on which it got.
+ *
  * Nothing here validates the image - see `imageValidation.ts` - and nothing
  * here uploads.
  */
@@ -33,8 +50,14 @@ import { Platform } from 'react-native';
 import type { PickedAsset } from './imageValidation';
 
 export type PickResult =
-  /** The user chose a photograph. Not yet validated. */
-  | { kind: 'selected'; asset: PickedAsset }
+  /**
+   * The user chose at least one photograph. Not yet validated.
+   *
+   * `assets` is always non-empty - a picker that returns nothing without
+   * having been cancelled is reported as an error, not as an empty selection.
+   * The camera returns exactly one.
+   */
+  | { kind: 'selected'; assets: PickedAsset[] }
   /** The user dismissed the camera or picker. Not an error. */
   | { kind: 'cancelled' }
   /**
@@ -55,6 +78,16 @@ export type PickResult =
  */
 const CAMERA_JPEG_QUALITY = 0.85;
 
+/**
+ * How many photographs the gallery picker will return in one go.
+ *
+ * Mirrors the backend's `MAX_IMAGES_PER_INSPECTION`, so the system picker stops
+ * the user at the same number the server would - a refusal inside the picker,
+ * where the user is choosing, is far better than an error after the upload.
+ * The caller reduces it further when some photographs have already been added.
+ */
+export const MAX_SELECTION = 6;
+
 function toPickedAsset(asset: ImagePicker.ImagePickerAsset): PickedAsset {
   return {
     uri: asset.uri,
@@ -70,13 +103,16 @@ function fromPickerResult(result: ImagePicker.ImagePickerResult): PickResult {
   if (result.canceled) {
     return { kind: 'cancelled' };
   }
-  const asset = result.assets?.[0];
-  if (!asset || typeof asset.uri !== 'string' || !asset.uri) {
-    // A non-cancelled result with nothing in it: treat as the picker failing
-    // rather than as a selection the app cannot use.
+  const assets = (result.assets ?? [])
+    .filter((asset) => typeof asset?.uri === 'string' && asset.uri)
+    .map(toPickedAsset);
+  if (assets.length === 0) {
+    // A non-cancelled result with nothing usable in it: treat as the picker
+    // failing rather than as a selection the app cannot use. Reporting it as
+    // an empty selection would silently drop the user's choice.
     return { kind: 'error' };
   }
-  return { kind: 'selected', asset: toPickedAsset(asset) };
+  return { kind: 'selected', assets };
 }
 
 function isCameraUnavailable(cause: unknown): boolean {
@@ -123,8 +159,14 @@ export async function captureFromCamera(): Promise<PickResult> {
   }
 }
 
-/** Choose an existing photograph with the system photo picker. */
-export async function pickFromLibrary(): Promise<PickResult> {
+/**
+ * Choose existing photographs with the system photo picker.
+ *
+ * @param limit How many may be chosen. Clamped to at least one, and to
+ *   `MAX_SELECTION` - the caller passes the room it has left so the picker
+ *   itself stops the user rather than the app rejecting the extras afterwards.
+ */
+export async function pickFromLibrary(limit: number = MAX_SELECTION): Promise<PickResult> {
   if (Platform.OS === 'android') {
     // A no-op on Android 13+ (the module returns granted without prompting);
     // the storage permission on older versions.
@@ -139,10 +181,16 @@ export async function pickFromLibrary(): Promise<PickResult> {
     }
   }
 
+  const selectionLimit = Math.max(1, Math.min(limit, MAX_SELECTION));
+
   try {
     const result = await ImagePicker.launchImageLibraryAsync({
       mediaTypes: ['images'],
-      allowsMultipleSelection: false,
+      // A package declares different things on different panels, so several
+      // photographs of one package is the ordinary case rather than an
+      // advanced one.
+      allowsMultipleSelection: selectionLimit > 1,
+      selectionLimit,
       allowsEditing: false,
       exif: false,
       base64: false,

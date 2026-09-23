@@ -18,6 +18,22 @@ at individual readings. The one place JSON is used is `ExtractionRun.raw_output`
 - genuinely unstructured, engine-specific diagnostic output whose shape we
 cannot know in advance, kept so field extraction can be re-run without
 re-running OCR.
+
+**One run may read several photographs of the same package.** A packaged
+commodity declares different things on different panels, so an inspection is a
+set of images, not one. That set is modelled as `ExtractionRunImage` rows
+hanging off the run rather than as several runs, because the alternative -
+one run per photograph - would mean one `ComplianceCheck` per photograph, and
+a package whose net quantity is on the back would be reported as failing the
+check made against its front. The rule engine judges the *package*, so it has
+to see every declaration at once.
+
+`ExtractionRun.image` is kept, and is the image at position 1. It is the
+primary photograph, not the only one: every query, index and serializer
+written before the set existed still means what it meant, and a single-image
+inspection is exactly a set of one. `ExtractedLabelField.image` records which
+photograph each declaration was actually read from, which is what lets a
+finding cite "image 2" rather than "the package".
 """
 
 from django.db import models
@@ -43,6 +59,12 @@ class ExtractionRun(UUIDPrimaryKeyModel, TimeStampedModel):
         "images.ProductImage",
         on_delete=models.CASCADE,
         related_name="extraction_runs",
+        help_text=(
+            "The primary photograph - position 1 of this run's image set. Not "
+            "the only one: see ExtractionRunImage. Kept as a direct foreign "
+            "key so that every query, index and serializer written before a "
+            "run could read more than one photograph still resolves."
+        ),
     )
 
     engine_name = models.CharField(
@@ -118,6 +140,102 @@ class ExtractionRun(UUIDPrimaryKeyModel, TimeStampedModel):
         return self.status == self.Status.COMPLETED
 
 
+class ExtractionRunImage(TimeStampedModel):
+    """One photograph in one run's image set, and how reading it went.
+
+    The membership row for a multi-image inspection. It exists rather than a
+    plain `ManyToManyField` because two things about the membership are worth
+    recording and a bare join table has nowhere to put them:
+
+    **`position`** is the number a person sees. The interface labels evidence
+    "Image 2", and that number has to mean the same thing on every screen and
+    after every reload, so it is stored rather than derived from an ordering
+    that a new index could quietly change. It is 1-based because it is read by
+    people, and position 1 is always `ExtractionRun.image`.
+
+    **The per-image outcome.** One photograph of a set can be unreadable while
+    the others are fine. The run's own `status` answers "was this label read
+    well enough to judge against", which is a question about the set; these
+    columns answer "what happened to this photograph", which is what tells a
+    submitter that image 3 was too blurred to use and the other two were read.
+    Collapsing the two would either fail an inspection over one bad photograph
+    or hide the bad photograph entirely.
+
+    Uses the default integer primary key: these rows are always reached through
+    their run and never addressed in a URL.
+    """
+
+    class Status(models.TextChoices):
+        """What the pipeline made of this one photograph.
+
+        A subset of `ExtractionRun.Status` - there is no PENDING or RUNNING,
+        because a row is written only once the image has been through the
+        pipeline or the pipeline has refused it.
+        """
+
+        #: Read, and text was recognised.
+        COMPLETED = "completed", "Completed"
+        #: Ran and recognised nothing usable.
+        EMPTY = "empty", "Empty"
+        #: Could not be read at all. See `error_code`.
+        FAILED = "failed", "Failed"
+
+    run = models.ForeignKey(
+        ExtractionRun,
+        on_delete=models.CASCADE,
+        related_name="run_images",
+    )
+    image = models.ForeignKey(
+        "images.ProductImage",
+        on_delete=models.CASCADE,
+        related_name="run_memberships",
+    )
+
+    position = models.PositiveSmallIntegerField(
+        help_text=(
+            "1-based place of this photograph in the set, as the submitter "
+            "supplied it. Position 1 is the run's primary image. Stored, not "
+            "derived: it is the number the interface shows beside a piece of "
+            "evidence."
+        ),
+    )
+
+    status = models.CharField(
+        max_length=16,
+        choices=Status.choices,
+        default=Status.COMPLETED,
+        help_text="What the pipeline made of this photograph on its own.",
+    )
+    error_code = models.CharField(
+        max_length=64,
+        blank=True,
+        help_text=(
+            "Stable code from labelextract.exceptions when this photograph "
+            "failed, even though others in the set may have been read."
+        ),
+    )
+    error_message = models.TextField(blank=True)
+    processing_ms = models.PositiveIntegerField(
+        null=True,
+        blank=True,
+        help_text="Wall-clock time the pipeline spent on this photograph.",
+    )
+
+    class Meta:
+        ordering = ["position"]
+        constraints = [
+            models.UniqueConstraint(
+                fields=["run", "position"], name="run_image_position_unique"
+            ),
+            models.UniqueConstraint(
+                fields=["run", "image"], name="run_image_member_unique"
+            ),
+        ]
+
+    def __str__(self) -> str:
+        return f"Image {self.position} of {self.run_id} ({self.status})"
+
+
 class ExtractedLabelField(TimeStampedModel):
     """One declaration read off the label during a run.
 
@@ -132,6 +250,26 @@ class ExtractedLabelField(TimeStampedModel):
         ExtractionRun,
         on_delete=models.CASCADE,
         related_name="fields",
+    )
+    image = models.ForeignKey(
+        "images.ProductImage",
+        null=True,
+        blank=True,
+        on_delete=models.SET_NULL,
+        related_name="extracted_fields",
+        help_text=(
+            "The photograph this declaration was read from. The link that "
+            "lets a finding say which image supplied its evidence, rather "
+            "than only that the package showed it somewhere.\n\n"
+            "Null means the source was not recorded - every reading made "
+            "before a run could hold more than one photograph, and any "
+            "reading whose image row has since been deleted. Null is never a "
+            "claim that no image was involved, and a client must not present "
+            "it as one.\n\n"
+            "SET_NULL rather than CASCADE: deleting an image must not delete "
+            "the reading that was made from it, because findings snapshot "
+            "that reading and would lose their evidence with it."
+        ),
     )
     field_key = models.CharField(
         max_length=64,
@@ -176,6 +314,9 @@ class ExtractedLabelField(TimeStampedModel):
         ordering = ["field_key"]
         indexes = [
             models.Index(fields=["run", "field_key"], name="field_run_key_idx"),
+            # `CheckContext.from_run` reads every field of a run and resolves
+            # duplicate keys by the position of the image each came from.
+            models.Index(fields=["run", "image"], name="field_run_image_idx"),
         ]
 
     def __str__(self) -> str:

@@ -6,11 +6,19 @@
       -> apps.compliance.services.engine       applicable rules, findings, verdict
       -> ComplianceCheck
 
-Three entry points into that line, differing only in where they join it:
+Four entry points into that line, differing only in where they join it:
 
-    analyse_upload(file)   the whole line, from an uploaded photograph
-    analyse_image(image)   from a stored image: re-read it, then judge
-    evaluate_run(run)      from a stored reading: judge it, re-reading nothing
+    analyse_uploads(files)  the whole line, from the photographs of one package
+    analyse_upload(file)    the same, for a single photograph
+    analyse_image(image)    from a stored image: re-read it, then judge
+    evaluate_run(run)       from a stored reading: judge it, re-reading nothing
+
+`analyse_uploads` is the multi-photograph form and `analyse_upload` is the set
+of one; the second delegates to the first. Several photographs produce **one**
+inspection - one `ExtractionRun`, one `ComplianceCheck`, one verdict - because
+a packaged commodity declares different things on different panels and the
+Rules bind the package, not the photograph. Nothing here merges separate
+results: the rule engine is run once, over every declaration that was read.
 
 `evaluate_run` is what `POST /api/v1/compliance/` calls, and it is the reason
 `POST /api/v1/extraction/` is not a dead end: a caller can look at a reading
@@ -81,11 +89,22 @@ class AnalysisOutcome:
     Thin on purpose, for the same reason `ExtractionOutcome` is: everything
     worth knowing already hangs off these three rows, and copying any of it
     here would create a second copy that can drift from the database.
+
+    `image` is the primary photograph and `images` is the whole set, in the
+    order it was submitted. One `check` for the set, always: that is what makes
+    this one inspection rather than several presented together.
     """
 
     image: ProductImage
     run: ExtractionRun
     check: ComplianceCheck
+    #: Every photograph of this inspection, in position order. Always at least
+    #: one, and `images[0] is image`.
+    images: tuple[ProductImage, ...] = ()
+
+    def __post_init__(self) -> None:
+        if not self.images:
+            object.__setattr__(self, "images", (self.image,))
 
     @property
     def product(self) -> Product | None:
@@ -104,6 +123,10 @@ def analyse_upload(
     engine_version: str | None = None,
 ) -> AnalysisOutcome:
     """Store `upload`, extract from it, and evaluate the result against the rules.
+
+    One photograph. `analyse_uploads` is the same call for the several
+    photographs of one package, and this is the set of one - it delegates, so
+    a single upload takes exactly the path a set does.
 
     Args:
         upload: The file as received. Validated by the ingestion service; this
@@ -140,14 +163,79 @@ def analyse_upload(
             failed run is already recorded; this is re-raised because it is a
             bug rather than an unreadable photograph.
     """
+    return analyse_uploads(
+        [upload],
+        product=product,
+        category=category,
+        identify=identify,
+        uploaded_by=uploaded_by,
+        view_types=[view_type],
+        engine_name=engine_name,
+        engine_version=engine_version,
+    )
+
+
+def analyse_uploads(
+    uploads,
+    *,
+    product: Product | None = None,
+    category: ProductCategory | None = None,
+    identify=None,
+    uploaded_by=None,
+    view_types=None,
+    engine_name: str | None = None,
+    engine_version: str | None = None,
+) -> AnalysisOutcome:
+    """Store every photograph of one package, read them all, and judge once.
+
+    The multi-photograph form of `analyse_upload`, and the composition this
+    module exists for. The photographs go through ingestion one by one, into
+    **one** extraction run, and that run is evaluated **once**.
+
+    That last point is the whole design and is worth stating plainly: there is
+    no second verdict to reconcile and no merging of results. The rule engine
+    receives one reading of one package, assembled from every panel that was
+    photographed, and answers the question it has always answered. A net
+    quantity printed on the back is a declaration the package makes, and an
+    architecture that evaluated each photograph separately would report the
+    front as failing to declare it.
+
+    Args:
+        uploads: The files as received, in the order the submitter supplied
+            them. The first is the primary photograph. At least one.
+        product: An existing product these photographs show, when known.
+        category: Used only when `product` is None. See `analyse_upload`.
+        identify: Called with the stored run when neither `product` nor
+            `category` was given. Consulted once for the inspection, not once
+            per photograph - the classification is of the package.
+        uploaded_by: The authenticated user, or None.
+        view_types: Which panel each photograph shows, positionally. Padded
+            with `unspecified`, never repeated.
+        engine_name: Override the configured pipeline. For comparing engines.
+        engine_version: Override the configured pipeline version.
+
+    Returns:
+        An `AnalysisOutcome` carrying every stored photograph and the one
+        `ComplianceCheck` made from all of them.
+
+    Raises:
+        django.core.exceptions.ValidationError: a photograph was rejected. No
+            run and no check exist. See `ingest_and_extract_all` for what
+            happens to the photographs already stored when a later one is
+            rejected.
+        ValueError: the set is empty or larger than the documented maximum.
+        MalformedExtractionResult: an engine broke its output contract. The
+            failed run is already recorded; re-raised because it is a bug
+            rather than an unreadable photograph.
+    """
     if product is None and category is not None:
         product = _product_for_category(category, created_by=uploaded_by)
 
-    outcome = extraction_service.ingest_and_extract(
-        upload,
+    outcome = extraction_service.ingest_and_extract_all(
+        uploads,
         product=product,
         uploaded_by=uploaded_by,
-        view_type=view_type,
+        view_types=view_types,
         engine_name=engine_name,
         engine_version=engine_version,
     )
@@ -160,13 +248,20 @@ def analyse_upload(
     )
 
     logger.info(
-        "Analysed image %s: extraction=%s, result=%s (%d rule(s) evaluated)",
+        "Analysed %d image(s), primary %s: extraction=%s, result=%s "
+        "(%d rule(s) evaluated)",
+        len(outcome.images),
         outcome.image.pk,
         outcome.run.status,
         check.result,
         check.rules_evaluated,
     )
-    return AnalysisOutcome(image=outcome.image, run=outcome.run, check=check)
+    return AnalysisOutcome(
+        image=outcome.image,
+        run=outcome.run,
+        check=check,
+        images=outcome.images,
+    )
 
 
 def evaluate_run(

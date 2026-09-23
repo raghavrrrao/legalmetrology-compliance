@@ -328,19 +328,40 @@ def _record_violations(
             field_key=outcome.field_key or "",
             message=outcome.message,
         )
+        reading = context.field(outcome.field_key) if outcome.field_key else None
         # Evidence is attached even for an absence: what we DID read is the
         # justification for concluding the declaration was not there.
         ComplianceEvidence.objects.create(
             violation=violation,
-            extracted_field=(
-                context.field(outcome.field_key) if outcome.field_key else None
-            ),
-            image=run.image,
+            extracted_field=reading,
+            image=_evidence_image(reading, run),
             excerpt=outcome.evidence_excerpt,
             bounding_box=outcome.bounding_box,
         )
         violations[rule.code] = violation
     return violations
+
+
+def _evidence_image(reading, run: ExtractionRun):
+    """Which photograph this evidence should be shown against.
+
+    The one the reading was taken from, when the evidence *is* a reading. An
+    inspection may carry several photographs, and a bounding box read off the
+    back panel drawn over the front one would point a reviewer at the wrong
+    part of the package - which is worse than pointing at none, because it
+    looks authoritative.
+
+    Falls back to the primary photograph for an absence, where there is no
+    reading to have a source, and for a reading made before the source was
+    recorded. That is the same answer this has always given, and it stays
+    honest: a declaration absent from the inspection is absent from the whole
+    set, so no single photograph is more its evidence than another. The
+    interface must not turn that fallback into a claim that the primary
+    photograph is where the declaration should have been.
+    """
+    if reading is not None and reading.image_id is not None:
+        return reading.image
+    return run.image
 
 
 #: `CheckStatus` is the checks package's runtime vocabulary; `Status` is the

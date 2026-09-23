@@ -14,14 +14,24 @@ import { fireEvent, render, screen } from '@testing-library/react-native';
 import { SafeAreaProvider } from 'react-native-safe-area-context';
 
 import { ResultScreen } from './ResultScreen';
-import { assessmentBody, classificationBody, complianceBody, extractionRunBody } from '../../tests/fixtures';
+import {
+  assessmentBody,
+  classificationBody,
+  complianceBody,
+  extractionRunBody,
+  multiImageComplianceBody,
+} from '../../tests/fixtures';
 import { fakeAnalysis, PHONE_METRICS, stubNavigation } from '../../tests/render';
 import { mapResult } from '../api/compliance';
 import type { ComplianceCheckWire } from '../types/api';
 
 const mockUseAnalysis = jest.fn();
+const mockStartOver = jest.fn();
 jest.mock('../hooks/AnalysisContext', () => ({
   useAnalysis: () => mockUseAnalysis(),
+  // Discards the photographs and the result together. A screen that offered
+  // only "reset" would leave the user's photos behind for the next inspection.
+  useStartOver: () => mockStartOver,
 }));
 
 async function renderResult(body: ComplianceCheckWire | null, overrides: Parameters<typeof fakeAnalysis>[0] = {}) {
@@ -260,16 +270,118 @@ describe('ResultScreen', () => {
   });
 
   it('starts over from the footer', async () => {
-    const { analysis, navigation } = await renderResult(complianceBody());
+    const { navigation } = await renderResult(complianceBody());
 
     await fireEvent.press(screen.getByTestId('scan-another'));
 
-    expect(analysis.reset).toHaveBeenCalled();
+    // Both the result and the photographs it was made from, so the next
+    // inspection starts empty rather than inheriting a package.
+    expect(mockStartOver).toHaveBeenCalled();
     expect(navigation.popToTop).toHaveBeenCalled();
   });
 
   it('handles having no result at all', async () => {
     await renderResult(null);
     expect(screen.getByText('No result to show')).toBeOnTheScreen();
+  });
+
+  // --- several photographs, one result -------------------------------------
+
+  describe('an inspection made from several photos', () => {
+    it('says how many images were checked, and that they are one package', async () => {
+      await renderResult(multiImageComplianceBody());
+
+      expect(screen.getByTestId('images-checked')).toHaveTextContent('3 images checked', {
+        exact: false,
+      });
+      expect(screen.getByTestId('images-checked')).toHaveTextContent('one package, one result', {
+        exact: false,
+      });
+    });
+
+    it('shows exactly one verdict for the set', async () => {
+      await renderResult(multiImageComplianceBody());
+
+      // Three verdicts would describe an analysis the backend did not perform:
+      // it evaluated one reading, assembled from three panels.
+      expect(screen.getAllByTestId('verdict-badge')).toHaveLength(1);
+      expect(screen.getAllByTestId('verdict-summary')).toHaveLength(1);
+    });
+
+    it('says which photo each declaration was read from', async () => {
+      await renderResult(multiImageComplianceBody());
+
+      expect(screen.getByTestId('extracted-net_quantity')).toHaveTextContent('Image 1', {
+        exact: false,
+      });
+      // The MRP was read off the back panel, and the screen says so.
+      expect(screen.getByTestId('extracted-mrp')).toHaveTextContent('Image 2', { exact: false });
+    });
+
+    it('cites the photograph behind a finding that has one', async () => {
+      await renderResult(multiImageComplianceBody());
+
+      // Finding 3 is the manufacture-date failure, whose violation's evidence
+      // the fixture attributes to the second photograph.
+      expect(screen.getByTestId('finding-3')).toHaveTextContent('What was read · Image 2', {
+        exact: false,
+      });
+    });
+
+    it('cites no photograph on a finding the backend did not attribute', async () => {
+      await renderResult(multiImageComplianceBody());
+
+      // A passing finding has no violation, so there is no evidence row to
+      // carry an image - and the card must not guess one.
+      expect(screen.getByTestId('finding-1')).not.toHaveTextContent('Image', { exact: false });
+    });
+
+    it('lists the photos used, and how each one fared on its own', async () => {
+      const body = multiImageComplianceBody();
+      body.images![1] = { ...body.images![1], status: 'failed', error_code: 'ocr_failed' };
+
+      await renderResult(body);
+
+      // The run read the package well enough to judge; one photograph still
+      // contributed nothing, and hiding that would leave the user unable to
+      // act on it.
+      expect(screen.getByTestId('image-outcome-1')).toHaveTextContent('Read', { exact: false });
+      expect(screen.getByTestId('image-outcome-2')).toHaveTextContent('Could not be read', {
+        exact: false,
+      });
+      expect(screen.getByTestId('image-outcome-3')).toHaveTextContent('Read', { exact: false });
+    });
+
+    it('shows no per-photo list for a single-image inspection', async () => {
+      await renderResult(complianceBody());
+
+      expect(screen.queryByTestId('images-card')).toBeNull();
+      expect(screen.getByTestId('images-checked')).toHaveTextContent('1 image checked', {
+        exact: false,
+      });
+    });
+
+    it('names no photograph anywhere in a single-image inspection', async () => {
+      await renderResult(complianceBody());
+
+      // "Image 1" beside every finding of a one-photo inspection is noise.
+      expect(screen.getByTestId('extracted-net_quantity')).not.toHaveTextContent('Image 1', {
+        exact: false,
+      });
+    });
+
+    it('renders a result from a backend that sends no image set at all', async () => {
+      const body = complianceBody();
+      delete body.images;
+
+      await renderResult(body);
+
+      // Falls back to the single `image` the response does carry, which is the
+      // set of one it always was - never an empty set, which would say no
+      // photographs were checked.
+      expect(screen.getByTestId('images-checked')).toHaveTextContent('1 image checked', {
+        exact: false,
+      });
+    });
   });
 });

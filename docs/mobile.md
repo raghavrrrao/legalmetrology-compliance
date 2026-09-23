@@ -8,16 +8,25 @@ OCR and nothing learned runs on the phone.
 ```
 Phone                                   Backend (one container, docs/deployment.md)
 ─────                                   ────────────────────────────────────────────
-camera / gallery
-  → validate (format, size)             POST /api/v1/extraction/
-  → upload photograph  ────────────────►  validate ─ store ─ OCR ─ field extraction
-                                           ─ normalise ─ product classification
-  ◄──────────────────────────────────── 201 ExtractionRun (+ product_classification)
+camera / gallery (1–6 photos)
+  → validate (format, size) each        POST /api/v1/extraction/
+  → upload them in ONE request ────────►  validate ─ store ─ OCR ─ field extraction
+    (the `image` part, repeated)           ─ normalise ─ product classification
+                                           …once per photo, into ONE run
+  ◄──────────────────────────────────── 201 ExtractionRun (+ images[], product_classification)
   → evaluate the run id  ──────────────► POST /api/v1/compliance/
                                            applicability ─ deterministic rule engine
-  ◄──────────────────────────────────── 201 ComplianceCheck (verdict, findings, reading)
-result screen: verdict, summary, findings, what was read, classification (suggestion)
+  ◄──────────────────────────────────── 201 ComplianceCheck (one verdict, findings, reading)
+result screen: "3 images checked", one verdict, summary, findings, what was read
 ```
+
+**One inspection, however many photographs.** A packaged commodity declares
+different things on different panels, so the app gathers a *set* of photographs
+and sends them together. They become one `ExtractionRun` and one
+`ComplianceCheck` - never one inspection per photograph, which would report the
+front panel as failing to declare a net quantity printed on the back. See
+[Several photographs, one inspection](api.md#several-photographs-one-inspection)
+for the request shape and the guarantees around it.
 
 This document covers what the app is, how to run it, and what it does not do.
 The API it consumes is documented in [api.md](api.md); the reasons the engine
@@ -31,7 +40,7 @@ than this:
 
 | Check | Evidence |
 |---|---|
-| Unit, hook, screen and navigation tests | `npm test` in `mobile/`: 16 suites, 196 tests |
+| Unit, hook, screen and navigation tests | `npm test` in `mobile/`: 19 suites, 280 tests |
 | Type check and lint | `npm run typecheck`, `npm run lint` |
 | Expo project configuration | `npx expo-doctor`: 21/21 checks |
 | API contract | The mappers were run over real responses from a local backend (`tesseract` 0.4.0) - extraction, compliance with and without a category, and the 400/404 error envelopes |
@@ -102,12 +111,15 @@ mobile/
     ├── config/env.ts       the ONLY reader of process.env; API base URL; upload limit
     ├── types/api.ts        the API contract: wire shapes and their camelCase mappings
     ├── services/           imagePicker.ts (camera/library + permissions), imageValidation.ts
-    ├── hooks/              useLabelAnalysis.ts (the two-step flow), useImageSelection.ts, AnalysisContext.tsx
+    ├── hooks/              useLabelAnalysis.ts (the two-step flow), useInspectionImages.ts
+    │                       (the set being composed), useImageSelection.ts, AnalysisContext.tsx
     ├── navigation/         RootNavigator.tsx, types.ts
-    ├── screens/            HomeScreen, PreviewScreen, AnalysisScreen, ResultScreen
+    ├── screens/            HomeScreen, ScanScreen, AnalysisScreen, ResultScreen
     ├── components/         Button, StatusBadge, Card, Callout, ProgressSteps, FindingCard,
-    │                       ClassificationCard, ExtractedFieldsList, KeyValue, PhotoTips, Screen
-    ├── utils/              errors.ts (user-facing messages), status.ts (tones), format.ts
+    │                       ImageTray, ClassificationCard, ExtractedFieldsList, KeyValue,
+    │                       PhotoTips, ScanPreview, Screen
+    ├── utils/              errors.ts (user-facing messages), status.ts (tones), format.ts,
+    │                       images.ts (naming the photo a piece of evidence came from)
     └── theme.ts            colours, spacing, type, minimum touch target
 ```
 
@@ -121,7 +133,15 @@ web client.
 - `src/services/` talks to the platform (picker, permissions) and pre-checks a
   picked file. The backend is still the authority on every upload.
 - `src/hooks/useLabelAnalysis.ts` sequences the two requests and holds the
-  run id, so the photograph is uploaded once and a re-check never re-uploads.
+  run id, so the photographs are uploaded once and a re-check never re-uploads.
+  It also keeps the set that was submitted, so a retry after a failed upload
+  resends exactly those photographs.
+- `src/hooks/useInspectionImages.ts` owns the set being gathered: add, remove,
+  de-duplicate by uri, and stop at the backend's maximum. It lives in
+  `AnalysisProvider` rather than in a screen so the photographs survive
+  navigating to the progress screen and back after a failure - losing four
+  panels to a dropped connection is the worst thing this feature could do to
+  someone.
 - `src/screens/` render what came back. **No screen computes a verdict, a
   score, a count or an outcome.** The counts shown are the backend's `rules_*`
   fields; the tones in `utils/status.ts` are looked up from a value the backend
@@ -130,36 +150,87 @@ web client.
 ## Screens
 
 ```
-Home ─────────► Preview ─────────► Analysis ─────────► Result
-Take photo      Use this photo     Reading the label   verdict + summary
-Choose from     Retake             Checking the        findings by status
-gallery         Product type       requirements        what was read
-tips            (optional)         error + retry       classification (suggestion)
-                                                       technical details
-                                                       Scan another label
+Home ─────────► Scan ──────────────► Analysis ─────────► Result
+Take photo      [1][2][3][+ Add]     Reading 3 photos    "3 images checked"
+Choose photos   remove any           Checking the        one verdict + summary
+tips            Check package · 3    requirements        findings by status
+                Product type         error + retry       what was read (· Image n)
+                (optional)                               photos used
+                                                         classification (suggestion)
+                                                         technical details
 ```
 
 - **Home.** Two buttons and five lines of advice (flat label, sharp text, no
-  glare, whole panel, hold steady). A refused permission shows a message; when
-  the system will no longer ask, an *Open Settings* button.
-- **Preview.** The photograph, its size, and an optional product category
-  code. It is a text field rather than a list because no endpoint lists
-  categories (the web client's field is a text input for the same reason - see
-  *Gaps* below). Blank is supported: the result then says the product type was
-  not known.
-- **Analysis.** "Analysing label…" with two steps that are the two real
-  requests. The first covers upload, OCR and field extraction, which happen
+  glare, whole panel, hold steady). Either button starts a **new** inspection -
+  the previous result and any photographs left over from it are cleared - and
+  the gallery button accepts several photographs at once. A refused permission
+  shows a message; when the system will no longer ask, an *Open Settings*
+  button.
+- **Scan.** Where the set is composed, and the screen the feature is built
+  around.
+  - The first photograph is shown large, so the user can see whether the label
+    is actually readable; a row of 96 px thumbnails could not settle that.
+  - Below it, every photograph as a numbered thumbnail with its own remove
+    control, and a *+ Add* tile at the end of the row. The number is the
+    position the backend will use, so "Image 2" here and "Evidence · Image 2"
+    on the result screen are the same photograph.
+  - The primary action states the count - *Check package · 3 photos* - because
+    it is the last thing read before the tap, and it is where an unintended
+    submission gets caught.
+  - With no photographs the action is disabled and the screen says at least one
+    is needed, rather than leaving a dead button.
+  - An optional product category code. It is a text field rather than a list
+    because no endpoint lists categories (the web client's field is a text
+    input for the same reason - see *Gaps* below). Blank is supported: the
+    result then says the product type was not known.
+- **Analysis.** "Analysing label…" with **two** steps, which are the two real
+  requests - "Reading 3 photos" and "Checking the requirements". The first
+  covers upload, OCR and field extraction for the whole set, which happen
   inside one request on the server and cannot be told apart from the client;
-  the second is the rule engine. Nothing is a timer or a percentage. On
-  failure: a plain message, *Try again* where a retry could work, and *Choose
-  another photo*.
-- **Result.** The verdict badge uses the backend's `result_display` and the
-  summary is always beside it. Findings are grouped Failed → Needs review →
-  Passed → Not applicable, each card carrying the rule's title, clause, the
-  backend's message, the requirement in the rule's words, and the evidence
-  excerpt with the OCR confidence labelled as *reading* confidence. The
-  extracted fields are their own card. Technical details (ids, engine versions,
-  timings, recognised text) are behind a toggle.
+  the second is the rule engine. There is deliberately no step per photograph
+  and no five-stage list: the backend performs two operations this client can
+  observe and reports nothing from inside either, so a longer list would look
+  more informative and be invented. Nothing is a timer or a percentage. On
+  failure: a plain message, *Try again* - which resends the same set, without
+  asking the user to choose their photographs again - and *Start a new
+  inspection*, which discards them.
+- **Result.** One verdict for the set, with "3 images checked — one package,
+  one result" beside it. The verdict badge uses the backend's `result_display`
+  and the summary is always beside it. Findings are grouped Failed → Needs
+  review → Passed → Not applicable, each card carrying the rule's title,
+  clause, the backend's message, the requirement in the rule's words, and the
+  evidence excerpt with the OCR confidence labelled as *reading* confidence.
+  The extracted fields are their own card. A *Photos used* card lists each
+  photograph and how it fared on its own, so a submitter can see that image 2
+  was unreadable while the package was still judged. Technical details (ids,
+  engine versions, timings, recognised text) are behind a toggle.
+
+### Which photograph a piece of evidence came from
+
+When an inspection carries more than one photograph, a declaration is labelled
+with the panel it was read from - *Net quantity · Image 1* - and a finding's
+evidence block with the panel behind it - *What was read · Image 2*.
+
+**Only where the backend actually attributed it.** `utils/images.ts` produces a
+label from `image_id` and returns `null` in every other case, and the interface
+then says nothing about images:
+
+- the backend recorded no source (an older server, or an image row since
+  deleted) - `null` there means "not stated", never "no photograph";
+- the finding became no violation, so there is no evidence row to carry an
+  image - a passing finding is not attributed to a panel;
+- a finding of **absence**, where the backend falls back to the primary
+  photograph because the declaration was absent from the whole set. The app
+  must never turn that into "image 1 is missing the net quantity", which is a
+  claim about where a declaration should appear on a package;
+- there is only one photograph, where "Image 1" is noise rather than
+  information.
+
+A declaration may legitimately appear **twice** in *What was read* when it is
+printed on two photographed panels. Both are shown, each against its own
+photograph, because both are real readings - deciding which panel of a package
+to believe is not the phone's job. Which one the rule engine judged against is
+the backend's answer, on the finding.
 
 ### Classification on the result screen
 
@@ -352,12 +423,12 @@ run in this branch - see *Status*.
 | Capability | Android | iOS | When asked |
 |---|---|---|---|
 | Camera | `CAMERA`, runtime | `NSCameraUsageDescription` | On the first *Take photo*, before the camera opens |
-| Photo library | none on 13+ (system Photo Picker); `READ_EXTERNAL_STORAGE` ≤ API 32 | none (PHPicker) | On *Choose from gallery*, Android ≤ 12 only |
+| Photo library | none on 13+ (system Photo Picker); `READ_EXTERNAL_STORAGE` ≤ API 32 | none (PHPicker) | On *Choose photos*, Android ≤ 12 only |
 | Microphone | **blocked** | not declared | never - no video is recorded |
 | Network | `INTERNET` | ATS default (HTTPS) | always |
 
 Outcomes the app handles, each with its own message (`src/services/imagePicker.ts`,
-`src/hooks/useImageSelection.ts`, `src/screens/HomeScreen.tsx`):
+`src/hooks/useImageSelection.ts`, `src/screens/ScanScreen.tsx`):
 
 - granted → the camera or picker opens;
 - denied, may ask again → "Camera access needed";
@@ -368,11 +439,30 @@ Outcomes the app handles, each with its own message (`src/services/imagePicker.t
   available", pointing at the gallery;
 - picked file rejected before upload → the reason: unsupported format (only
   JPEG, PNG, WebP), too large (over 10 MB), empty, too small (under 32 px).
+  When several were chosen and only some were rejected, **the acceptable ones
+  are kept** and the message says how many of each: throwing the whole
+  selection away would make the user repeat a choice that was mostly fine,
+  over a file format they cannot change.
 
 The camera is opened with `exif: false` and JPEG quality 0.85; the photograph
 is not written to the user's library by the app. EXIF stripping is not
 guaranteed for a photograph chosen from the gallery, which is uploaded as it
 is.
+
+### Selecting several at once
+
+The gallery is opened with `allowsMultipleSelection` and a `selectionLimit`
+set to the room the inspection has left, so the **system picker** stops the
+user at the right number - a refusal while they are choosing is far better
+than an error after a multi-megabyte upload. Both platforms support this
+natively (iOS PHPicker, Android Photo Picker), so it needs no custom grid and
+no additional permission.
+
+**The camera stays one photograph per launch.** That is the platform's shape,
+not a limitation of this app: neither system camera returns a batch. Taking
+several means taking one, returning to the scan screen, and tapping *+ Add*
+again - which is also the only arrangement in which the user sees each
+photograph before deciding to keep it.
 
 ## Authentication - read before demoing
 
@@ -407,8 +497,8 @@ non-envelope body - an HTML 502 page, a proxy's 413 - reaches the screen.
 | Situation | Shown |
 |---|---|
 | No network, DNS failure, connection refused, or a request `fetch` could not build | "Unable to connect to the analysis server. The app is configured to use *host*. Check your internet connection and that the server address is right, then try again." + *Try again*. The underlying error is logged as the `cause` in development builds |
-| Timeout (90 s for the upload, 15 s otherwise) | "The server took too long" + *Try again*. Classified by the app's own abort, because `expo/fetch` reports it as `fetch failed: Fetch request has been canceled` rather than an `AbortError` |
-| 400 validation | "The photo was not accepted" + the backend's reason (e.g. "The file could not be read as an image.") |
+| Timeout (90 s for the upload, **plus 60 s per photograph after the first**, 15 s otherwise) | "The server took too long" + *Try again*. The upload allowance grows with the set because the backend reads the photographs one after another inside the request; keeping the single-photo timeout would abort work proceeding normally. It is not an estimate and is never shown. Classified by the app's own abort, because `expo/fetch` reports it as `fetch failed: Fetch request has been canceled` rather than an `AbortError` |
+| 400 validation | "The photo was not accepted" + the backend's reason (e.g. "The file could not be read as an image."). A set is one inspection, so one rejected photograph rejects the request; **the user's photographs are kept** and *Try again* resends the same set |
 | 401 / 403 | Sign-in required / not allowed on this server |
 | 404 | Not found (service address, or a result that is gone) |
 | 413 | Photo too large |
@@ -426,6 +516,21 @@ token) goes to `console.warn` in development builds only.
 - Every control is a `Pressable` with `accessibilityRole="button"`, a label, a
   hint where the label is not enough, and `accessibilityState` for disabled
   and busy. Minimum height 48 px, full width.
+- **The image tray is walked in order.** The row is a list; each thumbnail is
+  one element labelled with its position ("Photo 2 of 3") and the remove
+  control beside it is a separate button labelled the same way ("Remove photo
+  2"), so a screen-reader user never has to discover which photograph
+  "remove" means by pressing it. The thumbnail's label is the position, never
+  a description of the picture - the app has not looked at it and must not
+  claim to know what it shows. The remove control is 28 px with a 10 px
+  `hitSlop`, and the tile it sits on is 96 px, so the two cannot be confused by
+  a thumb.
+- The primary action carries the count in its accessible label too ("Check
+  package using 3 photos"), because that is the confirmation a screen-reader
+  user gets before submitting.
+- The "3 photos" badge on the scanning frame is marked decorative: the
+  heading above it already says how many photographs are being checked, and
+  hearing the number twice is worse than once.
 - Status is never colour alone: each tone carries a symbol (✓ ! ✕ ? –) inside
   the badge text, and finding groups and step states are described in words.
 - Error callouts have `accessibilityRole="alert"` and an assertive live region.
@@ -452,20 +557,23 @@ What is covered, and where:
 |---|---|
 | API base URL resolution, trailing slashes, production refusal | `src/config/env.test.ts` |
 | HTTP client: URL joining, JSON/multipart bodies, no credentials, error envelope for 400/401/403/404/413/429/500, non-JSON bodies, network vs timeout (including `expo/fetch`'s cancellation shape), abort, the `cause` carried for logs | `src/api/client.test.ts` |
-| Upload construction (`image` part with name/type/`bytes()`, `view_type`), extraction mapping, classification present / null / absent / malformed / "unknown" | `src/api/extraction.test.ts` |
+| Upload construction (`image` part with name/type/`bytes()`, `view_type`), extraction mapping, the image set and each reading's source photograph, classification present / null / absent / malformed / "unknown" | `src/api/extraction.test.ts` |
 | The upload part run through **Expo's real multipart encoder** (`expo/fetch`): encoded with the validated filename, type and the file's bytes; the legacy `{uri}` part rejected | `src/api/uploadPart.expoFetch.test.ts` |
 | Server check: `health/` through the same client, unreachable state, re-check, dev-only target log | `src/hooks/useApiHealth.test.tsx` |
 | Compliance request body (category sent only when given), result mapping, findings absent vs empty, malformed bodies rejected | `src/api/compliance.test.ts` |
 | Format detection, size/empty/too-small rejection, filename normalisation | `src/services/imageValidation.test.ts` |
-| Camera and library permission grant / denial / permanent denial, cancellation, unavailable camera, picker errors, platform differences | `src/services/imagePicker.test.ts` |
+| Camera and library permission grant / denial / permanent denial, cancellation, unavailable camera, picker errors, platform differences, multiple selection and its limit | `src/services/imagePicker.test.ts` |
 | The two-step flow over a stubbed `fetch`: phases, network failure, HTTP failure, retry without re-upload, human-confirmed re-check, duplicate evaluate dropped | `src/hooks/useLabelAnalysis.test.tsx` |
+| The set being composed: order kept, duplicates refused, the maximum enforced, partial acceptance, removal and its effect on the room left | `src/hooks/useInspectionImages.test.tsx` |
 | User-facing messages per failure | `src/utils/errors.test.ts` |
 | Tones for known and unknown statuses, grouping order | `src/utils/status.test.ts` |
-| Home: server status with the host it used, both pickers, every outcome, Settings deep link | `src/screens/HomeScreen.test.tsx` |
-| Preview: image, product type, use / retake | `src/screens/PreviewScreen.test.tsx` |
-| Analysis: loading steps, each error, retry, completion | `src/screens/AnalysisScreen.test.tsx` |
-| Result: each verdict, findings by status, extracted fields, classification present / absent / unknown, re-check confirmation, no percentage, technical details | `src/screens/ResultScreen.test.tsx` |
-| The whole flow through the real navigator: Home → Preview → Analysis → Result, offline stop, retry, start over | `src/navigation/RootNavigator.test.tsx` |
+| Naming a photograph, and the four cases where nothing is named | `src/utils/images.test.ts` |
+| Home: server status with the host it used, both pickers, seeding the set (one photo and several), every outcome, Settings deep link | `src/screens/HomeScreen.test.tsx` |
+| Scan: thumbnails and their labels, the count on the action, empty state and disabled submission, adding from camera and gallery, the picker limit, removal, duplicate and full refusals, permission denials | `src/screens/ScanScreen.test.tsx` |
+| Analysis: loading steps, the set-aware first step, each error, retry, completion | `src/screens/AnalysisScreen.test.tsx` |
+| Result: each verdict, findings by status, extracted fields, "N images checked", per-declaration and per-finding image attribution (and where none is claimed), per-photo outcomes, classification present / absent / unknown, re-check confirmation, no percentage, technical details | `src/screens/ResultScreen.test.tsx` |
+| The scanning frame: reduced motion honoured, the photo count, no progress claimed | `src/components/ScanPreview.test.tsx` |
+| The whole flow through the real navigator: Home → Scan → Analysis → Result, three photos as **one** request with three `image` parts, adding and removing before submission, offline stop, retry that resends the same set, start over | `src/navigation/RootNavigator.test.tsx` |
 
 Only three things are replaced in tests: `expo-image-picker` and
 `expo-file-system` (native modules) and `fetch`. Fixtures are in the wire shape the backend sends
@@ -476,7 +584,7 @@ Only three things are replaced in tests: `expo-image-picker` and
 Things the app needs and the API does not yet offer, recorded rather than
 faked:
 
-- **No endpoint lists product categories.** The preview screen therefore takes
+- **No endpoint lists product categories.** The scan screen therefore takes
   a free-text code, as the web client does. A picker for the future
   human-confirmation step needs `GET /api/v1/products/categories/` (or
   similar) - documented as planned in api.md.
@@ -499,6 +607,34 @@ faked:
   app says so instead of pretending.
 - No image preprocessing on the phone (deskew, contrast, crop). That belongs
   to the OCR workstream on the server.
+
+Limitations specific to the image set:
+
+- **The app does not ask which panel is which.** Every photograph is uploaded
+  with `view_type: unspecified`. The API accepts a per-photograph view type and
+  the client sends one when given, but no screen collects it, and the order a
+  person happens to photograph a package in is not evidence that the second
+  shot is the back. Recording a guess would put a claim in the database that
+  nobody made.
+- **`ProductImage.view_type` changes nothing downstream even when stated.**
+  Neither the compliance engine nor `labelextract` reads it today, so a
+  declaration absent from a front-panel photograph is still reported FAILED
+  rather than undeterminable. That gap is the backend's (it is recorded on the
+  model and in PROJECT_STATUS.md), and it is the reason the app tells the
+  submitter to photograph every panel carrying a declaration rather than
+  relying on labelling one.
+- **Six photographs per inspection**, mirroring the backend's
+  `MAX_IMAGES_PER_INSPECTION`. Each one costs a full OCR pass inside the same
+  synchronous request, so the set is bounded until extraction moves behind a
+  queue.
+- **The camera returns one photograph per launch** on both platforms; only the
+  gallery offers a multiple selection. See *Permissions*.
+- **A retry resends the photographs**, because the upload is one request and a
+  partial one cannot be resumed. On a slow connection a large set is uploaded
+  again in full.
+- **No image is served back**, so the per-photograph outcomes on the result
+  screen are named ("Image 2") rather than shown as thumbnails once the local
+  files are gone.
 
 ## Two things that looked like "no network"
 

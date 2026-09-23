@@ -72,13 +72,15 @@ describe('useLabelAnalysis', () => {
     expect(result.current.result.id).toBe(complianceBody().id);
   });
 
-  it('sends the view type on the extraction request only', async () => {
+  it('sends the view types on the extraction request only', async () => {
     routeFetch();
     const { result } = renderHook(() => useLabelAnalysis());
 
     await act(async () => {
       await result.current.analyse(FILE(), {
-        viewType: 'front',
+        // Positional, one per photograph: the API reads `view_type` parts
+        // against `image` parts in order.
+        viewTypes: ['front'],
         categoryCode: 'packaged-food',
       });
     });

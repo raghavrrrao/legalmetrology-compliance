@@ -10,7 +10,14 @@ import {
   mapExtractionRun,
   mapProductClassification,
 } from './extraction';
-import { classificationBody, errorEnvelope, extractionBody, jsonResponse, RUN_ID } from '../../tests/fixtures';
+import {
+  classificationBody,
+  errorEnvelope,
+  extractionBody,
+  IMAGE_ID,
+  jsonResponse,
+  RUN_ID,
+} from '../../tests/fixtures';
 import { mockFileBytes, type RecordedPart } from '../../tests/setup';
 
 const fetchMock = jest.fn();
@@ -74,6 +81,9 @@ describe('extractLabel', () => {
       normalizedValue: { quantity: 500, unit: 'g', uncertain: false },
       confidence: 0.87,
       boundingBox: { x: 4, y: 4, width: 300, height: 18 },
+      // The fixture is a single-image response, whose readings name the one
+      // photograph they came from.
+      imageId: IMAGE_ID,
     });
     expect(run.image).toEqual(expect.objectContaining({ id: expect.any(String), width: 1600, height: 1200 }));
     expect(run.productClassification).toEqual(

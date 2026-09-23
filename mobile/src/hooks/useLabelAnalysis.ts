@@ -1,8 +1,13 @@
 /**
  * The two-step analysis flow: read the label, then ask what the rules make of it.
  *
- *     photo -> POST /api/v1/extraction/ -> ExtractionRun id
- *                                       -> POST /api/v1/compliance/ -> verdict
+ *     photos -> POST /api/v1/extraction/ -> ExtractionRun id
+ *                                        -> POST /api/v1/compliance/ -> verdict
+ *
+ * **One inspection, however many photographs.** The set is uploaded in one
+ * request and read into one `ExtractionRun`, so there is one reading and one
+ * verdict about the package - never one per photograph. Nothing in this hook
+ * combines results, because there is never more than one to combine.
  *
  * Two requests rather than the one-shot `POST /api/v1/images/`, for the reason
  * docs/api.md gives and the web client follows: the reading and the verdict
@@ -14,13 +19,17 @@
  * Three properties this hook guarantees, mirroring
  * `frontend/src/hooks/useLabelAnalysis.js`:
  *
- * 1. **The photograph is uploaded once.** The run id from step one is held
+ * 1. **The photographs are uploaded once.** The run id from step one is held
  *    here and passed to step two. Re-checking never re-uploads.
  * 2. **One compliance request per evaluation.** A second `evaluate` while one
  *    is in flight is dropped, not queued - each POST creates a stored result.
  * 3. **A failed verdict does not discard the reading.** If extraction
  *    succeeded and the compliance call failed, the reading stays and `retry`
  *    reuses the same run.
+ * 4. **A failed upload does not discard the user's photographs.** `images`
+ *    keeps the set that was submitted, and `retry` sends exactly that set
+ *    again. Someone who photographed four panels on a bad connection must not
+ *    have to photograph them a second time.
  *
  * This is also the seam the future review step plugs into. When the backend
  * classifies a product with low confidence, a screen can show the suggestion,
@@ -32,7 +41,7 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 
 import { evaluateExtractionRun } from '../api/compliance';
-import { extractLabel } from '../api/extraction';
+import { extractPackage } from '../api/extraction';
 import type { SelectedImage } from '../services/imageValidation';
 import type { ComplianceResult, ExtractionRun, ProductImage } from '../types/api';
 import { logError } from '../utils/errors';
@@ -45,16 +54,30 @@ import { logError } from '../utils/errors';
 export type AnalysisPhase = 'idle' | 'extracting' | 'extracted' | 'evaluating' | 'complete';
 
 export interface AnalysisOptions {
-  /** A `ProductImage.ViewType` value. */
-  viewType?: string;
+  /**
+   * A `ProductImage.ViewType` per photograph, positionally. The app does not
+   * ask which panel is which today, so this is normally left unset and every
+   * photograph is recorded as `unspecified` - which is honest. It is never
+   * inferred from the order: the second photograph a person takes is not
+   * necessarily the back.
+   */
+  viewTypes?: (string | undefined)[];
   /** A `ProductCategory.code` the person supplied. Empty means unknown. */
   categoryCode?: string;
 }
 
 export interface LabelAnalysis {
   phase: AnalysisPhase;
-  /** The photograph as picked on the device, for previews. */
+  /**
+   * The primary photograph as picked on the device, for a single preview.
+   * `images[0]`, or null before anything was submitted.
+   */
   image: SelectedImage | null;
+  /**
+   * Every photograph submitted for this inspection, in order, as picked on the
+   * device. Kept across a failure so a retry costs the user nothing.
+   */
+  images: SelectedImage[];
   /** The reading. Present from the moment extraction succeeds. */
   extraction: ExtractionRun | null;
   /** The stored photograph's measured facts, as the backend recorded them. */
@@ -68,8 +91,11 @@ export interface LabelAnalysis {
   isExtracting: boolean;
   isEvaluating: boolean;
   isBusy: boolean;
-  /** Upload a photograph, read it, and evaluate the reading. */
-  analyse: (image: SelectedImage, options?: AnalysisOptions) => Promise<void>;
+  /**
+   * Upload the photographs of one package, read them, and evaluate the
+   * reading. Accepts one photograph or a set; a single one is the set of one.
+   */
+  analyse: (images: SelectedImage | SelectedImage[], options?: AnalysisOptions) => Promise<void>;
   /** Re-check the reading already held. Never re-uploads. */
   evaluate: (options?: Pick<AnalysisOptions, 'categoryCode'>) => Promise<void>;
   /** Repeat whichever step failed, with the same inputs. */
@@ -79,7 +105,7 @@ export interface LabelAnalysis {
 
 export function useLabelAnalysis(): LabelAnalysis {
   const [phase, setPhase] = useState<AnalysisPhase>('idle');
-  const [image, setImage] = useState<SelectedImage | null>(null);
+  const [images, setImages] = useState<SelectedImage[]>([]);
   const [extraction, setExtraction] = useState<ExtractionRun | null>(null);
   const [storedImage, setStoredImage] = useState<ProductImage | null>(null);
   const [result, setResult] = useState<ComplianceResult | null>(null);
@@ -90,7 +116,7 @@ export function useLabelAnalysis(): LabelAnalysis {
   // The id the compliance call needs, and the inputs a retry repeats. Refs so
   // the callbacks below are stable and can read the latest values.
   const runIdRef = useRef<string | null>(null);
-  const imageRef = useRef<SelectedImage | null>(null);
+  const imagesRef = useRef<SelectedImage[]>([]);
   const optionsRef = useRef<AnalysisOptions>({});
   // Guards property 2. A ref rather than state: two taps in the same tick both
   // see the old state value, and both would post.
@@ -110,11 +136,11 @@ export function useLabelAnalysis(): LabelAnalysis {
     abortRef.current?.abort();
     abortRef.current = null;
     runIdRef.current = null;
-    imageRef.current = null;
+    imagesRef.current = [];
     optionsRef.current = {};
     evaluatingRef.current = false;
     setPhase('idle');
-    setImage(null);
+    setImages([]);
     setExtraction(null);
     setStoredImage(null);
     setResult(null);
@@ -174,37 +200,42 @@ export function useLabelAnalysis(): LabelAnalysis {
   }, []);
 
   const analyse = useCallback(
-    async (nextImage: SelectedImage, options: AnalysisOptions = {}) => {
+    async (nextImages: SelectedImage | SelectedImage[], options: AnalysisOptions = {}) => {
+      const submitted = Array.isArray(nextImages) ? [...nextImages] : [nextImages];
+
       abortRef.current?.abort();
       const controller = new AbortController();
       abortRef.current = controller;
 
       runIdRef.current = null;
-      imageRef.current = nextImage;
+      imagesRef.current = submitted;
       optionsRef.current = { ...options, categoryCode: (options.categoryCode ?? '').trim() };
       evaluatingRef.current = false;
 
       setPhase('extracting');
-      setImage(nextImage);
+      setImages(submitted);
       setCategoryCode(optionsRef.current.categoryCode ?? '');
       setExtractionError(null);
       setComplianceError(null);
-      // Cleared so a previous verdict cannot sit next to a new photograph and
-      // be read as belonging to it.
+      // Cleared so a previous verdict cannot sit next to new photographs and
+      // be read as belonging to them.
       setResult(null);
       setExtraction(null);
       setStoredImage(null);
 
-      let run: Awaited<ReturnType<typeof extractLabel>>;
+      let run: Awaited<ReturnType<typeof extractPackage>>;
       try {
-        run = await extractLabel(
-          { uri: nextImage.uri, name: nextImage.name, type: nextImage.type },
-          { viewType: options.viewType, signal: controller.signal },
+        run = await extractPackage(
+          submitted.map((picked) => ({ uri: picked.uri, name: picked.name, type: picked.type })),
+          { viewTypes: options.viewTypes, signal: controller.signal },
         );
       } catch (cause) {
         if (mountedRef.current) {
           logError('extraction', cause);
           setExtractionError(cause);
+          // Back to idle, but `images` is deliberately left as it is: the
+          // user's photographs are still theirs, and `retry` resends exactly
+          // this set without asking them to choose again.
           setPhase('idle');
         }
         return;
@@ -229,14 +260,17 @@ export function useLabelAnalysis(): LabelAnalysis {
       await evaluate();
       return;
     }
-    if (imageRef.current) {
-      await analyse(imageRef.current, optionsRef.current);
+    if (imagesRef.current.length > 0) {
+      // The same set, in the same order. A retry must not quietly send a
+      // different inspection from the one that failed.
+      await analyse(imagesRef.current, optionsRef.current);
     }
   }, [analyse, evaluate]);
 
   return {
     phase,
-    image,
+    image: images[0] ?? null,
+    images,
     extraction,
     storedImage,
     result,

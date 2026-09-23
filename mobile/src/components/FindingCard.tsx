@@ -6,6 +6,17 @@ import type { Finding } from '../types/api';
 import { formatConfidence, humaniseCode } from '../utils/format';
 import { findingStatusLabel, toneForFindingStatus } from '../utils/status';
 
+interface FindingCardProps {
+  finding: Finding;
+  /**
+   * Which photograph this finding's evidence came from, already resolved to
+   * "Image 2" by `utils/images`. Null when the backend did not attribute it,
+   * or when the inspection has only one photograph - and the card then says
+   * nothing about images rather than guessing.
+   */
+  evidenceImageLabel?: string | null;
+}
+
 /**
  * One rule's outcome, as the backend recorded it.
  *
@@ -13,8 +24,15 @@ import { findingStatusLabel, toneForFindingStatus } from '../utils/status';
  * word from the response. The status is the backend's four-valued one,
  * passed through: "Needs review" (inconclusive) is not a soft fail and "Not
  * applicable" is not a pass, and this card never rounds either to another.
+ *
+ * When an inspection carries several photographs, the evidence block names the
+ * one the reading came from. That label is only ever shown for evidence the
+ * backend actually attributed to an image: a finding of absence is not
+ * attributed to any panel, because the declaration was absent from the whole
+ * package, and saying "Image 1" there would invent a claim about where it
+ * should have been printed.
  */
-export function FindingCard({ finding }: { finding: Finding }) {
+export function FindingCard({ finding, evidenceImageLabel = null }: FindingCardProps) {
   const tone = toneForFindingStatus(finding.status);
   const heading = finding.title || humaniseCode(finding.ruleCode);
   const reference = [finding.clause ? `Rule ${finding.clause}` : '', finding.legalReference]
@@ -60,7 +78,9 @@ export function FindingCard({ finding }: { finding: Finding }) {
 
       {finding.evidenceExcerpt ? (
         <View style={styles.block}>
-          <Text style={styles.blockLabel}>What was read</Text>
+          <Text style={styles.blockLabel}>
+            {evidenceImageLabel ? `What was read · ${evidenceImageLabel}` : 'What was read'}
+          </Text>
           <Text style={[styles.blockText, styles.evidence]} selectable>
             “{finding.evidenceExcerpt}”
           </Text>

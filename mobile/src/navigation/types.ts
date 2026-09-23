@@ -1,21 +1,23 @@
 /**
  * The routes of the app and what each one is opened with.
  *
- *     Home -> Preview -> Analysis -> Result
+ *     Home -> Scan -> Analysis -> Result
  *
- * Only the preview takes a parameter, and only the small, serialisable
- * description of the picked photograph. Readings and results are never route
- * params: they live in `AnalysisProvider`, so the progress and result screens
- * read the same analysis rather than a copy.
+ * **No route takes a parameter.** An inspection is a set of photographs that
+ * the user adds to and removes from, and it has to survive navigating to the
+ * progress screen and back after a failed upload - so it lives in
+ * `AnalysisProvider` alongside the reading and the result, not in route state.
+ *
+ * `Scan` used to be `Preview` and used to carry `{ image }`. It was renamed
+ * when it stopped being a look at one photograph before sending it and became
+ * the place the set is composed.
  */
 
 import type { NativeStackScreenProps } from '@react-navigation/native-stack';
 
-import type { SelectedImage } from '../services/imageValidation';
-
 export type RootStackParamList = {
   Home: undefined;
-  Preview: { image: SelectedImage };
+  Scan: undefined;
   Analysis: undefined;
   Result: undefined;
 };
