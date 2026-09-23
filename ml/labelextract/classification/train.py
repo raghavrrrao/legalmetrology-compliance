@@ -79,6 +79,10 @@ from labelextract.classification.preprocessing import (
     preprocess_text,
     word_tokens,
 )
+from labelextract.classification.validation import (
+    check_fold_integrity,
+    raise_for_errors,
+)
 
 
 class TrainingDependencyError(RuntimeError):
@@ -308,7 +312,16 @@ def cross_validate(
     config: TrainingConfig,
     classifier_config: ClassifierConfig,
 ) -> tuple[list[Prediction], dict[str, Any]]:
-    """Leave-one-product-out. Returns every held-out prediction and fold notes."""
+    """Leave-one-product-out. Returns every held-out prediction and fold notes.
+
+    Every fold's split is checked for product leakage before it is fitted, and
+    a leaking fold raises rather than being measured. The check is cheap and
+    the failure it catches is not: a product on both sides of a split produces
+    a number that looks like generalisation and is memorisation.
+
+    Raises:
+        DatasetIntegrityError: a product appears in both halves of a fold.
+    """
     groups = dataset.by_product()
     predictions: list[Prediction] = []
     folds: list[dict[str, Any]] = []
@@ -319,6 +332,16 @@ def cross_validate(
                 if product != held_out for example in examples
             ],
             config,
+        )
+        raise_for_errors(
+            check_fold_integrity(
+                {
+                    f"train:{held_out}": sorted(
+                        {example.product_id for example in training}
+                    ),
+                    f"holdout:{held_out}": [held_out],
+                }
+            )
         )
         classes_in_training = sorted({example.subcategory for example in training})
         held_classes = sorted({example.subcategory for example in held_examples})

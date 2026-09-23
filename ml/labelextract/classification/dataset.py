@@ -21,6 +21,8 @@ came from is on the example, not implied by its position in a folder:
           "text_source": "ocr",
           "labelled_by": "claude-opus-5-draft",
           "label_verified_by": null,
+          "label_verified_on": null,
+          "label_verification_ref": null,
           "ocr_engine": "tesseract",
           "ocr_engine_version": "0.2.0",
           "source_dataset": "our-eval-v0.1-draft",
@@ -49,6 +51,19 @@ Field by field:
   **model-drafted and unverified**, and every example says so, for the same
   reason the evaluation set's annotations do: a label nobody remembers
   guessing becomes ground truth by default.
+- `label_verified_on` (an ISO `YYYY-MM-DD` date) and `label_verification_ref`
+  (the ledger entry that records the decision) travel with
+  `label_verified_by`, and the three are **all-or-none**. A name on its own
+  is not provenance: it cannot be dated, and it cannot be traced to a record
+  of what the person actually looked at. The project already holds annotation
+  provenance to that bar (`annotated_by` / `annotated_on`); a training label
+  is not a weaker claim than an annotation. `verification.py` defines the
+  ledger the `_ref` points into.
+- **A verifier is a person.** `label_verified_by` is refused if it carries a
+  machine-labeller marker (`MACHINE_LABELLER_MARKERS`) - the drafting model,
+  any model name, or the classifier itself. A model confirming its own
+  training labels produces agreement with itself and nothing else, and the
+  field exists precisely to distinguish the two.
 - `ocr_engine` / `ocr_engine_version` record which pipeline produced OCR
   text, so a sample can be regenerated from its photograph. Null for
   transcriptions.
@@ -95,6 +110,51 @@ SEED_DATASET_FILENAME = "seed_v0.1.json"
 
 TEXT_SOURCES = ("ocr", "manual_transcription")
 
+#: Substrings that disqualify a value from being a *verifier*. A label
+#: verified by the thing that drafted it - or by the classifier being trained
+#: on it - is not verified; it is agreement with itself, recorded as though a
+#: person had looked. Matched case-insensitively against `label_verified_by`.
+#: `labelled_by` is deliberately NOT checked: a model drafting a label is the
+#: normal case and says so.
+MACHINE_LABELLER_MARKERS = (
+    "claude",
+    "gpt",
+    "llm",
+    "opus",
+    "sonnet",
+    "haiku",
+    "gemini",
+    "tfidf",
+    "logreg",
+    "classifier",
+    "-model",
+    "model-",
+    "automated",
+    "auto-",
+    "draft",
+    "script",
+    "bot",
+)
+
+
+def machine_marker_in(value: str) -> str | None:
+    """The first machine-labeller marker `value` contains, if any."""
+    lowered = value.lower()
+    for marker in MACHINE_LABELLER_MARKERS:
+        if marker in lowered:
+            return marker
+    return None
+
+
+def _is_iso_date(value: str) -> bool:
+    parts = value.split("-")
+    if len(parts) != 3 or [len(part) for part in parts] != [4, 2, 2]:
+        return False
+    if not all(part.isdigit() for part in parts):
+        return False
+    year, month, day = (int(part) for part in parts)
+    return 1 <= month <= 12 and 1 <= day <= 31 and year >= 1970
+
 
 class ClassificationDataError(ValueError):
     """A dataset file is malformed. Raised rather than repaired, always."""
@@ -116,6 +176,11 @@ class ClassificationExample:
     source_sample_id: str | None
     image_sha256: str | None
     note: str
+    #: Set together with `label_verified_by` or not at all - see the module
+    #: docstring. Defaulted so a dataset written before these fields existed
+    #: still parses into this class unchanged.
+    label_verified_on: str | None = None
+    label_verification_ref: str | None = None
 
     @property
     def is_verified(self) -> bool:
@@ -147,6 +212,26 @@ class ClassificationDataset:
         for example in self.examples:
             groups.setdefault(example.product_id, []).append(example)
         return {product: tuple(items) for product, items in groups.items()}
+
+    @property
+    def verified_examples(self) -> tuple[ClassificationExample, ...]:
+        return tuple(example for example in self.examples if example.is_verified)
+
+    @property
+    def unverified_examples(self) -> tuple[ClassificationExample, ...]:
+        return tuple(example for example in self.examples if not example.is_verified)
+
+    @property
+    def image_sha256s(self) -> tuple[str, ...]:
+        """Every distinct image digest referenced, in first-seen order."""
+        seen: dict[str, None] = {}
+        for example in self.examples:
+            if example.image_sha256:
+                seen.setdefault(example.image_sha256, None)
+        return tuple(seen)
+
+    def by_example_id(self) -> dict[str, ClassificationExample]:
+        return {example.example_id: example for example in self.examples}
 
     def label_counts(self) -> dict[str, dict[str, int]]:
         """Examples and distinct products per subcategory."""
@@ -234,6 +319,48 @@ def parse_dataset(
     )
 
 
+def _check_verification(
+    where: str,
+    verified_by: str | None,
+    verified_on: str | None,
+    verification_ref: str | None,
+) -> None:
+    """The three verification fields are all set, or all null. Nothing between.
+
+    A name with no date cannot be placed in time; a name with no ledger
+    reference cannot be traced to what the person actually checked. Either
+    would let "verified" mean less than the word promises while still reading
+    as a verified row to every count downstream.
+    """
+    present = {
+        "label_verified_by": verified_by,
+        "label_verified_on": verified_on,
+        "label_verification_ref": verification_ref,
+    }
+    set_fields = sorted(key for key, value in present.items() if value)
+    if set_fields and len(set_fields) != 3:
+        missing = sorted(set(present) - set(set_fields))
+        raise ClassificationDataError(
+            f"{where}: verification is all-or-none - {', '.join(set_fields)} "
+            f"set but {', '.join(missing)} missing"
+        )
+    if not verified_by:
+        return
+    marker = machine_marker_in(verified_by)
+    if marker is not None:
+        raise ClassificationDataError(
+            f"{where}.label_verified_by {verified_by!r} looks like a machine "
+            f"(contains {marker!r}); a verifier must be a person. A model "
+            f"confirming its own labels measures agreement with itself"
+        )
+    assert verified_on is not None  # guaranteed by the all-or-none check above
+    if not _is_iso_date(verified_on):
+        raise ClassificationDataError(
+            f"{where}.label_verified_on must be an ISO YYYY-MM-DD date, "
+            f"got {verified_on!r}"
+        )
+
+
 def _parse_example(entry: Any, position: int) -> ClassificationExample:
     where = f"examples[{position}]"
     if not isinstance(entry, Mapping):
@@ -285,6 +412,10 @@ def _parse_example(entry: Any, position: int) -> ClassificationExample:
         raise ClassificationDataError(
             f"{where}.label_verified_by must be present (a name, or null)"
         )
+    verified_by = optional_str("label_verified_by")
+    verified_on = optional_str("label_verified_on")
+    verification_ref = optional_str("label_verification_ref")
+    _check_verification(where, verified_by, verified_on, verification_ref)
     ocr_engine = optional_str("ocr_engine")
     ocr_engine_version = optional_str("ocr_engine_version")
     if text_source == "ocr" and not (ocr_engine and ocr_engine_version):
@@ -309,7 +440,9 @@ def _parse_example(entry: Any, position: int) -> ClassificationExample:
         text=text,
         text_source=text_source,
         labelled_by=required_str("labelled_by"),
-        label_verified_by=optional_str("label_verified_by"),
+        label_verified_by=verified_by,
+        label_verified_on=verified_on,
+        label_verification_ref=verification_ref,
         ocr_engine=ocr_engine,
         ocr_engine_version=ocr_engine_version,
         source_dataset=optional_str("source_dataset"),
