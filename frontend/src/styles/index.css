@@ -604,7 +604,16 @@ img {
   content: '';
 }
 
+/*
+ * 17px tall as measured, which is under WCAG 2.2's 24px minimum. Raised to 24
+ * and not to 44: a breadcrumb is a dense secondary trail, and giving each
+ * crumb a thumb-sized box would make the tallest element on the page the one
+ * nobody came for. 24 is the standard's figure for exactly this case.
+ */
 .breadcrumb a {
+  display: inline-flex;
+  align-items: center;
+  min-height: 24px;
   color: inherit;
   text-decoration: underline;
   text-underline-offset: 2px;
@@ -3356,7 +3365,21 @@ img {
   letter-spacing: -0.014em;
 }
 
+/*
+ * The row's link is the row's action, so it gets the row's target.
+ *
+ * Measured at a real 375px viewport it was 118x21 - under the 24px WCAG 2.2
+ * requires of a target that is not inside a sentence, and well under the 44px
+ * this design aims for on anything a thumb is meant to hit. It is also the
+ * only way into a stored result from this screen.
+ *
+ * `inline-flex` with a min-height rather than padding, so the text stays on
+ * its own baseline inside the heading and the row does not gain a visible gap.
+ */
 .history-item__title a {
+  display: inline-flex;
+  align-items: center;
+  min-height: var(--tap);
   color: inherit;
   text-decoration: none;
   border-radius: var(--radius-xs);
@@ -3694,6 +3717,34 @@ label:focus-visible,
 
   .hero__actions .button {
     flex: 1 1 100%;
+  }
+
+  /*
+   * The analysis panel stacks, image first.
+   *
+   * It kept its two-column grid at every width until a real 375px render was
+   * inspected: the photograph was squeezed into ~140px on the left while every
+   * stage label - "Reading the label", "Checking requirements" - wrapped onto
+   * three lines in the ~170px left over. Two columns need about 600px here.
+   */
+  .analysis {
+    grid-template-columns: minmax(0, 1fr);
+    gap: var(--space-4);
+    padding: var(--space-4);
+  }
+
+  .analysis__frame {
+    /* Wider than it is tall on a phone, where a 4:3 well would take most of
+       the screen before a single stage was visible. */
+    aspect-ratio: 16 / 10;
+  }
+
+  .analysis__title {
+    font-size: 1.3rem;
+  }
+
+  .analysis__note {
+    margin-bottom: var(--space-4);
   }
 
   .flow {
