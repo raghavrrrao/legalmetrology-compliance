@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState } from 'react';
+import { useCallback, useState } from 'react';
 import { Link } from 'react-router-dom';
 
 import { AnalysisPanel } from '../components/AnalysisPanel.jsx';
@@ -12,9 +12,10 @@ import { useLabelAnalysis } from '../hooks/useLabelAnalysis.js';
 import { config } from '../config/env.js';
 import { useApiHealth } from '../hooks/useApiHealth.js';
 import { useApplicabilityConditions } from '../hooks/useApplicabilityConditions.js';
+import { useSelectedImages } from '../hooks/useSelectedImages.js';
 
 /**
- * Upload a label photograph and show what the system made of it.
+ * Upload the photographs of a package and show what the system made of them.
  *
  * Four numbered steps before the check, over the real two-step backend flow:
  *
@@ -22,9 +23,16 @@ import { useApplicabilityConditions } from '../hooks/useApplicabilityConditions.
  *
  * Two requests rather than the one-shot `POST /api/v1/images/`, because the
  * reading and the verdict are different claims and this screen shows both. The
- * photograph is uploaded once; `useLabelAnalysis` holds the run id, so
+ * photographs are uploaded once; `useLabelAnalysis` holds the run id, so
  * retrying a failed verdict re-evaluates the reading the user is already
  * looking at rather than producing a new one that might read differently.
+ *
+ * **An inspection is a set of photographs, not one.** A packaged commodity
+ * declares different things on different panels, so the upload panel gathers
+ * up to six and they are sent in a single request as repeated `image` parts.
+ * They become one extraction run and one compliance check: never one
+ * inspection per photograph, which would report the front as failing to
+ * declare a net quantity printed on the back.
  *
  * **The steps are a reading order, not a wizard.** Every control stays on the
  * page and reachable at once; what the numbers do is tell somebody who has
@@ -43,6 +51,11 @@ import { useApplicabilityConditions } from '../hooks/useApplicabilityConditions.
  *    heading, so a reviewer can check a finding against the text it came from.
  * 4. **The two requests fail separately.** A failed compliance call leaves the
  *    reading on screen with a retry that does not re-upload.
+ * 4b. **A failed upload keeps the photographs.** The set lives in
+ *    `useSelectedImages` here, not inside the analysis hook, so an error
+ *    returns the user to the form with their selection intact and the same
+ *    button resends it. Losing six photographs to a dropped connection is the
+ *    worst thing this screen could do to somebody.
  * 5. **The declarations are optional and unanswered is never "no".** The facts
  *    several clauses turn on cannot be seen in a photograph, so the user may
  *    state them - and leaving one unstated is a supported choice that costs a
@@ -51,9 +64,7 @@ import { useApplicabilityConditions } from '../hooks/useApplicabilityConditions.
  *    intended way to resolve a review without re-uploading anything.
  */
 export function ScanPage() {
-  const [file, setFile] = useState(null);
-  const [previewUrl, setPreviewUrl] = useState(null);
-  const [viewType, setViewType] = useState('unspecified');
+  const selection = useSelectedImages();
   const [categoryCode, setCategoryCode] = useState('');
   const [copied, setCopied] = useState(false);
   // One entry per question the user has actually answered. A question with no
@@ -80,19 +91,13 @@ export function ScanPage() {
     reset,
   } = useLabelAnalysis();
 
-  // The API stores what it measured from the photograph but serves no URL for
-  // it, so the picture behind the evidence overlay is the local file. Revoked
-  // on replacement and on unmount; an object URL that is never revoked keeps
-  // the whole image alive in memory for the life of the tab.
-  useEffect(() => {
-    if (!file) {
-      setPreviewUrl(null);
-      return undefined;
-    }
-    const url = URL.createObjectURL(file);
-    setPreviewUrl(url);
-    return () => URL.revokeObjectURL(url);
-  }, [file]);
+  // The API stores what it measured from each photograph but serves no URL for
+  // any of them, so the pictures behind the evidence overlay are the local
+  // files. `useSelectedImages` owns those object URLs and revokes every one
+  // when its file leaves the set or the page unmounts.
+  const { entries, count: imageCount } = selection;
+  const previewUrls = entries.map((entry) => entry.previewUrl);
+  const primaryPreviewUrl = previewUrls[0] ?? null;
 
   const setDeclaration = useCallback((code, answer) => {
     setDeclarations((current) => {
@@ -113,19 +118,20 @@ export function ScanPage() {
 
   function handleSubmit(event) {
     event.preventDefault();
-    if (!file || isBusy) {
+    if (imageCount === 0 || isBusy) {
       return;
     }
     setCopied(false);
-    analyse(file, {
-      viewType,
+    // One call with the whole set - never one call per photograph.
+    analyse(selection.files, {
+      viewTypes: selection.viewTypes,
       categoryCode: categoryCode.trim(),
       declarations,
     });
   }
 
   function handleReset() {
-    setFile(null);
+    selection.clear();
     setCopied(false);
     setDeclarations({});
     reset();
@@ -200,7 +206,7 @@ export function ScanPage() {
           <p className="page-lede">
             {result
               ? 'What the label was read to say, and what the loaded rules make of it.'
-              : 'Upload a clear photo of the product label. We read the information we can find on it and check the requirements that apply.'}
+              : 'Upload clear photos of the product label — the front, the back, and any panel carrying a declaration. They are read together, as one package, and checked against the requirements that apply.'}
           </p>
         </div>
 
@@ -222,7 +228,7 @@ export function ScanPage() {
 
       <WorkflowProgress
         phase={phase}
-        hasFile={Boolean(file)}
+        hasFile={imageCount > 0}
         hasDetails={Boolean(categoryCode.trim()) || answeredCount > 0}
         hasResult={Boolean(result)}
       />
@@ -239,8 +245,9 @@ export function ScanPage() {
       */}
       {!result && isBusy && (
         <AnalysisPanel
-          previewUrl={previewUrl}
-          fileName={file?.name}
+          previewUrl={primaryPreviewUrl}
+          fileName={entries[0]?.file?.name}
+          imageCount={imageCount}
           phase={phase}
           // Counted from the extraction response once it exists, and undefined
           // until then. Never estimated: an unknown count shows no count.
@@ -251,22 +258,25 @@ export function ScanPage() {
       {!result && !isBusy && (
         <form className="scan-flow" onSubmit={handleSubmit}>
           <UploadPanel
-            file={file}
-            previewUrl={previewUrl}
+            entries={entries}
+            rejections={selection.rejections}
+            canAddMore={selection.canAddMore}
+            remaining={selection.remaining}
             health={health}
             disabled={isBusy}
-            onFileSelected={(chosen) => {
-              setFile(chosen);
+            onFilesSelected={(chosen) => {
+              selection.add(chosen);
               setCopied(false);
             }}
-            onClear={handleReset}
+            onRemove={selection.remove}
+            onViewTypeChange={selection.setViewType}
+            onDecodeFailed={selection.markUndecodable}
+            onDismissRejections={selection.dismissRejections}
           />
 
           <ConfigurationPanel
             categoryCode={categoryCode}
             onCategoryCodeChange={setCategoryCode}
-            viewType={viewType}
-            onViewTypeChange={setViewType}
             health={health}
             isBusy={isBusy}
           />
@@ -290,12 +300,18 @@ export function ScanPage() {
             </p>
 
             <dl className="review-summary">
-              <dt>Photo</dt>
-              <dd>{file ? file.name : 'No photo chosen yet'}</dd>
+              <dt>Photos</dt>
+              <dd>
+                {imageCount === 0
+                  ? 'No photos chosen yet'
+                  : `${imageCount} selected — ${entries
+                      .map((entry) => entry.file.name)
+                      .join(', ')}`}
+              </dd>
               <dt>Product type</dt>
               <dd>{categoryCode.trim() || 'Not specified'}</dd>
-              <dt>Part of package</dt>
-              <dd>{viewTypeLabel(viewType)}</dd>
+              <dt>Parts of package</dt>
+              <dd>{panelsSummary(entries)}</dd>
               <dt>Questions answered</dt>
               <dd>
                 {answeredCount === 0
@@ -305,18 +321,25 @@ export function ScanPage() {
             </dl>
 
             <div className="ready__actions">
+              {/*
+                The count is on the action itself, because it is the last thing
+                read before the click and it is where a set nobody meant to
+                submit gets caught.
+              */}
               <button
                 type="submit"
                 className="button button--primary button--large button--block"
-                disabled={!file || isBusy}
+                disabled={imageCount === 0 || isBusy}
               >
                 {isBusy ? (
                   <>
                     <span className="spinner" aria-hidden="true" />
                     {isEvaluating ? 'Checking requirements…' : 'Reading label…'}
                   </>
+                ) : imageCount === 0 ? (
+                  'Check package'
                 ) : (
-                  'Check compliance'
+                  `Check package · ${imageCount} ${imageCount === 1 ? 'photo' : 'photos'}`
                 )}
               </button>
               <button
@@ -329,9 +352,9 @@ export function ScanPage() {
               </button>
             </div>
 
-            {!file && (
+            {imageCount === 0 && (
               <p className="hint hint--centred">
-                Upload a photo above to start the check.
+                Add at least one photo above to start the check.
               </p>
             )}
 
@@ -400,7 +423,10 @@ export function ScanPage() {
         <>
           <ComplianceResult
             result={result}
-            imageUrl={previewUrl}
+            imageUrl={primaryPreviewUrl}
+            // In submission order, which is the order the backend positioned
+            // them in, so entry N here is `images[N]` there.
+            imageUrls={previewUrls}
             disabled={isBusy}
             onConfirmCategory={handleConfirmCategory}
             onConfirmFact={handleConfirmFact}
@@ -477,7 +503,32 @@ export function ScanPage() {
   );
 }
 
-/** The label for a view type, for the review summary. */
+/**
+ * What the submitter said each photograph shows, for the review summary.
+ *
+ * Panels are stated per photograph now, so this reports how many were named
+ * rather than naming one. Saying nothing is a supported answer and the summary
+ * treats it as one, not as an omission to be nagged about.
+ */
+function panelsSummary(entries) {
+  if (entries.length === 0) {
+    return 'Not specified';
+  }
+  const named = entries.filter((entry) => entry.viewType !== 'unspecified');
+  if (named.length === 0) {
+    return 'Not specified — which is fine; a declaration absent from every photo is reported as needing review, not as missing';
+  }
+  return named
+    .map((entry) => `${viewTypeLabel(entry.viewType)}`)
+    .join(', ')
+    .concat(
+      named.length < entries.length
+        ? ` (${entries.length - named.length} not specified)`
+        : '',
+    );
+}
+
+/** The label for a view type. */
 function viewTypeLabel(value) {
   const labels = {
     unspecified: 'Not specified',

@@ -14,8 +14,13 @@ import {
   fetchComplianceHistory,
   fetchComplianceResult,
 } from './complianceService.js';
-import { extractLabel } from './extractionService.js';
 import {
+  buildUploadFormData,
+  extractLabel,
+  extractPackage,
+} from './extractionService.js';
+import {
+  IMAGE_ID,
   assessedFactBody,
   assessmentBody,
   complianceBody,
@@ -23,6 +28,7 @@ import {
   findingBody,
   historyBody,
   historyRowBody,
+  imageSetBody,
 } from '../test/fixtures.js';
 
 function jsonResponse(body, status = 200) {
@@ -60,6 +66,9 @@ describe('extractLabel', () => {
       normalizedValue: { value: 500, unit: 'g' },
       confidence: 0.91,
       boundingBox: { x: 40, y: 60, width: 200, height: 24 },
+      // Which photograph the declaration was read from. On a single-image
+      // inspection that is the one image, and it is still carried.
+      imageId: IMAGE_ID,
     });
     expect(run.image.width).toBe(800);
   });
@@ -238,7 +247,17 @@ describe('evaluateExtractionRun', () => {
       severity: 'critical',
       fieldKey: 'manufacturer_name',
       message: 'Not declared.',
-      evidence: [{ excerpt: 'READ TEXT', boundingBox: null, note: 'n' }],
+      evidence: [
+        {
+          excerpt: 'READ TEXT',
+          boundingBox: null,
+          note: 'n',
+          // The fixture's evidence row carries no `image_id`, and null is what
+          // that must map to: "the backend did not say", never a default to
+          // the first photograph.
+          imageId: null,
+        },
+      ],
     });
   });
 
@@ -443,5 +462,94 @@ describe('applicability assessment', () => {
       jsonResponse(complianceBody({ applicability_assessment: 'uncertain' }), 201),
     );
     expect((await evaluateExtractionRun('run-1')).applicabilityAssessment).toBeNull();
+  });
+});
+
+describe('buildUploadFormData', () => {
+  const png = (name) => new File(['bytes'], name, { type: 'image/png' });
+
+  it('repeats the image part, once per photograph', () => {
+    const body = buildUploadFormData([png('front.png'), png('back.png')]);
+
+    // The ordinary multipart way to send several values under one name, and
+    // exactly what the backend reads. Three separate requests would be three
+    // inspections.
+    expect(body.getAll('image')).toHaveLength(2);
+    expect(body.getAll('image').map((file) => file.name)).toEqual([
+      'front.png',
+      'back.png',
+    ]);
+  });
+
+  it('sends exactly the body a single photograph has always sent', () => {
+    const body = buildUploadFormData([png('label.png')]);
+
+    expect(body.getAll('image')).toHaveLength(1);
+    expect(body.getAll('view_type')).toEqual([]);
+  });
+
+  it('pads the view types so each lands on its own photograph', () => {
+    const body = buildUploadFormData(
+      [png('a.png'), png('b.png'), png('c.png')],
+      [undefined, 'back'],
+    );
+
+    // Positional on the API. Skipping the unstated one would shift 'back' onto
+    // the first photograph; repeating it would claim it of all three.
+    expect(body.getAll('view_type')).toEqual(['unspecified', 'back', 'unspecified']);
+  });
+
+  it('omits view types entirely when no panel was stated', () => {
+    const body = buildUploadFormData([png('a.png'), png('b.png')], [
+      'unspecified',
+      'unspecified',
+    ]);
+
+    expect(body.getAll('view_type')).toEqual([]);
+  });
+});
+
+describe('extractPackage', () => {
+  const png = (name) => new File(['bytes'], name, { type: 'image/png' });
+
+  it('posts the whole set to the extraction endpoint in one request', async () => {
+    fetch.mockResolvedValue(
+      jsonResponse({ ...extractionBody(), images: imageSetBody() }, 201),
+    );
+
+    const run = await extractPackage([png('front.png'), png('back.png')]);
+
+    expect(fetch.mock.calls).toHaveLength(1);
+    const [url, init] = fetch.mock.calls[0];
+    expect(url).toContain('/api/v1/extraction/');
+    expect(init.body.getAll('image')).toHaveLength(2);
+    // One reading of one package, whatever the number of photographs.
+    expect(run.id).toBe(extractionBody().id);
+    expect(run.images).toHaveLength(3);
+    expect(run.images[1].position).toBe(2);
+  });
+
+  it('refuses an empty set before making a request', async () => {
+    await expect(extractPackage([])).rejects.toBeInstanceOf(RangeError);
+    expect(fetch).not.toHaveBeenCalled();
+  });
+
+  it('refuses more than the backend accepts before uploading megabytes', async () => {
+    const files = Array.from({ length: 7 }, (_v, i) => png(`p${i}.png`));
+
+    await expect(extractPackage(files)).rejects.toThrow(/at most 6/i);
+    expect(fetch).not.toHaveBeenCalled();
+  });
+
+  it('treats a backend without image sets as the one photograph it reported', async () => {
+    const body = { ...extractionBody() };
+    delete body.images;
+    fetch.mockResolvedValue(jsonResponse(body, 201));
+
+    const run = await extractPackage([png('label.png')]);
+
+    // Never an empty set, which would make a screen say no images were checked.
+    expect(run.images).toHaveLength(1);
+    expect(run.images[0].position).toBe(1);
   });
 });

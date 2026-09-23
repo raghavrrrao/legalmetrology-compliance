@@ -282,7 +282,9 @@ back
 --…--
 ```
 
-The same applies to `POST /api/v1/images/`.
+The same applies to `POST /api/v1/images/`. Both first-party clients send this
+shape: the web scan page (`frontend/src/services/extractionService.js`,
+`buildUploadFormData`) and the mobile app (`mobile/src/api/extraction.ts`).
 
 **They become one inspection, not several.** One `ProductImage` per
 photograph, then **one** `ExtractionRun` over all of them, and - on

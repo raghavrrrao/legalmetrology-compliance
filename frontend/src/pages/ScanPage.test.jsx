@@ -22,6 +22,7 @@ import {
   extractionBody,
   extractionRunBody,
   findingBody,
+  multiImageComplianceBody,
 } from '../test/fixtures.js';
 
 function healthBody(overrides = {}) {
@@ -89,23 +90,55 @@ function renderPage() {
   );
 }
 
+/** A distinct, real `File`, so a set is a set rather than one file six times. */
+function imageFile(name = 'label.png') {
+  return new File([`fake-image-bytes-${name}`], name, { type: 'image/png' });
+}
+
 /**
- * Choose a file and submit.
+ * Add files to the inspection.
  *
  * `fireEvent` rather than `user-event`: the latter is not a dependency of this
  * project, and a file input is one of the few cases where the lower-level API
  * is equivalent - React reads `event.target.files` either way.
+ *
+ * The input's accessible name changes with the state - the dropzone names it
+ * while the set is empty, the add tile after - so both are matched here and
+ * callers do not have to know which state they are in.
  */
+function addFiles(files) {
+  const input = screen.getByLabelText(/upload package photos|add photos/i);
+  fireEvent.change(input, { target: { files } });
+}
+
+/** The submit button, whatever count its label currently carries. */
+function submitButton() {
+  return screen.getByRole('button', { name: /^check package/i });
+}
+
+/** Choose one photograph and submit, which is the single-image flow. */
 async function uploadAndSubmit() {
-  const file = new File(['fake-image-bytes'], 'label.png', { type: 'image/png' });
+  addFiles([imageFile()]);
 
-  fireEvent.change(screen.getByLabelText(/upload a product label image/i), {
-    target: { files: [file] },
-  });
-
-  const submit = screen.getByRole('button', { name: /check compliance/i });
+  const submit = submitButton();
   await waitFor(() => expect(submit).toBeEnabled());
   fireEvent.click(submit);
+}
+
+/** Choose `names.length` photographs of one package and submit them together. */
+async function uploadManyAndSubmit(names = ['front.png', 'back.png', 'side.png']) {
+  addFiles(names.map((name) => imageFile(name)));
+
+  const submit = await screen.findByRole('button', {
+    name: new RegExp(`check package · ${names.length} photo`, 'i'),
+  });
+  await waitFor(() => expect(submit).toBeEnabled());
+  fireEvent.click(submit);
+}
+
+/** The `image` parts of a multipart body, in order. */
+function imageParts(init) {
+  return init.body.getAll('image');
 }
 
 beforeEach(() => {
@@ -118,11 +151,14 @@ afterEach(() => {
 });
 
 describe('the extraction to compliance flow', () => {
-  it('disables the submit button until a file is chosen', async () => {
+  it('disables the submit button until a photo is chosen', async () => {
     routeFetch();
     renderPage();
 
-    expect(screen.getByRole('button', { name: /check compliance/i })).toBeDisabled();
+    expect(submitButton()).toBeDisabled();
+    expect(
+      screen.getByText(/add at least one photo above to start the check/i),
+    ).toBeInTheDocument();
     await screen.findByText(/tesseract 0\.2\.0/i);
   });
 
@@ -137,6 +173,9 @@ describe('the extraction to compliance flow', () => {
     expect(init.method).toBe('POST');
     expect(init.body).toBeInstanceOf(FormData);
     expect(init.body.get('image')).toBeInstanceOf(File);
+    // One photograph is one `image` part: the request this client has always
+    // sent, unchanged.
+    expect(imageParts(init)).toHaveLength(1);
     // The browser must set the multipart boundary itself.
     expect(init.headers['Content-Type']).toBeUndefined();
   });
@@ -189,11 +228,8 @@ describe('the extraction to compliance flow', () => {
     routeFetch();
     renderPage();
 
-    const file = new File(['bytes'], 'label.png', { type: 'image/png' });
-    fireEvent.change(screen.getByLabelText(/upload a product label image/i), {
-      target: { files: [file] },
-    });
-    const submit = screen.getByRole('button', { name: /check compliance/i });
+    addFiles([imageFile()]);
+    const submit = submitButton();
     await waitFor(() => expect(submit).toBeEnabled());
 
     fireEvent.click(submit);
@@ -1229,5 +1265,382 @@ describe('no compliance score', () => {
     expect(
       screen.getByText(/not a compliance figure, and no compliance figure can be derived from it/i),
     ).toBeInTheDocument();
+  });
+});
+
+/**
+ * Several photographs of one package, checked together.
+ *
+ * The property everything here protects is the architectural one: N photographs
+ * produce **one** request carrying N `image` parts, one extraction run and one
+ * verdict — never N inspections presented side by side. A screen that uploaded
+ * three times would still look plausible, which is why it is asserted directly
+ * rather than inferred from what is rendered.
+ */
+describe('several photos, one inspection', () => {
+  it('sends three photos as one request with three image parts', async () => {
+    routeFetch();
+    renderPage();
+    await uploadManyAndSubmit();
+
+    await waitFor(() => expect(callsTo('/extraction/')).toHaveLength(1));
+    // One upload, not three. Three would be three inspections.
+    const [, init] = callsTo('/extraction/')[0];
+    expect(imageParts(init)).toHaveLength(3);
+    expect(imageParts(init).map((file) => file.name)).toEqual([
+      'front.png',
+      'back.png',
+      'side.png',
+    ]);
+  });
+
+  it('asks for exactly one verdict for the set', async () => {
+    routeFetch();
+    renderPage();
+    await uploadManyAndSubmit();
+
+    await screen.findByRole('heading', { name: /compliance assessment/i });
+    expect(callsTo('/extraction/')).toHaveLength(1);
+    expect(callsTo('/compliance/')).toHaveLength(1);
+  });
+
+  it('keeps the photos in the order they were chosen', async () => {
+    routeFetch();
+    renderPage();
+    await uploadManyAndSubmit(['c.png', 'a.png', 'b.png']);
+
+    await waitFor(() => expect(callsTo('/extraction/')).toHaveLength(1));
+    // The order becomes the position the backend records, and the number the
+    // result screen shows beside a piece of evidence.
+    expect(
+      imageParts(callsTo('/extraction/')[0][1]).map((file) => file.name),
+    ).toEqual(['c.png', 'a.png', 'b.png']);
+  });
+
+  it('adds more photos to the set rather than replacing it', async () => {
+    routeFetch();
+    renderPage();
+
+    addFiles([imageFile('front.png')]);
+    await screen.findByText('1 photo selected');
+
+    addFiles([imageFile('back.png'), imageFile('side.png')]);
+    await screen.findByText('3 photos selected');
+
+    fireEvent.click(submitButton());
+    await waitFor(() => expect(callsTo('/extraction/')).toHaveLength(1));
+    expect(imageParts(callsTo('/extraction/')[0][1])).toHaveLength(3);
+  });
+
+  it('removes one photo and sends only what is left', async () => {
+    routeFetch();
+    renderPage();
+
+    addFiles([imageFile('front.png'), imageFile('back.png'), imageFile('side.png')]);
+    await screen.findByText('3 photos selected');
+
+    fireEvent.click(screen.getByRole('button', { name: 'Remove image 2' }));
+    await screen.findByText('2 photos selected');
+
+    fireEvent.click(submitButton());
+    await waitFor(() => expect(callsTo('/extraction/')).toHaveLength(1));
+    expect(
+      imageParts(callsTo('/extraction/')[0][1]).map((file) => file.name),
+    ).toEqual(['front.png', 'side.png']);
+  });
+
+  it('will not submit once every photo has been removed', async () => {
+    routeFetch();
+    renderPage();
+
+    addFiles([imageFile()]);
+    await screen.findByText('1 photo selected');
+    fireEvent.click(screen.getByRole('button', { name: 'Remove image 1' }));
+
+    await waitFor(() => expect(submitButton()).toBeDisabled());
+    fireEvent.click(submitButton());
+
+    expect(callsTo('/extraction/')).toHaveLength(0);
+  });
+
+  it('counts the photos on the submit button', async () => {
+    routeFetch();
+    renderPage();
+
+    addFiles([imageFile('a.png')]);
+    // The last thing read before the click, so a set nobody meant to submit is
+    // caught before it is sent rather than explained afterwards.
+    expect(
+      await screen.findByRole('button', { name: /check package · 1 photo$/i }),
+    ).toBeInTheDocument();
+
+    addFiles([imageFile('b.png')]);
+    expect(
+      await screen.findByRole('button', { name: /check package · 2 photos/i }),
+    ).toBeInTheDocument();
+  });
+
+  it('sends a panel per photo, positionally, only where one was stated', async () => {
+    routeFetch();
+    renderPage();
+
+    addFiles([imageFile('front.png'), imageFile('back.png')]);
+    await screen.findByText('2 photos selected');
+
+    fireEvent.change(
+      screen.getByLabelText('Which part of the package is image 2?'),
+      { target: { value: 'back' } },
+    );
+    fireEvent.click(submitButton());
+
+    await waitFor(() => expect(callsTo('/extraction/')).toHaveLength(1));
+    const [, init] = callsTo('/extraction/')[0];
+    // Padded, never repeated: saying the second photo is the back says nothing
+    // about the first, and shifting the value onto it would record a claim
+    // nobody made.
+    expect(init.body.getAll('view_type')).toEqual(['unspecified', 'back']);
+  });
+
+  it('sends no view types at all when no panel was named', async () => {
+    routeFetch();
+    renderPage();
+    await uploadManyAndSubmit();
+
+    await waitFor(() => expect(callsTo('/extraction/')).toHaveLength(1));
+    // The body a client that names no panel has always sent.
+    expect(callsTo('/extraction/')[0][1].body.getAll('view_type')).toEqual([]);
+  });
+});
+
+describe('the photos the set will not take', () => {
+  it('names a seventh photo instead of discarding it', async () => {
+    routeFetch();
+    renderPage();
+
+    addFiles(
+      ['a', 'b', 'c', 'd', 'e', 'f', 'g'].map((name) => imageFile(`${name}.png`)),
+    );
+
+    await screen.findByText('6 photos selected');
+    const alert = await screen.findByRole('alert');
+    expect(alert).toHaveTextContent('g.png');
+    expect(alert).toHaveTextContent(/up to 6 images can be checked together/i);
+  });
+
+  it('still submits the six that fit', async () => {
+    routeFetch();
+    renderPage();
+
+    addFiles(
+      ['a', 'b', 'c', 'd', 'e', 'f', 'g'].map((name) => imageFile(`${name}.png`)),
+    );
+    await screen.findByText('6 photos selected');
+
+    fireEvent.click(submitButton());
+    await waitFor(() => expect(callsTo('/extraction/')).toHaveLength(1));
+    expect(imageParts(callsTo('/extraction/')[0][1])).toHaveLength(6);
+  });
+
+  it('lets the user remove one and add another after hitting the limit', async () => {
+    routeFetch();
+    renderPage();
+
+    addFiles(['a', 'b', 'c', 'd', 'e', 'f'].map((name) => imageFile(`${name}.png`)));
+    await screen.findByText('6 photos selected');
+
+    fireEvent.click(screen.getByRole('button', { name: 'Remove image 1' }));
+    await screen.findByText('5 photos selected');
+
+    addFiles([imageFile('replacement.png')]);
+    await screen.findByText('6 photos selected');
+    expect(screen.getByText('replacement.png')).toBeInTheDocument();
+  });
+
+  it('refuses a file type the API does not read, and keeps the rest', async () => {
+    routeFetch();
+    renderPage();
+
+    addFiles([
+      imageFile('front.png'),
+      new File(['x'], 'scan.pdf', { type: 'application/pdf' }),
+    ]);
+
+    await screen.findByText('1 photo selected');
+    const alert = await screen.findByRole('alert');
+    expect(alert).toHaveTextContent('scan.pdf');
+    expect(alert).toHaveTextContent(/JPG, PNG or WebP/i);
+  });
+
+  it('refuses the same file twice', async () => {
+    routeFetch();
+    renderPage();
+
+    const file = imageFile('front.png');
+    addFiles([file]);
+    await screen.findByText('1 photo selected');
+
+    addFiles([file]);
+
+    // Adding it twice would have its declarations read and counted twice.
+    expect(await screen.findByRole('alert')).toHaveTextContent(
+      /already in this inspection/i,
+    );
+    expect(screen.getByText('1 photo selected')).toBeInTheDocument();
+  });
+
+  it('refuses an empty file', async () => {
+    routeFetch();
+    renderPage();
+
+    addFiles([new File([], 'empty.png', { type: 'image/png' })]);
+
+    expect(await screen.findByRole('alert')).toHaveTextContent(/the file is empty/i);
+  });
+
+  it('prints no client-side size limit, because the server owns it', async () => {
+    routeFetch();
+    renderPage();
+
+    // An oversized file is refused by the API, whose message names the real
+    // limit. Refusing it here against a number invented in the browser would
+    // reject uploads the server would have accepted.
+    expect(screen.getByText(/the server checks the size/i)).toBeInTheDocument();
+  });
+});
+
+describe('when an upload of several photos fails', () => {
+  it('keeps every photo so the user does not choose them again', async () => {
+    routeFetch({
+      extraction: jsonResponse(
+        { error: { code: 'server_error', message: 'Boom.' } },
+        500,
+      ),
+    });
+    renderPage();
+    await uploadManyAndSubmit();
+
+    await screen.findByText(/we could not read this photo/i);
+    // The form is back, with the set exactly as it was.
+    expect(await screen.findByText('3 photos selected')).toBeInTheDocument();
+  });
+
+  it('resends the same set on a retry', async () => {
+    routeFetch({
+      extraction: jsonResponse(
+        { error: { code: 'server_error', message: 'Boom.' } },
+        500,
+      ),
+    });
+    renderPage();
+    await uploadManyAndSubmit();
+    await screen.findByText(/we could not read this photo/i);
+
+    routeFetch();
+    fireEvent.click(
+      screen.getByRole('button', { name: /check package · 3 photos/i }),
+    );
+
+    await screen.findByRole('heading', { name: /compliance assessment/i });
+    const attempts = callsTo('/extraction/');
+    expect(attempts).toHaveLength(2);
+    // The same three photographs, in the same order - not a different
+    // inspection quietly substituted for the one that failed.
+    expect(imageParts(attempts[1][1]).map((file) => file.name)).toEqual([
+      'front.png',
+      'back.png',
+      'side.png',
+    ]);
+  });
+
+  it('shows the backend validation message about the photos', async () => {
+    routeFetch({
+      extraction: jsonResponse(
+        {
+          error: {
+            code: 'validation_error',
+            message: 'The submitted data was not valid.',
+            details: { image: ['Ensure this file is no larger than 10 MB.'] },
+          },
+        },
+        400,
+      ),
+    });
+    renderPage();
+    await uploadManyAndSubmit();
+
+    await screen.findByText(/we could not read this photo/i);
+    expect(screen.getByText(/no larger than 10 MB/i)).toBeInTheDocument();
+    expect(screen.getByText('3 photos selected')).toBeInTheDocument();
+  });
+});
+
+describe('a result made from several photos', () => {
+  async function renderMultiImageResult() {
+    routeFetch({ compliance: jsonResponse(multiImageComplianceBody(), 201) });
+    const view = renderPage();
+    await uploadManyAndSubmit();
+    await screen.findByRole('heading', { name: /compliance assessment/i });
+    return view;
+  }
+
+  it('says how many images were checked, and that they are one result', async () => {
+    await renderMultiImageResult();
+
+    const line = screen.getByTestId('images-checked');
+    expect(line).toHaveTextContent('3 images checked');
+    expect(line).toHaveTextContent('one package, one result');
+  });
+
+  it('shows exactly one verdict for the set', async () => {
+    await renderMultiImageResult();
+
+    // Three verdicts would describe an analysis the backend did not perform:
+    // it evaluated one reading, assembled from three panels.
+    expect(screen.getAllByRole('heading', { name: /compliance assessment/i })).toHaveLength(1);
+  });
+
+  it('names the photo each declaration was read from', async () => {
+    const { container } = await renderMultiImageResult();
+
+    // Scoped to the extraction panel: "Image 2" legitimately appears in
+    // several places on this screen - beside the reading, beside the
+    // violation's evidence, and over the evidence figure - and that is the
+    // point of the label, so a page-wide query would be ambiguous by design.
+    const sources = [...container.querySelectorAll('.read-field__source')].map(
+      (node) => node.textContent,
+    );
+    expect(sources).toEqual([' · Image 1', ' · Image 2']);
+  });
+
+  it('names the photo behind a violation the backend attributed', async () => {
+    await renderMultiImageResult();
+
+    expect(screen.getByText('Evidence · Image 2')).toBeInTheDocument();
+  });
+
+  it('lists how each photo fared on its own', async () => {
+    const { container } = await renderMultiImageResult();
+
+    // A run can be completed - the package was read well enough to judge -
+    // while one photograph contributed nothing. Both facts are shown, so the
+    // per-photo list exists even when every photograph was read.
+    const outcomes = [...container.querySelectorAll('.status-list')]
+      .flatMap((list) => [...list.querySelectorAll('dt')])
+      .map((node) => node.textContent);
+    expect(outcomes).toEqual(
+      expect.arrayContaining(['Image 1', 'Image 2', 'Image 3']),
+    );
+    expect(screen.getAllByText('Read').length).toBe(3);
+  });
+
+  it('says a single-image result was made from one image', async () => {
+    routeFetch();
+    renderPage();
+    await uploadAndSubmit();
+    await screen.findByRole('heading', { name: /compliance assessment/i });
+
+    expect(screen.getByTestId('images-checked')).toHaveTextContent('1 image checked');
+    // "Image 1" beside every reading of a one-photo inspection is noise.
+    expect(screen.queryByText(/· Image 1/)).not.toBeInTheDocument();
   });
 });

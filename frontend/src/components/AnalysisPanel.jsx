@@ -31,9 +31,22 @@ import { PHASES } from '../hooks/useLabelAnalysis.js';
  * and the client will not invent it. The scan line is decoration over a state
  * that is already stated in words, which is why it is `aria-hidden` and why it
  * stops entirely under `prefers-reduced-motion`.
+ *
+ * **Several photographs change the wording, not the stages.** An inspection may
+ * carry up to six, read in one request into one reading, so `imageCount` is
+ * reported beside the photograph and folded into the reading stage's label.
+ * There is deliberately no stage per photograph: the server does not say which
+ * one it is on, and a tick that advanced per image would be an animation
+ * pretending to be telemetry - the same dishonesty as a fabricated percentage.
  */
-export function AnalysisPanel({ previewUrl, fileName, phase, declarationsRead }) {
-  const stages = stagesFor(phase, declarationsRead);
+export function AnalysisPanel({
+  previewUrl,
+  fileName,
+  phase,
+  declarationsRead,
+  imageCount = 1,
+}) {
+  const stages = stagesFor(phase, declarationsRead, imageCount);
   const active = stages.find((stage) => stage.state === 'active');
 
   return (
@@ -61,6 +74,17 @@ export function AnalysisPanel({ previewUrl, fileName, phase, declarationsRead })
           */}
           <span className="analysis__scanline" aria-hidden="true" />
           <span className="analysis__brackets" aria-hidden="true" />
+
+          {/*
+            A count, never a position. The server reports nothing about which
+            photograph it is reading, so "2 of 3" would be invented. Decorative
+            here because the stage list below already says how many.
+          */}
+          {imageCount > 1 && (
+            <span className="analysis__count" aria-hidden="true">
+              {`${imageCount} photos`}
+            </span>
+          )}
         </div>
       </div>
 
@@ -70,8 +94,9 @@ export function AnalysisPanel({ previewUrl, fileName, phase, declarationsRead })
           {active ? active.label : 'Working…'}
         </h2>
         <p className="analysis__note">
-          The photograph is checked on the server. Nothing is decided in this
-          browser.
+          {imageCount > 1
+            ? `All ${imageCount} photos are read together, as one package, on the server. Nothing is decided in this browser.`
+            : 'The photograph is checked on the server. Nothing is decided in this browser.'}
         </p>
 
         {/*
@@ -117,20 +142,23 @@ const SPOKEN = Object.freeze({
  * Before that it is null and no detail is shown - an unknown count is not
  * rendered as zero.
  */
-function stagesFor(phase, declarationsRead) {
+function stagesFor(phase, declarationsRead, imageCount = 1) {
   const extracting = phase === PHASES.EXTRACTING;
   const evaluating = phase === PHASES.EVALUATING;
   const readingDone = !extracting;
+  const several = imageCount > 1;
 
   return [
     {
       key: 'uploaded',
-      label: 'Photograph uploaded',
+      label: several
+        ? `${imageCount} photographs uploaded`
+        : 'Photograph uploaded',
       state: 'done',
     },
     {
       key: 'reading',
-      label: 'Reading the label',
+      label: several ? 'Reading the label from every photo' : 'Reading the label',
       detail: readingDone
         ? countDetail(declarationsRead)
         : 'Recognising text and locating declarations',

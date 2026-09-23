@@ -12,12 +12,14 @@
  *   validates the code and rejects an unknown one with a message this screen
  *   renders, so a typo is caught where the answer actually is. A datalist
  *   offers no suggestions for the same reason.
- * - **Which part of the package** is a real `ProductImage.ViewType` the API
- *   accepts, and it genuinely changes how a result should be read. Its
- *   explanation is the most load-bearing sentence on this screen: a declaration
- *   that is not in the photograph has not been shown to be missing from the
- *   package, and a user who does not understand that will read an honest
- *   "requires review" as a failure.
+ * - **Which part of the package** has moved to the upload panel, onto each
+ *   thumbnail. It is a real `ProductImage.ViewType` that the API accepts
+ *   positionally, one per photograph, and an inspection may now carry several -
+ *   so a single select here would have recorded a claim about five photographs
+ *   that nobody made. The sentence it carried is load-bearing and moved with
+ *   it: a declaration that is not in the photograph has not been shown to be
+ *   missing from the package, and a user who does not understand that will
+ *   read an honest "requires review" as a failure.
  * - **Inspection scope** is gone. The design's "Mandatory Declarations Only"
  *   has no counterpart in the API — the request body has no scope, rule,
  *   check-type or severity parameter, deliberately.
@@ -35,20 +37,9 @@
  * finding's own `requirement`, in the rule's own words.
  */
 
-const VIEW_TYPES = [
-  ['unspecified', 'Not specified'],
-  ['front', 'Front panel'],
-  ['back', 'Back panel'],
-  ['principal_display', 'Principal display panel'],
-  ['label', 'Label close-up'],
-  ['other', 'Other'],
-];
-
 export function ConfigurationPanel({
   categoryCode,
   onCategoryCodeChange,
-  viewType,
-  onViewTypeChange,
   health,
   isBusy,
 }) {
@@ -78,29 +69,6 @@ export function ConfigurationPanel({
             disabled={isBusy}
             onChange={(event) => onCategoryCodeChange(event.target.value)}
           />
-        </div>
-
-        <div className="field">
-          <label htmlFor="scan-view-type">
-            Which part of the package does your photo show?
-          </label>
-          <p className="hint" id="scan-view-type-help">
-            This matters because a declaration that is not visible in this photo
-            cannot automatically be treated as missing from the package.
-          </p>
-          <select
-            id="scan-view-type"
-            value={viewType}
-            aria-describedby="scan-view-type-help"
-            disabled={isBusy}
-            onChange={(event) => onViewTypeChange(event.target.value)}
-          >
-            {VIEW_TYPES.map(([value, label]) => (
-              <option key={value} value={value}>
-                {label}
-              </option>
-            ))}
-          </select>
         </div>
 
         <details className="technical-details">

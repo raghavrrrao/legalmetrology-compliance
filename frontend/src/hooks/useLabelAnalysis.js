@@ -1,8 +1,14 @@
 /**
  * The two-step analysis flow: read the label, then ask what the rules make of it.
  *
- *     file -> POST /api/v1/extraction/ -> ExtractionRun id
- *                                      -> POST /api/v1/compliance/ -> verdict
+ *     files -> POST /api/v1/extraction/ -> ExtractionRun id
+ *                                       -> POST /api/v1/compliance/ -> verdict
+ *
+ * **One inspection, however many photographs.** A packaged commodity declares
+ * different things on different panels, so the set is uploaded in one request
+ * and read into one `ExtractionRun` - one reading, one verdict about the
+ * package, never one per photograph. Nothing here combines results, because
+ * there is never more than one to combine.
  *
  * Follows the {data, error, isLoading, ...} shape `useApiHealth` set, extended
  * with the phase, because this flow has two requests and the user needs to know
@@ -26,7 +32,7 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 
 import { evaluateExtractionRun } from '../services/complianceService.js';
-import { extractLabel } from '../services/extractionService.js';
+import { extractPackage } from '../services/extractionService.js';
 
 /**
  * Where the flow is. Ordered, and the UI's stepper reads it directly.
@@ -142,15 +148,25 @@ export function useLabelAnalysis() {
   }, []);
 
   /**
-   * Upload a photograph, read it, and evaluate the reading.
+   * Upload the photographs of one package, read them, and evaluate the reading.
    *
    * The two steps are chained here rather than left to the caller so the run id
    * never has to leave this hook, which is what makes the "uploaded once"
    * guarantee something the UI cannot get wrong.
+   *
+   * Accepts one `File` or an array of them; a single photograph is the set of
+   * one, and takes exactly the same path. `viewTypes` are positional, one per
+   * photograph, and are never inferred from the order somebody happened to take
+   * them in.
+   *
+   * The caller keeps the files. This hook does not hold them, so a failed
+   * upload leaves the user's selection exactly where it was and the same
+   * submit button resends it.
    */
   const analyse = useCallback(
-    async (file, { viewType, categoryCode, declarations } = {}) => {
-      if (!file) {
+    async (files, { viewTypes, categoryCode, declarations } = {}) => {
+      const list = (Array.isArray(files) ? files : [files]).filter(Boolean);
+      if (list.length === 0) {
         return;
       }
 
@@ -171,7 +187,10 @@ export function useLabelAnalysis() {
 
       let run;
       try {
-        run = await extractLabel(file, { viewType, signal: controller.signal });
+        run = await extractPackage(list, {
+          viewTypes,
+          signal: controller.signal,
+        });
       } catch (cause) {
         if (mountedRef.current) {
           setExtractionError(cause);

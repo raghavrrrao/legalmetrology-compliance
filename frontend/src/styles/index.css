@@ -1783,39 +1783,6 @@ img {
 }
 
 /* The selected state is a result, so it is drawn as one. */
-.upload__chosen {
-  display: flex;
-  gap: var(--space-4);
-  align-items: flex-start;
-  padding: var(--space-4);
-  border: 1px solid var(--tone-success-border);
-  border-radius: var(--radius-lg);
-  background: var(--colour-surface);
-  box-shadow: var(--shadow-card);
-}
-
-.upload__preview {
-  flex: none;
-  width: 9rem;
-  height: 9rem;
-  overflow: hidden;
-  border: 1px solid var(--colour-border);
-  border-radius: var(--radius);
-  background: var(--colour-surface-sunken);
-}
-
-.upload__image {
-  display: block;
-  width: 100%;
-  height: 100%;
-  object-fit: cover;
-}
-
-.upload__meta {
-  flex: 1;
-  min-width: 0;
-}
-
 .upload__confirm {
   display: flex;
   align-items: center;
@@ -1873,6 +1840,204 @@ img {
   align-items: center;
   gap: var(--space-3);
   margin-top: var(--space-4);
+}
+
+/* --------------------------------------------------------------------------
+   The chosen set
+   --------------------------------------------------------------------------
+   The same surface the single-file panel used - one bordered, lifted card in
+   the success tone - now holding a row of thumbnails instead of one preview.
+   Evolved rather than replaced: the scan page's first screenful should look
+   like the same product after this change as before it.
+   -------------------------------------------------------------------------- */
+.upload__set {
+  padding: var(--space-4);
+  border: 1px solid var(--tone-success-border);
+  border-radius: var(--radius-lg);
+  background: var(--colour-surface);
+  box-shadow: var(--shadow-card);
+}
+
+.upload__set-head {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: var(--space-2) var(--space-3);
+  margin-bottom: var(--space-4);
+}
+
+.upload__set-note {
+  margin: 0;
+  color: var(--colour-muted);
+  font-size: 0.88rem;
+}
+
+/*
+ * A wrapping grid rather than a horizontal scroller. Six thumbnails fit on one
+ * row at desktop width and wrap to two or three on a narrow window; a scroller
+ * would hide photographs off the right edge, and the whole point of this
+ * control is that the user can see everything they are about to submit.
+ */
+.upload__thumbs {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(8.5rem, 1fr));
+  gap: var(--space-4);
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.upload__thumb {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-1);
+  min-width: 0;
+}
+
+.upload__thumb-frame {
+  position: relative;
+  aspect-ratio: 1;
+  overflow: visible;
+  border: 1.5px solid var(--colour-primary);
+  border-radius: var(--radius);
+  background: var(--colour-surface-sunken);
+}
+
+.upload__thumb-image {
+  display: block;
+  width: 100%;
+  height: 100%;
+  border-radius: calc(var(--radius) - 1.5px);
+  object-fit: cover;
+}
+
+/* The position, over the image, so it is legible on a light or dark photo. */
+.upload__thumb-index {
+  position: absolute;
+  bottom: 0.3rem;
+  left: 0.3rem;
+  min-width: 1.25rem;
+  padding: 0.05rem 0.3rem;
+  border-radius: var(--radius-sm);
+  background: rgb(28 28 30 / 72%);
+  color: #ffffff;
+  font-size: 0.75rem;
+  font-weight: 700;
+  text-align: center;
+}
+
+/*
+ * The remove control sits proud of the tile's corner so it never covers the
+ * part of the photograph the user is trying to judge. 1.75rem with the tile's
+ * own padding around it clears the 24px minimum comfortably at this density.
+ */
+.upload__thumb-remove {
+  position: absolute;
+  top: -0.55rem;
+  right: -0.55rem;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 1.75rem;
+  height: 1.75rem;
+  padding: 0;
+  border: 1px solid var(--colour-border-strong);
+  border-radius: 50%;
+  background: var(--colour-surface);
+  box-shadow: var(--shadow-raised);
+  color: var(--colour-text);
+  font-size: 1.1rem;
+  line-height: 1;
+  cursor: pointer;
+  transition: background var(--duration) var(--ease),
+    border-color var(--duration) var(--ease);
+}
+
+.upload__thumb-remove:hover {
+  border-color: var(--tone-error-border, var(--colour-border-strong));
+  background: var(--colour-surface-sunken);
+}
+
+.upload__thumb-remove:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+.upload__thumb-name {
+  margin: var(--space-2) 0 0;
+  overflow: hidden;
+  font-size: 0.8rem;
+  font-weight: 600;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.upload__thumb-size {
+  margin: 0;
+  color: var(--colour-muted);
+  font-size: 0.78rem;
+}
+
+.upload__thumb-warning {
+  margin: var(--space-1) 0 0;
+  color: var(--tone-warning);
+  font-size: 0.78rem;
+}
+
+/* Compact, because there is one per photograph and six of them is a lot. */
+.upload__thumb-view {
+  margin-top: var(--space-1);
+  padding: 0.3rem 0.4rem;
+  font-size: 0.78rem;
+}
+
+/* The add tile keeps the thumbnails' rhythm, so adding reads as continuing. */
+.upload__thumb--add .upload__add {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: var(--space-1);
+  aspect-ratio: 1;
+  border: 1.5px dashed var(--colour-border-strong);
+  border-radius: var(--radius);
+  background: var(--colour-primary-softer);
+  color: var(--colour-primary);
+  cursor: pointer;
+  transition: border-color var(--duration) var(--ease),
+    background var(--duration) var(--ease);
+}
+
+.upload__thumb--add .upload__add:hover {
+  border-color: var(--colour-primary);
+  background: var(--colour-primary-soft);
+}
+
+.upload__add-glyph {
+  font-size: 1.6rem;
+  font-weight: 300;
+  line-height: 1;
+}
+
+.upload__add-label {
+  font-size: 0.82rem;
+  font-weight: 600;
+}
+
+.upload__set-panels {
+  margin: var(--space-4) 0 0;
+  color: var(--colour-muted);
+  font-size: 0.84rem;
+}
+
+.upload__rejections {
+  margin: var(--space-2) 0 var(--space-3);
+  padding-left: var(--space-5);
+  font-size: 0.88rem;
+}
+
+.upload__rejections li + li {
+  margin-top: var(--space-1);
 }
 
 /*
@@ -1933,7 +2098,24 @@ img {
 /*
  * The photograph well. Dark, so a pale label has an edge and the scan line has
  * something to travel over.
+ *//*
+ * A count over the photograph being read, centred on the bottom edge so it
+ * clears the corner brackets. A count, never a position: the server reports
+ * nothing about which photograph it is on.
  */
+.analysis__count {
+  position: absolute;
+  bottom: 0.65rem;
+  left: 50%;
+  transform: translateX(-50%);
+  padding: 0.1rem 0.6rem;
+  border-radius: 999px;
+  background: rgb(28 28 30 / 72%);
+  color: #ffffff;
+  font-size: 0.78rem;
+  font-weight: 600;
+}
+
 .analysis__frame {
   position: relative;
   overflow: hidden;
@@ -3014,6 +3196,49 @@ img {
   display: block;
 }
 
+/*
+ * One figure per photograph when there are several, stacked. A finding's box is
+ * drawn only on the photograph the backend attributed it to, so each figure is
+ * a separate claim and they are not laid side by side as if interchangeable.
+ */
+.evidence-figures {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-5);
+}
+
+.evidence-figure__label {
+  margin-bottom: var(--space-2);
+  color: var(--colour-muted);
+  font-size: 0.82rem;
+  font-weight: 700;
+  letter-spacing: 0.02em;
+  text-transform: uppercase;
+}
+
+/* Which photograph a piece of evidence came from, above the excerpt. */
+.evidence__source {
+  margin: var(--space-3) 0 var(--space-1);
+  color: var(--colour-muted);
+  font-size: 0.8rem;
+  font-weight: 700;
+  letter-spacing: 0.02em;
+  text-transform: uppercase;
+}
+
+/* The photograph a declaration was read from, beside its name. */
+.read-field__source {
+  color: var(--colour-muted);
+  font-weight: 600;
+}
+
+/* How many photographs this one result was made from. */
+.result__images {
+  margin: 0 0 var(--space-5);
+  color: var(--colour-muted);
+  font-size: 0.92rem;
+}
+
 .evidence-figure {
   margin: 0;
   padding: var(--space-4);
@@ -3564,6 +3789,7 @@ label:focus-visible,
 
 /* The dropzone's input is visually hidden, so the ring has to be drawn on the
    panel the user can actually see. */
+.upload:has(#scan-image:focus-visible) .upload__thumb--add .upload__add,
 .upload__dropzone:has(input:focus-visible),
 .upload:has(#scan-image:focus-visible) .upload__dropzone {
   outline: 2px solid var(--colour-primary);
@@ -3795,13 +4021,14 @@ label:focus-visible,
     font-size: 0.8rem;
   }
 
-  .upload__chosen {
-    flex-direction: column;
-  }
-
-  .upload__preview {
-    width: 100%;
-    height: 11rem;
+  /*
+   * Two thumbnails to a row on a phone. `auto-fill` at the desktop minimum
+   * would give one 8.5rem tile and a wide gutter; this keeps the set legible
+   * as a set, which is the whole point of showing it.
+   */
+  .upload__thumbs {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: var(--space-3);
   }
 
   .upload__actions .button {

@@ -38,6 +38,7 @@ import {
   EXTRACTION_TIMEOUT_MS,
   mapExtractionRun,
   mapImage,
+  mapInspectionImages,
 } from './extractionService.js';
 
 /**
@@ -103,7 +104,8 @@ import {
  * @property {boolean} findingsReported  false against a backend with no findings[]
  * @property {Violation[]} violations
  * @property {object|null} extraction
- * @property {object|null} image
+ * @property {object|null} image                      the primary photograph
+ * @property {import('./extractionService.js').InspectionImage[]} images
  */
 
 function mapViolation(violation) {
@@ -118,6 +120,12 @@ function mapViolation(violation) {
       excerpt: item.excerpt || '',
       boundingBox: item.bounding_box ?? null,
       note: item.note || '',
+      // The photograph this evidence should be shown against. For a finding
+      // drawn from a reading it is that reading's source; for a finding of
+      // ABSENCE the backend falls back to the primary photograph, which is not
+      // a claim that the declaration should have been on that panel. Null when
+      // the backend said nothing, which the UI renders as no image label.
+      imageId: typeof item.image_id === 'string' ? item.image_id : null,
     })),
   };
 }
@@ -349,7 +357,13 @@ function mapResult(data) {
     findings: findingsReported ? data.findings.map(mapFinding) : [],
     violations: (data.violations ?? []).map(mapViolation),
     extraction: mapExtractionRun(data.extraction),
+    // The primary photograph. Kept beside `images` for the parts of the UI
+    // that want a single thumbnail and for clients written before the set.
     image: mapImage(data.image),
+    // Every photograph this ONE inspection was made from, in order. One result
+    // for the set: a screen says "3 images checked" and shows one verdict,
+    // never one verdict per photograph.
+    images: mapInspectionImages(data.images, data.image),
   };
 }
 
@@ -447,6 +461,13 @@ export async function fetchComplianceResult(checkId, options = {}) {
  * and a caller that wants only the verdict should not have to make two
  * requests. The scan screen does not use it: it needs the reading on screen
  * before any determination is offered, which is what the two-step path is for.
+ *
+ * Single-photograph, deliberately. `POST /api/v1/images/` accepts a repeated
+ * `image` part exactly as the extraction endpoint does, but nothing in this
+ * client calls this function, and a multi-photograph form with no caller would
+ * be an untested second way to build the same body. `extractPackage` is the
+ * one that sends a set; if a caller ever needs the one-shot path for one, this
+ * grows a `files` form then.
  *
  * @param {File} file
  * @param {{viewType?: string, categoryCode?: string, signal?: AbortSignal}} [options]
