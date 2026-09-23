@@ -134,6 +134,29 @@ def normalise_text(text: str) -> str:
     return _WHITESPACE.sub(" ", unicodedata.normalize("NFKC", text)).strip()
 
 
+#: The space OCR inserts on either side of an `@`, and nothing else.
+_EMAIL_AT = re.compile(r"\s*@\s*")
+
+
+def normalise_email(text: str) -> str:
+    """Close the gap OCR opened at an `@`. Nothing else is touched.
+
+    `patterns.EMAIL` accepts one space on either side of the `@`, because a
+    printed address is one token and a space there is a separator the engine
+    added rather than a character the label carries. The structured reading a
+    reviewer is shown, and that a check tests for presence, should therefore be
+    the address - `care@example.com`, not `care @example.com`, which is not an
+    address at all and which nobody could paste into a mail client.
+
+    This is presentation, in exactly the sense `normalise_text` is: the
+    recognised line survives untouched in `ExtractedField.raw_value`, so what
+    OCR actually read stays auditable and the repair stays visible. No
+    character is added - a missing dot is still a missing dot, and
+    `suggestion @dmartindia com` is still not an e-mail address.
+    """
+    return _EMAIL_AT.sub("@", normalise_text(text))
+
+
 def certain(**values) -> dict:
     """Build a normalised mapping for a value we could commit to."""
     return {**values, UNCERTAIN_KEY: False}

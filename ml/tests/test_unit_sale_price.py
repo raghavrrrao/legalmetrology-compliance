@@ -364,8 +364,13 @@ def test_the_anchor_is_a_subset_of_the_keyword():
     [
         # A clean declaration panel.
         ("UNIT SALE PRICE : ₹2.91 PER GRAM", True),
-        # Small print run together, as a 6-point line comes back.
-        ("UNITSALEPRICE:₹2.91PERGRAM", False),
+        # Small print run together, as a 6-point line comes back. Read, since
+        # `PER_UNIT_PRICE` stopped requiring a word boundary after `per`: every
+        # character of the declaration was recognised and only the spaces
+        # between them were lost, so reading it is not a repair. The expectation
+        # here moved from "declines" to "reads, and reads 2.91" - a strictly
+        # stronger assertion on the same line, not a relaxed one.
+        ("UNITSALEPRICE:₹2.91PERGRAM", True),
         # A tilted line: OCR keeps the words and mangles the separators.
         ("UNIT SALE PRICE ; ₹ 2.91 PER GRAM", True),
         # Low light: characters lost from the end of the line.

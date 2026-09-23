@@ -412,6 +412,13 @@ a declaration" are different answers:
 | `MRP incl. of all taxes` (price on another line) | **not emitted** — no guess is made |
 | `Best Before 25/12/2026` | emitted, certain |
 | `Best Before` / `25/12/2026` on two lines | emitted, **uncertain** — adjacency is an inference, not a reading |
+| `MFG. DT. :` / `BEST BEFORE 2 YEARS FROM MFG. DT-` | manufacture date **not emitted, reported unread** — the next line is a whole best-before declaration, and a package is manufactured on a day, not "two years from" anything |
+| `Mfg Date: 1142025` | **not emitted, reported unread** — 11/4/2025, 1/14/2025 and 114/2025 are all readings of it, and choosing is guessing |
+| `Net Quantity: 5009` | **not emitted, reported unread** — `500 g` with the `g` read as a `9` is one reading of it; `5009` is another |
+| `NET CONTENTS … 4 UNITS X 125 g + 125 g FREE` | emitted, **uncertain**, with every quantity on the line listed — the leftmost is not silently the declaration |
+| `Batch Ni` (OCR of `Batch No.` on a legend line) | **not emitted** — a batch code carries a digit |
+| `Consumer care: care @example.com` | emitted, certain, normalised to `care@example.com` — the space is a separator OCR added |
+| `Consumer care: suggestion @dmartindia com` | **not emitted** — the dot is a character nobody read |
 
 The distinction between "uncertain" and "not emitted" is deliberate and load
 bearing: **`field_presence` PASSES on any extracted field regardless of its
@@ -524,7 +531,46 @@ limitations — is [`docs/evaluation-results.md`](../docs/evaluation-results.md)
 [`docs/evaluation-strategy.md`](../docs/evaluation-strategy.md) defines the
 method it follows.
 
-### Latest — `tesseract` 0.3.0 on `our-eval-v0.3-usp-partial`, 2026-08-31
+### Latest — extraction hardening, `rule-based-fields` 0.1.0 → 0.2.0, 2026-09-23
+
+Both runs are the real end-to-end pipeline on the same machine, the same
+Tesseract and the same 28 photographs, differing only in the field-extractor
+commit. `tesseract` stays 0.4.0: a pipeline version pins engine and
+preprocessing configuration and explicitly does not pin `labelextract.fields`.
+
+| | fields 0.1.0 | **fields 0.2.0** |
+|---|---:|---:|
+| Precision | 1.000 (20/20) | **1.000** (19/19) |
+| Recall | 0.222 (20/90) | 0.211 (19/90) |
+| F1 | 0.364 | 0.349 |
+| Value accuracy | 0.650 (13/20) | **0.684** (13/19) |
+| **Silent error rate** | 0.385 (5/13) | **0.273** (3/11) |
+| Uncertainty precision | 0.286 (2/7) | **0.375** (3/8) |
+| Fabricated values | 0 | 0 |
+| Median latency | 1,129 ms | 1,056 / 1,071 ms |
+
+The two latency figures are two runs of the identical build; the spread between
+them exceeds the gap to the "before" number, so **no latency change should be
+read from this table**. Field extraction on its own went 0.67 ms → 0.70 ms per
+image, which is 0.003 % of end-to-end time.
+
+**Recall went down by one cell, and that is the intended result.** Both
+detections removed were wrong values — `Ni` reported as a batch code off a
+legend line, and a `2 years` shelf life reported as a manufacture date — and a
+detection with the wrong value was never worth having. What improved is the
+failure behaviour: two fewer confident wrong readings in five.
+
+The audit behind it found the useful lever was *not* recall. Of 94 misses, the
+annotator's transcription appears verbatim in the recognised text in **6**; the
+rest were never recognised or came back too corrupted to recover without
+inventing characters. Recall on this corpus is bounded by recognition, not by
+interpretation.
+
+Full audit, the per-field table, the changes that were measured and
+**rejected**, and the remaining limitations:
+[`docs/ml/extraction-hardening.md`](../docs/ml/extraction-hardening.md).
+
+### Previously — `tesseract` 0.3.0 on `our-eval-v0.3-usp-partial`, 2026-08-31
 
 28 photographs, 364 annotated cells, **34 of them human-reviewed and 330
 model-drafted**. That last clause is not a footnote: these figures measure the

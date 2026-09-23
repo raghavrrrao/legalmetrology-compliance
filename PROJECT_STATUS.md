@@ -47,7 +47,15 @@ finding trace. No login screen (see *Known security limitations*).
 dependencies. A placeholder engine is configurable and is flagged to the UI so
 its output can never be shown as a real reading. Extraction covers 14
 declarations; common/generic name and address are **not attempted**, and their
-absence carries no information. A first product classifier (TF-IDF + logistic
+absence carries no information. The extraction and normalisation layer was
+**audited and hardened on 2026-09-23** against the ten photographed packages,
+and the audit's own finding is worth quoting: of 94 missed declarations the
+expected value is verbatim in the recognised text in **6**, so recall on this
+corpus is bounded by *recognition*, not by interpretation. What the pass fixed
+was the failure that is not visible in a recall number — five committed,
+unflagged, wrong readings, now three. A batch code read off a legend line, a
+shelf life reported as a manufacture date and a five-bar soap pack reported as
+"4 units" are all gone. A first product classifier (TF-IDF + logistic
 regression, a 120 KB JSON artifact evaluated in plain Python) runs as the last
 pipeline stage in `tesseract` 0.4.0 and is honestly a baseline: ten training
 products, model-drafted labels, and cross-validated numbers that say it cannot
@@ -74,7 +82,7 @@ trusting the claim. Compliance results are now scoped to the caller. Throttling
 30/min anonymous, 120/min authenticated. `manage.py check --deploy` reports zero
 issues with `DJANGO_DEBUG=False`.
 
-**Testing:** 934 backend, 906 ML (plus 2 recorded expected failures and 2 unexpected passes of the same parametrised classifier-robustness test), 243 frontend, 203 mobile — all passing as of 2026-09-23. Lint clean, production build succeeds, mobile typecheck clean, `makemigrations --check` reports no changes. Counts are stated so drift is noticeable, not as a
+**Testing:** 934 backend, 998 ML (plus 2 recorded expected failures and 2 unexpected passes of the same parametrised classifier-robustness test), 243 frontend, 203 mobile — all passing as of 2026-09-23. The ML count includes 92 new extraction-hardening regressions, every one of whose inputs is recognised text this project actually produced rather than a drafted label. Lint clean, production build succeeds, mobile typecheck clean, `makemigrations --check` reports no changes. Counts are stated so drift is noticeable, not as a
 quality claim: a passing suite bounds what is checked, not what is correct.
 
 **Documentation:** Checked against the code in Step 5. Where a document and the
@@ -94,8 +102,8 @@ project has been created from this repository and there is no URL. See
 |---|---|---|
 | Upload & validation | Working. Content-type, size, decodability, decoded format and dimensions are measured from the bytes, never trusted from the request. | `apps/images/` |
 | OCR | Working with Tesseract 5. Orientation is **not** detected — see *Known limitations*. | `ml/labelextract/ocr/` |
-| Field extraction | Working for 14 declarations. Two — common/generic name and address — are **not attempted**. | `ml/labelextract/fields/` |
-| Normalisation | Working. Refuses to resolve an ambiguity: `03/04/2025` is emitted with both candidates and marked uncertain rather than guessed. | `ml/labelextract/fields/normalisation.py` |
+| Field extraction | Working for 14 declarations. Two — common/generic name and address — are **not attempted**. **Hardened 2026-09-23** (`rule-based-fields` 0.2.0): every quantity on a line is reported rather than the leftmost silently kept, a batch code must carry a digit, a shelf life is no longer read as a manufacture date, and the two date declarations gained unread-observation anchors. Measured on the frozen set: two fewer confident wrong readings in five (silent error rate 0.385 → 0.273), precision still 1.000, recall one cell lower because both detections removed were wrong values. See [`docs/ml/extraction-hardening.md`](docs/ml/extraction-hardening.md). | `ml/labelextract/fields/` |
+| Normalisation | Working. Refuses to resolve an ambiguity: `03/04/2025` is emitted with both candidates and marked uncertain rather than guessed; `1142025` becomes no date at all and the declaration is reported unread; `Net Quantity: 5009` is not repaired into `500 g`. | `ml/labelextract/fields/normalisation.py` |
 | Product classification | **Baseline.** TF-IDF + logistic regression over the recognised text (`tesseract` 0.4.0), answering `packaged-food` / `packaged-non-food` / `unknown` with a subcategory, a confidence and evidence. Trained on **ten products**; leave-one-product-out strict accuracy 0.36 and non-food never predicted for an unseen product. The 2026-09-22 evaluation review established that it scores **below a constant "always food" classifier** (macro F1 0.279 vs 0.389), that raising the confidence bar makes it monotonically *worse* (0.000 accuracy above 0.75), and that fourteen model configurations all fail the same way — so the artifact stays at 0.1.0 and the acceptance policy stays empty. The binding constraint is two non-food products, one per non-food subcategory. **Dataset work of 2026-09-23** added twelve enforced integrity checks (duplicate products, duplicate images, conflicting labels, product leakage, provenance gaps, empty classes), a human-verification ledger with `label_verified_on` / `label_verification_ref`, and a dataset registry pinning each version's digest — and added **no data**: a repository-wide inventory (image overlap checked by SHA-256) confirmed there is no unused genuine product data, so the set is still 33 examples from 10 products with **0 of 33 labels verified**. The classifier may never verify its own labels; the loader and the ledger both refuse a machine as verifier. Reaches the API as `product_classification`. **Feeds applicability through one adapter** (`auto_applicability.py`): a suggestion for a person to confirm by default; can establish `Product.category` automatically only under a configured, evaluation-cited policy entry — none exists for this artifact. Never a declaration, never a scope gate. A suggestion is shown with the evidence behind it — the label phrases this reading contains, with snippets — and with what confirming will do. See `docs/automatic-applicability.md`. | `ml/labelextract/classification/`, `docs/ml/product-classification.md` |
 | Applicability | Working. Rules 3 and 26 scope gates, then each clause's own conditions, resolved from stated facts **before** any rule is evaluated. The classifier's category may now supply the product category — under an accepted policy automatically, otherwise after a person confirms one question — with `product_category_source` and `applicability_assessment` on every result saying which. | `apps/compliance/services/applicability.py`, `auto_applicability.py` |
 | Rule engine | Working. Seven registered deterministic checks; no LLM anywhere in the decision path. | `apps/rules/checks/` |
