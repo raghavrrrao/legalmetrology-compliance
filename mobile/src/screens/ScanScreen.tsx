@@ -9,7 +9,7 @@ import { PhotoTips } from '../components/PhotoTips';
 import { Screen } from '../components/Screen';
 import { useAnalysis, useInspectionSelection } from '../hooks/AnalysisContext';
 import { useImageSelection, type ImageSource, type SelectionIssue } from '../hooks/useImageSelection';
-import type { RootScreenProps } from '../navigation/types';
+import type { TabScreenProps } from '../navigation/types';
 import { colors, radius, spacing, typography } from '../theme';
 import type { AddRejection } from '../hooks/useInspectionImages';
 import { formatBytes } from '../utils/format';
@@ -100,7 +100,7 @@ export function describeRejection(rejection: AddRejection, limit: number): strin
  *    app shows. Leaving it blank is supported and honest - the result then says
  *    the product type was not known.
  */
-export function ScanScreen({ navigation }: RootScreenProps<'Scan'>) {
+export function ScanScreen({ navigation }: TabScreenProps<'Scan'>) {
   const analysis = useAnalysis();
   const selection = useInspectionSelection();
   const { select, issue, isPicking, clearIssue } = useImageSelection();
@@ -161,7 +161,10 @@ export function ScanScreen({ navigation }: RootScreenProps<'Scan'>) {
             accessibilityHint="Removes every photo and returns to the start"
             onPress={() => {
               selection.clear();
-              navigation.popToTop();
+              // Scan is a tab now, so "the start" is the Home tab beside it -
+              // not `popToTop()`, which belonged to the stack this screen used to
+              // sit on and which a tab navigator cannot perform.
+              navigation.navigate('Home');
             }}
             disabled={isPicking}
             testID="start-over"

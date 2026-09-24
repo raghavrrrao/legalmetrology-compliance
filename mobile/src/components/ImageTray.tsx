@@ -37,8 +37,8 @@ interface ImageTrayProps {
  * Accessibility: the row is a horizontal list a screen reader walks through in
  * order; each thumbnail is one element labelled with its position, and the
  * remove button beside it is a separate, individually labelled button. The
- * remove control is 44 px and sits inside a 48 px touch target, at the corner
- * of a tile large enough that the two cannot be confused by a thumb.
+ * remove control is drawn at 28 pt and its touch target is a 48 x 48 frame
+ * around it - see `REMOVE_TARGET` for where that frame sits and why.
  *
  * No animation here at all. A tray of the user's own photographs does not need
  * motion to be understood, and a removal that animates is a removal the user
@@ -90,13 +90,22 @@ export function ImageTray({
             accessibilityState={{ disabled: busy }}
             disabled={busy}
             onPress={() => onRemove(index)}
-            // Extends the touch target past the visible 28 px control without
-            // enlarging it into the thumbnail it sits on.
-            hitSlop={10}
-            style={({ pressed }) => [styles.remove, pressed && styles.removePressed, busy && styles.dim]}
+            /*
+             * The touch target is this Pressable's own 48 x 48 frame; the
+             * visible 28 pt circle is drawn inside it. It used to be a 28 pt
+             * Pressable with `hitSlop={10}`, which measured about 38 x 38 on an
+             * Android emulator: React Native drops the part of a hit slop that
+             * falls outside the parent (here, the tile), though it does accept
+             * a child's real frame there. So the target is made of frame.
+             */
+            style={[styles.removeTarget, busy && styles.dim]}
             testID={`remove-image-${index}`}
           >
-            <Text style={styles.removeGlyph}>×</Text>
+            {({ pressed }) => (
+              <View style={[styles.remove, pressed && styles.removePressed]} testID={`remove-dot-${index}`}>
+                <Text style={styles.removeGlyph}>×</Text>
+              </View>
+            )}
           </Pressable>
         </View>
       ))}
@@ -131,11 +140,41 @@ export function ImageTray({
 
 const TILE = 96;
 const REMOVE = 28;
+/** Space between tiles. The remove target may reach into it, and no further. */
+const GAP = spacing.md;
+/** How far the visible circle overhangs the tile's top and right edges. */
+const OVERHANG = spacing.sm;
+
+/**
+ * Where the remove control's 48 pt target sits, in tile coordinates.
+ *
+ * Three constraints decide it, and the numbers fall out of them:
+ *
+ * - **It contains the circle**, which stays exactly where it always was: 28 pt,
+ *   overhanging the tile by 8 at the top-right.
+ * - **Its right edge is the start of the next tile**, `GAP` past this one. A
+ *   later sibling is drawn on top, so a target reaching into the next tile would
+ *   lose those points to it anyway - and would make the neighbour's corner
+ *   remove this photo.
+ * - **Its top edge is the circle's top**, inside the row's existing top padding,
+ *   so the tray's layout does not move.
+ *
+ * The remaining height goes down into this tile's own thumbnail, which is not
+ * interactive - the same region `hitSlop` used to cover, a little larger.
+ */
+export const REMOVE_TARGET = Object.freeze({
+  size: MIN_TOUCH_TARGET,
+  top: -OVERHANG,
+  right: -GAP,
+  /** The circle's offset inside the target, so it lands where it always did. */
+  dotRight: GAP - OVERHANG,
+  dotSize: REMOVE,
+});
 
 const styles = StyleSheet.create({
   row: {
     flexDirection: 'row',
-    gap: spacing.md,
+    gap: GAP,
     paddingVertical: spacing.xs,
     // So the remove control at a tile's top-right corner is not clipped by the
     // scroll view's own bounds.
@@ -150,7 +189,7 @@ const styles = StyleSheet.create({
     // The selected state: a hairline in the accent, so a tile reads as part of
     // the set at a glance rather than as a picture that happens to be nearby.
     borderWidth: 1.5,
-    borderColor: colors.primary,
+    borderColor: colors.action,
     ...elevation.card,
   },
   thumbnail: {
@@ -174,10 +213,19 @@ const styles = StyleSheet.create({
     fontWeight: '700',
     color: '#FFFFFF',
   },
+  /* The 48 pt touch target. Transparent; see `REMOVE_TARGET`. */
+  removeTarget: {
+    position: 'absolute',
+    top: REMOVE_TARGET.top,
+    right: REMOVE_TARGET.right,
+    width: REMOVE_TARGET.size,
+    height: REMOVE_TARGET.size,
+  },
+  /* The visible circle, unchanged in size and position from before. */
   remove: {
     position: 'absolute',
-    top: -spacing.sm,
-    right: -spacing.sm,
+    top: 0,
+    right: REMOVE_TARGET.dotRight,
     width: REMOVE,
     height: REMOVE,
     borderRadius: REMOVE / 2,
@@ -198,25 +246,25 @@ const styles = StyleSheet.create({
     color: colors.text,
   },
   addTile: {
-    backgroundColor: colors.primarySofter,
+    backgroundColor: colors.actionSofter,
     borderStyle: 'dashed',
     alignItems: 'center',
     justifyContent: 'center',
     minHeight: MIN_TOUCH_TARGET,
   },
   addTilePressed: {
-    backgroundColor: colors.primarySoft,
+    backgroundColor: colors.actionSoft,
   },
   addGlyph: {
     fontSize: 26,
     lineHeight: 30,
     fontWeight: '300',
-    color: colors.primary,
+    color: colors.action,
   },
   addLabel: {
     ...typography.caption,
     fontWeight: '600',
-    color: colors.primary,
+    color: colors.action,
   },
   dim: {
     opacity: 0.5,

@@ -269,6 +269,16 @@ describe('ResultScreen', () => {
     expect(card).toHaveTextContent('tfidf-logreg 0.1.0', { exact: false });
   });
 
+  it('does not repeat the header title as a heading in the content', async () => {
+    await renderResult(complianceBody());
+
+    // The native stack header already says "Result" directly above this screen.
+    // A second "Result" heading under it was the same word twice on a device.
+    expect(screen.queryByText('Result')).toBeNull();
+    // The verdict is still the first thing a screen reader reaches as content.
+    expect(screen.getByTestId('verdict-badge')).toBeOnTheScreen();
+  });
+
   it('starts over from the footer', async () => {
     const { navigation } = await renderResult(complianceBody());
 
@@ -277,7 +287,7 @@ describe('ResultScreen', () => {
     // Both the result and the photographs it was made from, so the next
     // inspection starts empty rather than inheriting a package.
     expect(mockStartOver).toHaveBeenCalled();
-    expect(navigation.popToTop).toHaveBeenCalled();
+    expect(navigation.navigate).toHaveBeenCalledWith('MainTabs', { screen: 'Home' });
   });
 
   it('handles having no result at all', async () => {

@@ -12,7 +12,7 @@ import { Screen } from '../components/Screen';
 import { StatusBadge } from '../components/StatusBadge';
 import { VerdictPanel } from '../components/VerdictPanel';
 import { useAnalysis, useStartOver } from '../hooks/AnalysisContext';
-import type { RootScreenProps } from '../navigation/types';
+import { HOME_TAB, type RootScreenProps } from '../navigation/types';
 import { colors, MIN_TOUCH_TARGET, spacing, typography } from '../theme';
 import type { ComplianceResult, Finding } from '../types/api';
 import { describeError } from '../utils/errors';
@@ -54,7 +54,9 @@ export function ResultScreen({ navigation }: RootScreenProps<'Result'>) {
 
   const scanAnother = () => {
     startOver();
-    navigation.popToTop();
+    // Leaves this pushed screen and shows Home, rather than whichever tab the
+    // finished inspection happened to be started from.
+    navigation.navigate('MainTabs', HOME_TAB);
   };
 
   if (!result) {
@@ -95,10 +97,12 @@ export function ResultScreen({ navigation }: RootScreenProps<'Result'>) {
       testID="result-screen"
       footer={<Button label="Scan another package" onPress={scanAnother} testID="scan-another" />}
     >
-      <Text accessibilityRole="header" style={styles.title}>
-        Result
-      </Text>
-
+      {/*
+        No in-content "Result" heading. The native stack header directly above
+        already says "Result", and on a device the two stacked read as the same
+        word twice with nothing between them. The verdict panel, which opens with
+        its own overline, is the first thing under the header instead.
+      */}
       <VerdictPanel tone={toneForResult(result.result)} testID="verdict-card">
         <StatusBadge label={verdictLabel} tone={toneForResult(result.result)} size="large" testID="verdict-badge" />
         {images.length > 0 ? (
@@ -353,11 +357,6 @@ function RuleCounts({ result }: { result: ComplianceResult }) {
 }
 
 const styles = StyleSheet.create({
-  title: {
-    ...typography.title,
-    color: colors.text,
-    marginBottom: spacing.md,
-  },
   summary: {
     ...typography.body,
     color: colors.text,
@@ -408,7 +407,7 @@ const styles = StyleSheet.create({
   },
   disclosureText: {
     ...typography.body,
-    color: colors.primary,
+    color: colors.action,
     fontWeight: '600',
   },
 });

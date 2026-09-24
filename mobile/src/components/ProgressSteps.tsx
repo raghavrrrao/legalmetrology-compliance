@@ -44,7 +44,7 @@ export function ProgressSteps({ steps }: { steps: ProgressStep[] }) {
         >
           <View style={styles.marker}>
             {step.state === 'active' ? (
-              <ActivityIndicator size="small" color={colors.primary} />
+              <ActivityIndicator size="small" color={colors.action} />
             ) : (
               <Text style={[styles.symbol, symbolStyle(step.state)]}>{SYMBOL[step.state]}</Text>
             )}

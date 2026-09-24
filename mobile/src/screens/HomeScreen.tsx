@@ -10,7 +10,7 @@ import { config } from '../config/env';
 import { useApiHealth } from '../hooks/useApiHealth';
 import { useImageSelection, type ImageSource } from '../hooks/useImageSelection';
 import { useInspectionSelection, useStartOver } from '../hooks/AnalysisContext';
-import type { RootScreenProps } from '../navigation/types';
+import type { TabScreenProps } from '../navigation/types';
 import { colors, radius, spacing, typography } from '../theme';
 import { describeIssue } from './ScanScreen';
 
@@ -31,7 +31,7 @@ const STEPS = [
   { number: '04', title: 'Review', text: 'See every finding with its evidence, and what still needs a person.' },
 ] as const;
 
-export function HomeScreen({ navigation }: RootScreenProps<'Home'>) {
+export function HomeScreen({ navigation }: TabScreenProps<'Home'>) {
   const { select, issue, isPicking, clearIssue } = useImageSelection();
   const selection = useInspectionSelection();
   const startOver = useStartOver();
@@ -173,8 +173,8 @@ const styles = StyleSheet.create({
   stepNumber: {
     ...typography.caption,
     fontWeight: '700',
-    color: colors.primary,
-    backgroundColor: colors.primarySoft,
+    color: colors.action,
+    backgroundColor: colors.actionSoft,
     borderRadius: radius.sm,
     paddingVertical: spacing.xs,
     paddingHorizontal: spacing.sm,

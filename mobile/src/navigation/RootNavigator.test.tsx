@@ -22,11 +22,16 @@ import {
   cameraPermission,
   complianceBody,
   extractionBody,
+  imageBody,
+  IMAGE_ID,
+  IMAGE_ID_2,
+  IMAGE_ID_3,
   imageSetBody,
   jsonResponse,
   libraryPermission,
   multiImageComplianceBody,
   routedFetch,
+  runImageBody,
   RUN_ID,
 } from '../../tests/fixtures';
 import { PHONE_METRICS } from '../../tests/render';
@@ -44,6 +49,34 @@ function serve(...queue: (Response | Error)[]) {
 /** The analysis requests only - the home screen's health check is not one. */
 function analysisCalls(stub: ReturnType<typeof routedFetch>) {
   return stub.calls.filter((call) => !/\/health\/$/.test(call.url));
+}
+
+/**
+ * The titles of every native stack header in the tree.
+ *
+ * react-native-screens renders a header as an `RNSScreenStackHeaderConfig` host
+ * element carrying `title` as a prop - it is drawn natively, so it is not a Text
+ * node a `getByText` could find. Walking the rendered JSON is the only way to
+ * read it in Jest.
+ */
+function headerTitles(): string[] {
+  const titles: string[] = [];
+  const walk = (node: unknown) => {
+    if (!node || typeof node !== 'object') {
+      return;
+    }
+    if (Array.isArray(node)) {
+      node.forEach(walk);
+      return;
+    }
+    const element = node as { type?: string; props?: { title?: unknown }; children?: unknown };
+    if (element.type === 'RNSScreenStackHeaderConfig' && typeof element.props?.title === 'string') {
+      titles.push(element.props.title);
+    }
+    walk(element.children);
+  };
+  walk(screen.toJSON());
+  return titles;
 }
 
 /** The multipart parts of a request, as the recording FormData double kept them. */
@@ -210,6 +243,23 @@ describe('the scan flow', () => {
 
   // --- failures -------------------------------------------------------------
 
+  it('does not keep saying "Analysing" in the header once the analysis has stopped', async () => {
+    serve(new TypeError('Network request failed'));
+    await renderApp();
+
+    await fireEvent.press(screen.getByTestId('take-photo'));
+    await screen.findByTestId('scan-screen');
+    await fireEvent.press(screen.getByTestId('check-package'));
+    await screen.findByTestId('analysis-error');
+
+    // The body says "Analysis stopped". The header used to say "Analysing"
+    // above it regardless - on a device, the two contradicted each other.
+    expect(screen.getByText('Analysis stopped')).toBeOnTheScreen();
+    const titles = headerTitles();
+    expect(titles).toContain('Analysis');
+    expect(titles).not.toContain('Analysing');
+  });
+
   it('stops on the progress screen with the offline message, and can start over', async () => {
     serve(new TypeError('Network request failed'));
     await renderApp();
@@ -311,5 +361,194 @@ describe('the scan flow', () => {
     // The last package's photographs must not be waiting in the next
     // inspection.
     expect(screen.queryByTestId('image-tray')).toBeNull();
+  });
+});
+
+/**
+ * The same flow, now that the five destinations are bottom tabs and Analysis and
+ * Result are pushed over them.
+ *
+ * The restructure moved Home and Scan from a stack into a tab navigator, which
+ * changes three things the flow depends on: a tab screen's `navigate('Analysis')`
+ * has to bubble to the stack above it, "back to the start" can no longer be
+ * `popToTop()`, and a tab the user has left stays mounted rather than being
+ * unwound. The tests below are about those three, and about the one new way a
+ * user can now interrupt an inspection: switching tabs in the middle of it.
+ */
+describe('the scan flow through the tab shell', () => {
+  it('reaches Analysis from the Scan tab, which the tab navigator itself cannot do', async () => {
+    const stub = serve(
+      jsonResponse(extractionBody(), { status: 201 }),
+      jsonResponse(complianceBody(), { status: 201 }),
+    );
+    await renderApp();
+
+    // Straight to the Scan tab, rather than through Home's "Take photo" - so the
+    // push out of a tab is exercised on its own.
+    await fireEvent.press(screen.getByTestId('tab-scan'));
+    await screen.findByTestId('scan-screen');
+    await fireEvent.press(screen.getByTestId('take-photo'));
+    await waitFor(() => expect(screen.getByTestId('image-tray')).toBeOnTheScreen());
+
+    await fireEvent.press(screen.getByTestId('check-package'));
+
+    // `Analysis` is on the root stack, so the tab navigator has no such route and
+    // React Navigation has to hand the action to its parent. If that stopped
+    // working the button would silently do nothing.
+    //
+    // Arriving at Result is the assertion, rather than catching Analysis on the
+    // way: with the responses already queued, Analysis reaches `complete` and
+    // replaces itself in the same batch of work, so looking for it is a race. It
+    // is not skipped - Result is only reachable through it.
+    await screen.findByTestId('result-screen');
+    expect(analysisCalls(stub)).toHaveLength(2);
+  });
+
+  it('covers the tab bar while an inspection is being analysed', async () => {
+    serve(jsonResponse(extractionBody(), { status: 201 }), jsonResponse(complianceBody(), { status: 201 }));
+    await renderApp();
+
+    await fireEvent.press(screen.getByTestId('take-photo'));
+    await screen.findByTestId('scan-screen');
+    await fireEvent.press(screen.getByTestId('check-package'));
+    await screen.findByTestId('result-screen');
+
+    // Analysis and Result are pushed over the bar, not tabs themselves. A tab
+    // that cannot be left - Analysis holds the screen while a request is in
+    // flight - would be a broken tab, so it must not be reachable as one.
+    expect(screen.queryByTestId('tab-home')).toBeNull();
+  });
+
+  it('keeps the photographs when the user visits another tab mid-inspection', async () => {
+    picker.launchImageLibraryAsync.mockResolvedValue({ canceled: false, assets: galleryAssets(3) });
+    const stub = serve(
+      jsonResponse({ ...extractionBody(), images: imageSetBody() }, { status: 201 }),
+      jsonResponse(multiImageComplianceBody(), { status: 201 }),
+    );
+    await renderApp();
+
+    await fireEvent.press(screen.getByTestId('choose-from-gallery'));
+    await screen.findByTestId('scan-screen');
+    expect(screen.getByTestId('check-package')).toHaveTextContent('3 photos', { exact: false });
+
+    // Newly possible now that there is a bar: read the rules, then come back.
+    // The set lives in `AnalysisProvider` above the navigator precisely so that
+    // this cannot lose it.
+    await fireEvent.press(screen.getByTestId('tab-rules'));
+    await screen.findByTestId('rules-screen');
+    await fireEvent.press(screen.getByTestId('tab-scan'));
+    await screen.findByTestId('scan-screen');
+
+    expect(screen.getByTestId('check-package')).toHaveTextContent('3 photos', { exact: false });
+
+    await fireEvent.press(screen.getByTestId('check-package'));
+    await screen.findByTestId('result-screen');
+
+    // And still one inspection of three photographs, not a new one.
+    const calls = analysisCalls(stub);
+    expect(calls).toHaveLength(2);
+    expect(partsOf(calls[0]).filter((part) => part.fieldName === 'image')).toHaveLength(3);
+  });
+
+  it('returns to the Home tab from a finished result, not to the tab it started on', async () => {
+    serve(jsonResponse(extractionBody(), { status: 201 }), jsonResponse(complianceBody(), { status: 201 }));
+    await renderApp();
+
+    // Begin from the Scan tab, so "the tab it started on" is not Home.
+    await fireEvent.press(screen.getByTestId('tab-scan'));
+    await screen.findByTestId('scan-screen');
+    await fireEvent.press(screen.getByTestId('take-photo'));
+    await waitFor(() => expect(screen.getByTestId('image-tray')).toBeOnTheScreen());
+    await fireEvent.press(screen.getByTestId('check-package'));
+    await screen.findByTestId('result-screen');
+
+    await fireEvent.press(screen.getByTestId('scan-another'));
+
+    // `popToTop()` would have landed back on Scan, with the bar showing Scan
+    // selected and an empty tray - which reads as the inspection having failed.
+    await waitFor(() => expect(screen.getByTestId('home-screen')).toBeOnTheScreen());
+    expect(screen.queryByTestId('result-screen')).toBeNull();
+  });
+
+  it('returns to the Home tab when an inspection is abandoned after a failure', async () => {
+    serve(new TypeError('Network request failed'));
+    await renderApp();
+
+    await fireEvent.press(screen.getByTestId('tab-scan'));
+    await screen.findByTestId('scan-screen');
+    await fireEvent.press(screen.getByTestId('take-photo'));
+    await waitFor(() => expect(screen.getByTestId('image-tray')).toBeOnTheScreen());
+    await fireEvent.press(screen.getByTestId('check-package'));
+    await screen.findByTestId('analysis-error');
+
+    await fireEvent.press(screen.getByTestId('start-over'));
+
+    await waitFor(() => expect(screen.getByTestId('home-screen')).toBeOnTheScreen());
+  });
+
+  it('sends the user from Home to the Scan tab when an inspection is started there', async () => {
+    serve();
+    await renderApp();
+
+    await fireEvent.press(screen.getByTestId('take-photo'));
+
+    // Home's "Take photo" seeds the set and then moves to the Scan tab. It is a
+    // sibling now rather than a push, so nothing is stacked on top of the bar.
+    await screen.findByTestId('scan-screen');
+    expect(screen.getByTestId('tab-scan')).toBeOnTheScreen();
+  });
+
+  // --- the production regression, as four photographs ----------------------
+
+  it('checks four photographs as one package and says so on the result', async () => {
+    // Distinct ids, not just distinct filenames: the result screen keys its image
+    // list by id, and four panels sharing `imageBody()`'s default id collapse into
+    // one row - which would make this test pass while showing "4 images checked"
+    // above a single panel.
+    const fourPanels = [
+      runImageBody({ position: 1, image: imageBody({ id: IMAGE_ID, original_filename: 'front.jpg' }) }),
+      runImageBody({ position: 2, image: imageBody({ id: IMAGE_ID_2, original_filename: 'back.jpg' }) }),
+      runImageBody({ position: 3, image: imageBody({ id: IMAGE_ID_3, original_filename: 'side.jpg' }) }),
+      runImageBody({
+        position: 4,
+        image: imageBody({ id: '66666666-5555-4444-3333-222222222222', original_filename: 'base.jpg' }),
+      }),
+    ];
+    picker.launchImageLibraryAsync.mockResolvedValue({ canceled: false, assets: galleryAssets(4) });
+    const stub = serve(
+      jsonResponse({ ...extractionBody(), images: fourPanels }, { status: 201 }),
+      jsonResponse(multiImageComplianceBody({ images: fourPanels }), { status: 201 }),
+    );
+    await renderApp();
+
+    await fireEvent.press(screen.getByTestId('choose-from-gallery'));
+    await screen.findByTestId('scan-screen');
+    expect(screen.getByTestId('check-package')).toHaveTextContent('4 photos', { exact: false });
+
+    await fireEvent.press(screen.getByTestId('check-package'));
+    await screen.findByTestId('result-screen');
+
+    // The shape verified against the deployed backend with four real photographs:
+    // one upload carrying four `image` parts, then one evaluation of the run it
+    // returned, and one verdict about the package.
+    const calls = analysisCalls(stub);
+    expect(calls).toHaveLength(2);
+    expect(calls[0].url).toMatch(/\/extraction\/$/);
+    expect(partsOf(calls[0]).map((part) => part.fieldName)).toEqual([
+      'image',
+      'image',
+      'image',
+      'image',
+    ]);
+    expect(calls[1].url).toMatch(/\/compliance\/$/);
+    expect(JSON.parse(calls[1].init?.body as string)).toEqual({ extraction_run_id: RUN_ID });
+
+    expect(screen.getByTestId('images-checked')).toHaveTextContent('4 images checked', {
+      exact: false,
+    });
+    expect(screen.getByTestId('images-checked')).toHaveTextContent('one package, one result', {
+      exact: false,
+    });
+    expect(screen.getAllByTestId('verdict-badge')).toHaveLength(1);
   });
 });

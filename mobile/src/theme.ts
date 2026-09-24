@@ -22,10 +22,19 @@
  * status is always paired with a symbol or a word, so colour is never the only
  * carrier (see `utils/status.ts`).
  *
- * The green is the accent and the accent is never a verdict. `toneColors.success`
- * is a different green from `colors.primary` on purpose: a primary button and a
- * passing check must not be the same colour, or the button starts reading as a
- * result.
+ * ONE RULE ABOUT COLOUR
+ * ---------------------
+ * **Blue is anything you can press or are currently on. Green is a state the
+ * server reported.** `colors.action` carries every control and the selected tab;
+ * `toneColors` carry verdicts, findings and server health. Nothing in this file
+ * decides a status - see `utils/status.ts`.
+ *
+ * This supersedes an earlier arrangement in which the accent was itself a green
+ * (`colors.primary`, `#0E7C50`) held one shade apart from `toneColors.success`
+ * so that a primary button would not read as a passing check. Two greens a
+ * shade apart is a distinction that survives a design review and not a phone
+ * screen in sunlight; moving actions to blue removes the collision instead of
+ * managing it. `colors.primary` is gone entirely - see the note where it was.
  */
 
 import { Platform } from 'react-native';
@@ -49,14 +58,44 @@ export const colors = {
   /** 5.0 : 1 on white - still AA for body text, not only for large. */
   textMuted: '#6E7076',
 
-  /** The one accent: primary actions, the active step, a focused control. */
-  primary: '#0E7C50',
-  primaryPressed: '#0A6640',
-  /** The tint a secondary or text button takes while pressed. */
-  primarySoft: '#E8F4EE',
-  primarySofter: '#F3FAF6',
-  onPrimary: '#FFFFFF',
-  focus: '#0E7C50',
+  /**
+   * The accent. Every control, link and the selected tab.
+   *
+   * 6.1 : 1 on white, and white on it is the same 6.1 : 1 - so it is legible
+   * both as text on a light surface and as the ground under a white label,
+   * which is what a fill and an outline variant of one button need.
+   */
+  action: '#1B5FC1',
+  /** 8.3 : 1 on white. The fill while pressed. */
+  actionPressed: '#154C9B',
+  /** The selected tab's pill and the tint a secondary button takes while pressed. `action` on it is 5.3 : 1. */
+  actionSoft: '#E8EFFA',
+  /** A ground only - a dashed drop target. Never carries text. */
+  actionSofter: '#F3F7FD',
+  onAction: '#FFFFFF',
+  focus: '#1B5FC1',
+
+  /**
+   * The brand mark's tile and the wordmark. 14.2 : 1 on white.
+   *
+   * **Not a control colour.** It is deliberately close to `text` and would read
+   * as a disabled button; the only things wearing it are the mark and the word
+   * NIRIKSHAN.
+   */
+  brandInk: '#17253B',
+
+  /*
+   * There is deliberately no `primary`, `primarySoft` or `onPrimary` any more.
+   *
+   * They were the green accent, and every one of their callers turned out to be
+   * a control: the button fills, the tray's add tile, the result screen's
+   * disclosure toggle, two spinners. Each moved to `action`, which left five
+   * tokens with no callers. They are deleted rather than kept "for
+   * compatibility", because a green named `primary` sitting beside a blue named
+   * `action` is how a button ends up green again six months from now. The web
+   * client still has `--colour-primary` green - that divergence is recorded in
+   * `docs/ui/design-system.md` and is not resolved here.
+   */
 
   /** The backdrop behind a photograph, so a light label still has an edge. */
   photoWell: '#26282D',
@@ -146,3 +185,34 @@ export const typography = {
 
 /** Minimum touch target, per both platforms' accessibility guidance. */
 export const MIN_TOUCH_TARGET = 48;
+
+/**
+ * The application shell: the header over the tabs and the tab bar under them.
+ *
+ * Heights here are the *content* box. Each bar adds its own safe-area inset on
+ * top - the header the top inset, the tab bar the bottom one - and nothing else
+ * in the app adds either again. `components/Screen.tsx` is where that is
+ * enforced for the scrolling body between them.
+ *
+ * The tab bar's figures are what make five labelled destinations fit a 360 pt
+ * phone. At that width each item is (360 - 8) / 5 = 70.4 pt and the label box
+ * inside it 64.4 pt, against about 47 pt for "Settings", the longest of the
+ * five. They are stated rather than left to flexbox so that a later sixth
+ * destination has to confront the arithmetic instead of silently truncating.
+ */
+export const shell = {
+  headerHeight: 56,
+  tabBarHeight: 56,
+  /** Horizontal padding inside the bars, matching the content gutter. */
+  gutter: spacing.lg,
+  /** The pill behind a selected tab's icon. */
+  tabPill: { width: 44, height: 26 },
+  tabIcon: 22,
+} as const;
+
+/** A tab label. Small, never truncated, and one line at every supported width. */
+export const tabLabelType = {
+  fontSize: 11,
+  lineHeight: 14,
+  letterSpacing: 0.1,
+} as const;
