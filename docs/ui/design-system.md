@@ -522,8 +522,18 @@ A third change is verified on the device only: `tabBarLabelPosition` is pinned t
 icons. Jest cannot exercise that path — the library decides from the bar's
 measured width, which is 0 there.
 
+**A release build** (JS bundled, no dev server) was cold-launched 20 times on the
+same emulator with no crash, and exercised through 25 tab switches and the photo
+remove control. The **debug** build crashed natively four times across roughly 70
+launches, always in React Native's renderer (`MountingCoordinator::pullTransaction`)
+within the first commit, and always on the first launch after the Metro dev server
+restarted or the dev connection changed. In a like-for-like run of 20 launches
+each, this branch's JS crashed once (on that first launch) and `main`'s JS did
+not; in steady state both were 0 of 19. Treat it as unresolved and debug-only as
+far as measured - not as proven absent.
+
 **Not covered:** iOS, any physical device, Android versions other than 15,
-system font scaling, TalkBack walked end to end, and a release (non-debug) build.
+system font scaling, and TalkBack walked end to end.
 
 ### 7a. Where the two clients now disagree
 

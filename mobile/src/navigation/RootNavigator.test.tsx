@@ -51,6 +51,34 @@ function analysisCalls(stub: ReturnType<typeof routedFetch>) {
   return stub.calls.filter((call) => !/\/health\/$/.test(call.url));
 }
 
+/**
+ * The titles of every native stack header in the tree.
+ *
+ * react-native-screens renders a header as an `RNSScreenStackHeaderConfig` host
+ * element carrying `title` as a prop - it is drawn natively, so it is not a Text
+ * node a `getByText` could find. Walking the rendered JSON is the only way to
+ * read it in Jest.
+ */
+function headerTitles(): string[] {
+  const titles: string[] = [];
+  const walk = (node: unknown) => {
+    if (!node || typeof node !== 'object') {
+      return;
+    }
+    if (Array.isArray(node)) {
+      node.forEach(walk);
+      return;
+    }
+    const element = node as { type?: string; props?: { title?: unknown }; children?: unknown };
+    if (element.type === 'RNSScreenStackHeaderConfig' && typeof element.props?.title === 'string') {
+      titles.push(element.props.title);
+    }
+    walk(element.children);
+  };
+  walk(screen.toJSON());
+  return titles;
+}
+
 /** The multipart parts of a request, as the recording FormData double kept them. */
 function partsOf(call: { init: RequestInit | undefined }) {
   return (call.init?.body as unknown as { getParts(): { fieldName: string }[] }).getParts();
@@ -214,6 +242,23 @@ describe('the scan flow', () => {
   });
 
   // --- failures -------------------------------------------------------------
+
+  it('does not keep saying "Analysing" in the header once the analysis has stopped', async () => {
+    serve(new TypeError('Network request failed'));
+    await renderApp();
+
+    await fireEvent.press(screen.getByTestId('take-photo'));
+    await screen.findByTestId('scan-screen');
+    await fireEvent.press(screen.getByTestId('check-package'));
+    await screen.findByTestId('analysis-error');
+
+    // The body says "Analysis stopped". The header used to say "Analysing"
+    // above it regardless - on a device, the two contradicted each other.
+    expect(screen.getByText('Analysis stopped')).toBeOnTheScreen();
+    const titles = headerTitles();
+    expect(titles).toContain('Analysis');
+    expect(titles).not.toContain('Analysing');
+  });
 
   it('stops on the progress screen with the offline message, and can start over', async () => {
     serve(new TypeError('Network request failed'));

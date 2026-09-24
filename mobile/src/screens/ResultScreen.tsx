@@ -97,10 +97,12 @@ export function ResultScreen({ navigation }: RootScreenProps<'Result'>) {
       testID="result-screen"
       footer={<Button label="Scan another package" onPress={scanAnother} testID="scan-another" />}
     >
-      <Text accessibilityRole="header" style={styles.title}>
-        Result
-      </Text>
-
+      {/*
+        No in-content "Result" heading. The native stack header directly above
+        already says "Result", and on a device the two stacked read as the same
+        word twice with nothing between them. The verdict panel, which opens with
+        its own overline, is the first thing under the header instead.
+      */}
       <VerdictPanel tone={toneForResult(result.result)} testID="verdict-card">
         <StatusBadge label={verdictLabel} tone={toneForResult(result.result)} size="large" testID="verdict-badge" />
         {images.length > 0 ? (
@@ -355,11 +357,6 @@ function RuleCounts({ result }: { result: ComplianceResult }) {
 }
 
 const styles = StyleSheet.create({
-  title: {
-    ...typography.title,
-    color: colors.text,
-    marginBottom: spacing.md,
-  },
   summary: {
     ...typography.body,
     color: colors.text,

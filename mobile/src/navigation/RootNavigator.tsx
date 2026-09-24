@@ -41,10 +41,19 @@ export function RootNavigator() {
       }}
     >
       <Stack.Screen name="MainTabs" component={MainTabs} options={{ headerShown: false }} />
+      {/*
+        "Analysis", not "Analysing". The header names the screen; the screen's
+        own heading says what is happening ("Analysing label…", then "Analysis
+        stopped"), and that heading is the live region a screen reader announces.
+        A progressive-tense header stayed on after an analysis had stopped,
+        saying the opposite of the heading under it. A noun cannot go stale, so
+        this does not need to track state - and a state-driven title would only
+        have repeated the heading word for word.
+      */}
       <Stack.Screen
         name="Analysis"
         component={AnalysisScreen}
-        options={{ title: 'Analysing', headerBackVisible: false, gestureEnabled: false }}
+        options={{ title: 'Analysis', headerBackVisible: false, gestureEnabled: false }}
       />
       <Stack.Screen
         name="Result"
