@@ -73,7 +73,9 @@ class ComplianceEvaluationView(APIView):
 
     **400** for an unknown `extraction_run_id`, an unknown `category_code`, or
     an `applicability_declarations` entry naming a condition the framework does
-    not define or cannot use.
+    not define or cannot use. A run the caller may not use - another user's, or
+    a signed-in user's when the caller is anonymous - is the same 400 as an
+    unknown one, with the same body; see `ownership.runs_usable_by`.
 
     A caller cannot choose which rules run. `applicability_declarations` states
     facts about the goods, not which rules to apply - see
@@ -84,12 +86,17 @@ class ComplianceEvaluationView(APIView):
     permission_classes = [IsAuthenticatedOrDemoPublic]
 
     def post(self, request, *args, **kwargs) -> Response:
-        request_data = ComplianceEvaluationRequestSerializer(data=request.data)
+        # The request goes into the context because the run is resolved among
+        # the caller's own runs (`ownership.runs_usable_by`). A run that is not
+        # theirs fails validation here, before anything below writes a row.
+        request_data = ComplianceEvaluationRequestSerializer(
+            data=request.data, context={"request": request}
+        )
         request_data.is_valid(raise_exception=True)
         validated = request_data.validated_data
 
         # Already resolved to a row by the serializer, so the run this
-        # evaluates is the one whose existence was validated.
+        # evaluates is the one whose existence - and ownership - was validated.
         run = validated["extraction_run_id"]
         requested_by = request.user if request.user.is_authenticated else None
 

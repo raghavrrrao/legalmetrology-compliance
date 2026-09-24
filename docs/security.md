@@ -157,6 +157,70 @@ session would be a wider hole than the one it opens for convenience.
 Covered by `apps/compliance/tests/test_result_ownership_api.py`, which asserts
 the cross-user matrix directly.
 
+### Who may evaluate a stored reading — `POST /api/v1/compliance/`
+
+**Fixed vulnerability.** This endpoint takes an `extraction_run_id` and answers
+with a result carrying that run's whole reading. It used to resolve the id with
+an unscoped `ExtractionRun.objects.get(pk=...)`, so any caller the permission
+class admitted could name another person's run and:
+
+- read their label: the full recognised text, every declaration read, and the
+  photographs' metadata, returned inside the result;
+- keep that access: the new check was recorded as the caller's own, so it sat
+  in their history and could be reopened;
+- rewrite the applicability facts stated about the run's product (reachable
+  where the photographs are linked to a product, as `POST /api/v1/images/` with
+  a `category_code` does), and attach a check of their own to that product.
+
+An anonymous demonstration caller could do the same to a signed-in user's run.
+
+**The rule now enforced** (`apps/compliance/api/ownership.py`, applied while the
+request is validated):
+
+| Caller | May evaluate |
+|---|---|
+| Authenticated | A run whose photographs were **all** uploaded by that user. |
+| Anonymous (demo switch on) | A run whose photographs were **all** uploaded anonymously. |
+| Anonymous (demo switch off) | Nothing; the request is refused before this point. |
+
+- **Every photograph, not the primary one.** A run reads a set of 1–6
+  photographs: `ExtractionRun.image` is position 1 and each is an
+  `ExtractionRunImage` row. The rule checks all of them, so a run that mixes
+  owners — or owned with anonymous photographs — is usable by no one. The API
+  never builds such a run, but the extraction service does not forbid one, and
+  checking only `ExtractionRun.image` would hand back readings of photographs
+  the caller does not own.
+- **A signed-in user does not inherit the anonymous pool**, matching the result
+  endpoints above.
+- **A refused run is the same 400 as an unknown one** — code
+  `validation_error`, the same message, the same field. A distinct "not yours"
+  would confirm that the id names a real submission.
+- **Nothing is written first.** The check happens during validation, before the
+  view creates a product, records a declaration or creates a check, so a refused
+  request leaves the database as it found it.
+
+**A UUID is an identifier, not an authorisation.** Random UUIDs make a run hard
+to guess, but they are handed out in responses, appear in history rows and are
+written to server logs; knowing one must never be enough to use it. Ownership
+is read from `ProductImage.uploaded_by`, the only ownership the schema records
+for a reading — `ExtractionRun` has no owner column, and adding one is part of
+the authentication work below.
+
+**What this does not do.** It does not make anonymous runs private: every
+anonymous caller of a demonstration deployment still shares one pool, of
+readings as of results, because the API cannot tell one anonymous caller from
+another. It does not add private inspection history, device identity or
+accounts. Those need an identity mechanism, which is `feature/authentication`'s
+decision. And because ownership is a nullable column that is cleared when a
+user is deleted (`on_delete=SET_NULL`, on `uploaded_by` as on `requested_by`), a
+deleted user's readings and results become indistinguishable from anonymous
+ones and fall into that pool; what deleting a user should do to their
+inspections is a decision for the same work.
+
+Covered by `apps/compliance/tests/test_run_ownership_api.py`, which reproduces
+the attacks through `POST /api/v1/extraction/` and `POST /api/v1/images/` and
+checks every refusal against the database as well as the response.
+
 ## Logging
 
 Application logs go through the `apps` and `labelextract` loggers.
@@ -235,8 +299,8 @@ are covered.
 | **Throttling is per-process** | DRF's counters live in `LocMemCache`, which is per-process, so N workers means N counters and roughly N x the configured rate. Mitigated rather than fixed: `backend/gunicorn.conf.py` runs **one worker** by default, which makes the configured rate the real rate. Raising `WEB_CONCURRENCY` reintroduces the gap and needs a shared cache (Redis/Memcached) first. |
 | **No antivirus scanning** | Format validation is not malware scanning. Consider ClamAV if uploads are ever re-served to other users. |
 | **No login screen** | Session authentication and deny-by-default permissions exist; there is no sign-in UI, so a demonstration uses `DEMO_PUBLIC_ANALYSIS_API` — anonymous analysis, rate-limited, and never a substitute for authentication on a service holding real submissions. `feature/authentication` owns this. |
-| **Anonymous results are a shared pool** | Compliance results *are* scoped to the caller (see below), but an anonymous caller has no identity to scope to, so anonymous checks are visible to every anonymous caller of the same deployment. Only reachable with `DEMO_PUBLIC_ANALYSIS_API` on, which defaults to off. |
-| **No per-object authorisation on images** | `ProductImage.uploaded_by` is recorded and not filtered on. No endpoint returns an image or its file today, so nothing is exposed by it; it must be enforced before one does. |
+| **Anonymous results are a shared pool** | Compliance results *are* scoped to the caller (see above), but an anonymous caller has no identity to scope to, so anonymous checks - and anonymous readings, which any anonymous caller may evaluate - are visible to every anonymous caller of the same deployment. Only reachable with `DEMO_PUBLIC_ANALYSIS_API` on, which defaults to off. |
+| **No per-object authorisation on images** | `ProductImage.uploaded_by` is now enforced for one purpose: which readings a caller may evaluate (see *Who may evaluate a stored reading*). No endpoint returns an image or its file today; any endpoint that does must scope by the same column. |
 | **Uploaded images are unencrypted at rest** | Filesystem permissions only (`FILE_UPLOAD_PERMISSIONS = 0o640`). |
 | **No audit log** | Who viewed which compliance result is not recorded. |
 | **No dependency scanning in CI** | `npm audit` reports 0 vulnerabilities at time of writing; nothing runs it automatically. |
