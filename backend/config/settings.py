@@ -12,6 +12,7 @@ environments are a handful of values that are already environment-driven.
 from pathlib import Path
 
 import environ
+from django.core.exceptions import ImproperlyConfigured
 
 # backend/config/settings.py -> backend/ -> repository root
 BACKEND_DIR = Path(__file__).resolve().parent.parent
@@ -202,11 +203,20 @@ AUTH_PASSWORD_VALIDATORS = [
 # ---------------------------------------------------------------------------
 
 REST_FRAMEWORK = {
-    # Session auth only, for now. No endpoint in the base structure requires a
-    # logged-in user, so adding token/JWT machinery now would be complexity
-    # with no caller. `feature/authentication` owns that decision;
-    # DEFAULT_PERMISSION_CLASSES below is what makes deferring it safe.
+    # Bearer tokens first, sessions second.
+    #
+    # Tokens are how the web and mobile clients sign in: the production web
+    # frontend is hosted cross-site from this API, so a session cookie would not
+    # be sent with its requests, and the mobile app sends no cookies at all. See
+    # apps/accounts/api/authentication.py and docs/security.md.
+    #
+    # Sessions stay for the Django admin's browser and any same-origin use. A
+    # request that carries no Bearer token falls through to them exactly as it
+    # did before tokens existed - including the CSRF check on unsafe methods -
+    # and an anonymous request still reaches the permission classes as
+    # anonymous, so demo mode behaves as it always has.
     "DEFAULT_AUTHENTICATION_CLASSES": [
+        "apps.accounts.api.authentication.BearerTokenAuthentication",
         "rest_framework.authentication.SessionAuthentication",
     ],
     # Deny by default. Public endpoints opt in explicitly with
@@ -232,11 +242,37 @@ REST_FRAMEWORK = {
     "DEFAULT_THROTTLE_RATES": {
         "anon": env("API_THROTTLE_ANON", default="30/min"),
         "user": env("API_THROTTLE_USER", default="120/min"),
+        # POST /api/v1/auth/login/ only, and both apply to every attempt. The
+        # per-account rate is what bounds password guessing; the per-client
+        # rate can be sidestepped by varying X-Forwarded-For. See
+        # apps/accounts/api/throttles.py.
+        "auth_login": env("API_THROTTLE_LOGIN", default="10/min"),
+        "auth_login_account": env("API_THROTTLE_LOGIN_ACCOUNT", default="10/hour"),
     },
     "DEFAULT_VERSIONING_CLASS": "rest_framework.versioning.URLPathVersioning",
     "DEFAULT_VERSION": "v1",
     "ALLOWED_VERSIONS": ["v1"],
 }
+
+
+# ---------------------------------------------------------------------------
+# API tokens
+# ---------------------------------------------------------------------------
+
+# How long a token issued by POST /api/v1/auth/login/ stays valid, in hours.
+# Fixed at issue and not extended by use; after it the client signs in again.
+#
+# Default 168 (seven days). Long enough that an inspector is not asked for a
+# password every shift, short enough that a token copied off a lost phone, or
+# out of a browser, stops working within the week even if nobody revokes it.
+# Revocation - logout, or an operator in the admin - still takes effect
+# immediately; the lifetime only bounds a token nobody knew to revoke.
+API_TOKEN_LIFETIME_HOURS = env.int("API_TOKEN_LIFETIME_HOURS", default=168)
+if API_TOKEN_LIFETIME_HOURS < 1:
+    raise ImproperlyConfigured(
+        "API_TOKEN_LIFETIME_HOURS must be at least 1; a token that expires as "
+        "it is issued would make every login fail."
+    )
 
 
 # ---------------------------------------------------------------------------

@@ -11,12 +11,13 @@ looks like a bug rather than like unfinished work:
 
     products/  feature/product-upload
 
-Four are routed. `images/` and `compliance/` are the demonstration flow,
+Five are routed. `images/` and `compliance/` are the demonstration flow,
 upload through verdict. `extraction/` is the same upload stopping one stage
 earlier, at what was read off the label - which is a different question and
 deliberately a different endpoint, not a flag on that one. `rules/` is the
 read-only inventory of the loaded executable rules - what this server holds,
-not what it concluded about anything. See docs/api.md.
+not what it concluded about anything. `auth/` issues, revokes and describes
+the Bearer tokens the web and mobile clients sign in with. See docs/api.md.
 """
 
 from django.urls import include, path, re_path
@@ -32,6 +33,7 @@ urlpatterns = [
     path("extraction/", include("apps.extraction.api.urls")),
     path("compliance/", include("apps.compliance.api.urls")),
     path("rules/", include("apps.rules.api.urls")),
+    path("auth/", include("apps.accounts.api.urls")),
     # Must stay LAST: it claims every path the routes above did not, so that an
     # unmatched API URL returns the JSON error envelope rather than an HTML 404.
     re_path(r"^.*$", ApiNotFoundView.as_view(), name="not-found"),

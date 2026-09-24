@@ -32,6 +32,10 @@ class HealthView(APIView):
     """
 
     permission_classes = [AllowAny]
+    # Nobody's credentials are consulted. A client sending an expired Bearer
+    # token with every request would otherwise get a 401 here and report the
+    # server as down, when the server is fine and only the token is not.
+    authentication_classes = []
     # A health check that gets rate-limited reports a false outage. Polling is
     # the entire purpose of this endpoint.
     throttle_classes = []
