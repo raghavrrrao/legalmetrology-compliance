@@ -450,7 +450,7 @@ variable, never a code change: nothing in the repository turns it on.
 
 ### What it opens
 
-Exactly five routes become reachable by anonymous callers — the frontend's
+Exactly six routes become reachable by anonymous callers — the clients'
 workflow, end to end, and nothing else:
 
 | Route | What the demo needs it for |
@@ -460,6 +460,7 @@ workflow, end to end, and nothing else:
 | `POST /api/v1/compliance/` | Evaluate a reading against the loaded rules |
 | `GET /api/v1/compliance/<uuid>/` | Open a stored result by its link |
 | `GET /api/v1/compliance/` | The inspections history list |
+| `GET /api/v1/rules/` | The loaded rule list, for a screen that names the rules. Rule metadata only — no submission, image or result |
 
 `POST /api/v1/images/` (the one-shot upload-and-analyse path) is the same
 permission and is open too; the frontend uses the two-step path above instead.

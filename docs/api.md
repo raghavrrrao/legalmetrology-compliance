@@ -931,6 +931,90 @@ value is an interpretation of it, and is `null` when no normaliser exists for
 that declaration — never because the reading was empty. Show the raw value
 where a reviewer needs to check the interpretation.
 
+### `GET /api/v1/rules/`
+
+The executable rules this installation has loaded (`ComplianceRule` rows), active
+and inactive. It answers "which rules does this server hold, and which does it
+evaluate?" — for a screen that names the rules.
+
+**It is an inventory, not a compliance decision.** Nothing here says whether any
+package complies, or which rules would apply to one. That is decided per package
+by the compliance engine and returned by `POST /api/v1/compliance/` and
+`GET /api/v1/compliance/<uuid>/`. No legal requirement is evaluated or restated
+by this endpoint.
+
+**Source of truth.** The rows are what the server's database holds: authored in
+`rules/definitions/`, loaded by `manage.py load_rules`, and linked to clauses by
+`manage.py load_legal_framework`. A client should display these rather than a
+copy of the repository files, because a server that has not run `load_rules`,
+or has a rule switched off, differs from those files, and only this response
+reflects that.
+
+Paginated with the shared [Pagination](#pagination) class: `page`, `page_size`
+(default 20, capped at 100), and the standard four-key envelope. Ordered by
+`code`, which is unique, so the order is total. As shipped, all 12 rules fit on
+the default page.
+
+```json
+{
+  "count": 12,
+  "next": null,
+  "previous": null,
+  "results": [
+    {
+      "code": "LM-PC-0002",
+      "title": "Common or generic name of the commodity",
+      "legal_reference": "Rule 6(1)(b) of the Legal Metrology (Packaged Commodities) Rules, 2011",
+      "clause": "6(1)(b)",
+      "source_status": "verified",
+      "is_active": false,
+      "effective_from": "2011-04-01",
+      "effective_to": null
+    }
+  ]
+}
+```
+
+| Field | Meaning |
+|---|---|
+| `code` | The stable identifier a finding cites (`rule_code` on a finding). Never reused. |
+| `title` | The rule's own name for the requirement, as loaded. |
+| `legal_reference` | The provision as the source numbers it. `""` when not established. It is never guessed and never `null`. |
+| `clause` | The clause of the Rules this rule evaluates, from its linked `RuleRequirement`. This is the same link the engine snapshots onto every finding. **`null` when the rule is not linked to a clause**, e.g. on a database where `load_legal_framework` has not been run. It is never derived from `legal_reference`. |
+| `source_status` | `verified` or `unverified`. Only a verified rule can report a package as non-compliant; an unverified one can at most send it to review. |
+| `is_active` | Whether the engine considers the rule at all. **`false` rows are listed**, not hidden: LM-PC-0002 ships inactive, and a rule that is recorded but not evaluated is the more important of the two facts to be able to find. `true` means the flag and nothing more. Whether an active rule runs for a given package also depends on its effective window and the package's category, which the engine decides per check. |
+| `effective_from`, `effective_to` | The rule's effective window as ISO dates, or `null`. `effective_to: null` means no end date is recorded. |
+
+**Deliberately not in the response:**
+- `check_type` and `parameters`: validator configuration, including values a
+  client could mistake for legal thresholds.
+- `applies_to_categories` and `requires_applicability_conditions`: how
+  applicability is decided.
+- `source_note`: who verified the rule.
+- `requirement` and `severity`: not part of this contract.
+
+A client that had the first two could re-implement a check. The compliance engine
+is the only thing that applies them.
+
+**Read-only.** GET, HEAD and OPTIONS only; POST, PUT, PATCH and DELETE are
+**405** `method_not_allowed`. Rules change by editing `rules/definitions/` and
+reloading, never over the API. There is no detail route: `code` identifies a
+rule within the list.
+
+**Permissions** are those of `GET /api/v1/compliance/applicability-conditions/`,
+the other endpoint serving loaded legal-framework metadata:
+`IsAuthenticatedOrDemoPublic`. An authenticated caller may read it; an
+anonymous caller may read it only while `DEMO_PUBLIC_ANALYSIS_API` is on, and
+gets **403** otherwise. It is not unconditionally public, because
+`/api/v1/health/` remains the only such endpoint. It holds no user data: every
+caller who may reach it sees the same rows, and no submission, image, reading or
+result appears in it. Anonymous reads are throttled like any other.
+
+**200** always for an allowed GET, including `count: 0` with an empty `results`
+list on a server where no rules are loaded. Compare `compliance_rules` on
+`GET /api/v1/health/`: its `active_total` is the number of rows here with
+`is_active: true`.
+
 ### Which endpoints the frontend actually calls
 
 Recorded here because the choice is not obvious from the endpoint list, and
@@ -988,7 +1072,9 @@ authenticated user, unless
 `DEMO_PUBLIC_ANALYSIS_API` is set. That setting **defaults to False** and is
 intended only for a demonstration, where no login screen exists yet. It affects
 these six — five URL routes, since the collection's GET and POST share one —
-and nothing else, and uploads still go through validation and anonymous
+plus one read-only route that is not an analysis endpoint: `GET /api/v1/rules/`,
+the loaded rule list, which holds no user data and follows the same rule. It
+affects nothing else, and uploads still go through validation and anonymous
 throttling either way. The set is pinned by
 `apps/core/tests/test_demo_mode_scope.py`; see
 [docs/deployment.md](deployment.md#demonstration-mode) for what turning it on
@@ -1012,7 +1098,9 @@ the contract here in a PR before building it.
 | Endpoint | Branch |
 |---|---|
 | `POST /api/v1/products/` | `feature/product-upload` |
-| `GET /api/v1/rules/` | `feature/rule-management` |
+
+`GET /api/v1/rules/` was listed here for `feature/rule-management` and is now
+built. See [its section above](#get-apiv1rules).
 
 ### What already exists behind them
 

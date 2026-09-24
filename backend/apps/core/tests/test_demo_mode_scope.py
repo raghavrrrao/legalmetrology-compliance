@@ -23,16 +23,19 @@ from rest_framework.throttling import AnonRateThrottle
 
 from apps.core.api.permissions import IsAuthenticatedOrDemoPublic
 
-#: Every route the demo switch opens to anonymous callers, as the frontend's
-#: workflow needs them: declare, upload, read, evaluate, retrieve. Changing this
-#: list changes what a public demonstration exposes - update the three documents
-#: named in the module docstring in the same commit.
+#: Every route the demo switch opens to anonymous callers, as the clients'
+#: workflow needs them: declare, upload, read, evaluate, retrieve - and list the
+#: loaded rules, which is legal-framework metadata like the declarable facts and
+#: holds no user data. Changing this list changes what a public demonstration
+#: exposes - update the three documents named in the module docstring in the
+#: same commit.
 DEMO_ROUTES = {
     "api/v1/images/",
     "api/v1/extraction/",
     "api/v1/compliance/",
     "api/v1/compliance/applicability-conditions/",
     "api/v1/compliance/<uuid:pk>/",
+    "api/v1/rules/",
 }
 
 #: Deliberately public whether the switch is on or off. The health endpoint is
