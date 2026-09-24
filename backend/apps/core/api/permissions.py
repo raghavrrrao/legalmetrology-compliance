@@ -38,9 +38,13 @@ class IsAuthenticatedOrDemoPublic(BasePermission):
        surviving into a deployment by accident.
     2. It is **one switch, named for what it is**. Grepping for the setting
        finds every endpoint it affects.
-    3. It touches **only the analysis endpoints** - upload-and-analyse,
-       upload-and-extract, and reading a stored result back. Nothing else in
-       the API changes behaviour whether the flag is on or off.
+    3. It touches **only the routes that name this class** - the analysis
+       endpoints (upload-and-analyse, upload-and-extract, evaluate a stored
+       reading, read a stored result back, list stored results, list the
+       declarable applicability conditions) and the read-only rule inventory,
+       `GET /api/v1/rules/`, which holds no user data. Nothing else in the API
+       changes behaviour whether the flag is on or off. The set is pinned by
+       `apps/core/tests/test_demo_mode_scope.py`.
 
     Anonymous does not mean unprotected: uploads still go through
     `apps.images.validators` in full, and DRF's anonymous throttle (30/min by

@@ -1,6 +1,6 @@
 """Who may reach the analysis endpoints.
 
-The class itself now lives in `apps.core.api.permissions`, because three apps
+The class itself now lives in `apps.core.api.permissions`, because four apps
 guard endpoints with it and only one of them is this one - see that module for
 the reasoning and for what the demo switch does and does not relax.
 

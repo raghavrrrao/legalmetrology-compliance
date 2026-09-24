@@ -11,9 +11,10 @@ reverse it, and renaming a route for tidiness would break them for nothing.
 
 `applicability-conditions/` is the discovery half of the POST's contract: the
 facts a submitter may state that would change what the engine concludes. It
-sits here rather than under the `rules/` prefix because that prefix is reserved
-for `feature/rule-management`, and because what it lists is the input
-vocabulary of the endpoint beside it rather than the rule set itself.
+sits here rather than under the `rules/` prefix because what it lists is the
+input vocabulary of the endpoint beside it rather than the rule set itself.
+`rules/` was reserved for `feature/rule-management` when this was written, and
+now serves that branch's rule inventory, `GET /api/v1/rules/`.
 """
 
 from django.urls import path
