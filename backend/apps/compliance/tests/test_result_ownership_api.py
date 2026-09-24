@@ -319,6 +319,11 @@ def test_a_users_own_evaluation_is_readable_immediately_afterwards(
     unable to open the result they had just been handed.
     """
     make_rule("OWN-POST")
+    # The reading is theirs too, as `POST /api/v1/extraction/` records it: a
+    # signed-in user may evaluate only runs whose photographs they uploaded
+    # (`test_run_ownership_api.py`), and the fixture's image has no uploader.
+    completed_run.image.uploaded_by = user
+    completed_run.image.save(update_fields=["uploaded_by"])
     client.force_login(user)
 
     created = client.post(

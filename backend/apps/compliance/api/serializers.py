@@ -29,6 +29,7 @@ from __future__ import annotations
 from rest_framework import serializers
 
 from apps.catalog.models import ProductApplicabilityDeclaration, ProductCategory
+from apps.compliance.api.ownership import runs_usable_by
 from apps.compliance.models import (
     ComplianceCheck,
     ComplianceEvidence,
@@ -368,15 +369,35 @@ class ComplianceEvaluationRequestSerializer(serializers.Serializer):
     )
 
     def validate_extraction_run_id(self, value):
-        """Resolve the run now, so an unknown id is a 400 and not a 500.
+        """Resolve the run now, **among the runs this caller may use**.
 
         Returns the row rather than the id: the view would otherwise fetch it
         again, and a second lookup is a second chance for the two to disagree.
+
+        The lookup is scoped by `runs_usable_by` (see `ownership.py`), so a run
+        that exists but is not the caller's is not found - and produces exactly
+        the error an id that names nothing produces. A distinct "not yours"
+        would confirm that the id names a real submission, which is the one
+        thing a caller who does not own it must not learn. Because this runs
+        during validation, a refused id stops the request before the view
+        touches the run, creates a check, or records a declaration.
+
+        Needs the request in the serializer context. Without it there is no
+        caller to scope to, and guessing one - anonymous, say - would widen
+        access rather than narrow it, so it fails loudly instead.
         """
+        request = self.context.get("request")
+        if request is None:
+            raise RuntimeError(
+                "ComplianceEvaluationRequestSerializer needs the request in its "
+                "context: the run is resolved among the caller's own runs."
+            )
         try:
-            return ExtractionRun.objects.select_related(
-                "image", "image__product", "image__product__category"
-            ).get(pk=value)
+            return (
+                runs_usable_by(request.user)
+                .select_related("image", "image__product", "image__product__category")
+                .get(pk=value)
+            )
         except ExtractionRun.DoesNotExist:
             raise serializers.ValidationError(
                 f"No extraction run with id {value}."

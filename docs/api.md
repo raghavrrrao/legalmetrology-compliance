@@ -583,7 +583,10 @@ was.
 
 **400** for a missing, malformed or unknown `extraction_run_id`, an unknown
 `category_code`, or an `applicability_declarations` entry naming a condition
-the framework does not define or cannot use.
+the framework does not define or cannot use. A run the caller may not use is
+the same 400 as an unknown one: a signed-in caller may evaluate only runs whose
+photographs they uploaded, an anonymous demonstration caller only anonymously
+uploaded runs. See [security.md](security.md#who-may-evaluate-a-stored-reading--post-apiv1compliance).
 
 ### `GET /api/v1/compliance/applicability-conditions/`
 

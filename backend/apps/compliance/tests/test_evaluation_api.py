@@ -650,6 +650,11 @@ def test_an_authenticated_user_is_allowed_with_the_switch_off(
     client, completed_run, settings, user
 ):
     settings.DEMO_PUBLIC_ANALYSIS_API = False
+    # Their own run, as `POST /api/v1/extraction/` would have recorded it. The
+    # fixture's image has no uploader, and a signed-in user may evaluate only
+    # runs whose photographs they uploaded - see `test_run_ownership_api.py`.
+    completed_run.image.uploaded_by = user
+    completed_run.image.save(update_fields=["uploaded_by"])
     client.force_login(user)
 
     response = _evaluate(client, completed_run)
