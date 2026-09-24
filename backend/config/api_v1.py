@@ -10,12 +10,13 @@ that owns them lands. An empty router registered now would 404 in a way that
 looks like a bug rather than like unfinished work:
 
     products/  feature/product-upload
-    rules/     feature/rule-management
 
-Three are routed. `images/` and `compliance/` are the demonstration flow,
+Four are routed. `images/` and `compliance/` are the demonstration flow,
 upload through verdict. `extraction/` is the same upload stopping one stage
 earlier, at what was read off the label - which is a different question and
-deliberately a different endpoint, not a flag on that one. See docs/api.md.
+deliberately a different endpoint, not a flag on that one. `rules/` is the
+read-only inventory of the loaded executable rules - what this server holds,
+not what it concluded about anything. See docs/api.md.
 """
 
 from django.urls import include, path, re_path
@@ -30,6 +31,7 @@ urlpatterns = [
     path("images/", include("apps.images.api.urls")),
     path("extraction/", include("apps.extraction.api.urls")),
     path("compliance/", include("apps.compliance.api.urls")),
+    path("rules/", include("apps.rules.api.urls")),
     # Must stay LAST: it claims every path the routes above did not, so that an
     # unmatched API URL returns the JSON error envelope rather than an HTML 404.
     re_path(r"^.*$", ApiNotFoundView.as_view(), name="not-found"),

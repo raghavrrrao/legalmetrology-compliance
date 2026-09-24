@@ -3,10 +3,11 @@
  *
  *     node scripts/generate-rules.mjs
  *
- * The phone needs to name the twelve requirements and no endpoint lists them
- * (see the generated file's header for why), so it carries a copy. This script
- * is how the copy is made, and `src/data/lmpcRules.test.ts` is what fails if
- * somebody edits the copy by hand or changes a definition without rerunning it.
+ * The Rules screen names the twelve requirements from a bundled copy - see the
+ * generated file's header for why, and for the backend endpoint that now lists
+ * the loaded rules. This script is how the copy is made, and
+ * `src/data/lmpcRules.test.ts` is what fails if somebody edits the copy by hand
+ * or changes a definition without rerunning it.
  *
  * Only display fields are copied. The requirement's full legal wording stays in
  * the JSON, where it is reviewed; putting it in the bundle would invite treating
@@ -64,12 +65,14 @@ const header = `/**
  * so a rule added, renamed, deactivated or re-referenced upstream breaks the
  * mobile test run instead of quietly leaving a stale list on the Rules screen.
  *
- * **Why a mirror exists at all.** There is no endpoint that lists rules. The API
- * exposes \`compliance/applicability-conditions/\` - the facts a submitter may
- * state - and the \`rules/\` prefix is reserved for unlanded rule-management work;
- * see \`backend/apps/compliance/api/urls.py\`. Until that endpoint exists, the only
- * way for the phone to name the requirements is to carry a copy, and the only
- * safe way to carry a copy is to have a test that notices when it goes stale.
+ * **Why a mirror exists at all.** When the Rules screen was built, no endpoint
+ * listed rules, so the only way for the phone to name the requirements was to
+ * carry a copy - and the only safe way to carry a copy is to have a test that
+ * notices when it goes stale. The backend now serves the rules it has loaded at
+ * \`GET /api/v1/rules/\` (see \`docs/api.md\`). Moving the Rules screen onto that
+ * endpoint is a separate follow-up task; until it lands, this file is still what
+ * the screen displays, and it mirrors the repository's definition files - not
+ * what any particular server has loaded.
  *
  * **What this list is not.** It is not what was evaluated for any particular
  * package - that is the result screen's findings, which come from the server. It

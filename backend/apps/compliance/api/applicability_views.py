@@ -13,10 +13,12 @@ change what this installation concludes about a package?**
 
 Why it lives beside the compliance endpoints, not under `rules/`
 ----------------------------------------------------------------
-`config/api_v1.py` reserves the `rules/` prefix for `feature/rule-management`,
-and claiming it for one read-only list would preempt that branch. What this
-returns is not the rule set - it is the *input vocabulary of the POST next to
-it*, and the two halves of one request contract are better owned by one app.
+`config/api_v1.py` reserved the `rules/` prefix for `feature/rule-management`
+when this was written, and claiming it for one read-only list would have
+preempted that branch; the prefix now serves its rule inventory,
+`GET /api/v1/rules/`. Either way, what this returns is not the rule set - it is
+the *input vocabulary of the POST next to it*, and the two halves of one
+request contract are better owned by one app.
 
 What is returned, and why it is a short list rather than all 39
 --------------------------------------------------------------

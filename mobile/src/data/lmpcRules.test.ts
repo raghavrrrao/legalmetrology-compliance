@@ -10,7 +10,9 @@
  * phone.
  *
  * `src/data/lmpcRules.ts` is a generated mirror of `rules/definitions/*.json`,
- * carried because no endpoint lists rules (that file's header has the why). A
+ * and it is still what the Rules screen displays: the backend's
+ * `GET /api/v1/rules/` is newer than the screen, and moving the screen onto it
+ * is a separate follow-up (that file's header has the why). A
  * mirror with nothing watching it is a stale list waiting to happen: a rule
  * deactivated upstream would keep saying "evaluated" on the Rules screen, and a
  * rule added upstream would simply never appear.

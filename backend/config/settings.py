@@ -414,9 +414,8 @@ DEFAULT_EXTRACTION_ENGINE_VERSION = env(
 # Demonstration mode
 # ---------------------------------------------------------------------------
 
-# Opens POST /api/v1/images/ and GET /api/v1/compliance/<id>/ to anonymous
-# callers. Nothing else is affected, and every upload still goes through
-# apps.images.validators in full.
+# Opens the routes listed below to anonymous callers. Nothing else is affected,
+# and every upload still goes through apps.images.validators in full.
 #
 # Default False, deliberately: the API denies by default (see REST_FRAMEWORK
 # above), there is no login screen yet, and a demonstration needs the analysis
@@ -425,7 +424,7 @@ DEFAULT_EXTRACTION_ENGINE_VERSION = env(
 # be set on purpose in a git-ignored .env or a platform variable - the same
 # reasoning as CORS_ALLOW_ALL_ORIGINS never being enabled above.
 #
-# On, it opens five routes - six operations - to anonymous callers, and
+# On, it opens six routes - seven operations - to anonymous callers, and
 # nothing else:
 #
 #     POST /api/v1/images/                                upload and analyse
@@ -433,6 +432,7 @@ DEFAULT_EXTRACTION_ENGINE_VERSION = env(
 #     POST /api/v1/compliance/                            evaluate a reading
 #     GET  /api/v1/compliance/ and /api/v1/compliance/<uuid>/
 #     GET  /api/v1/compliance/applicability-conditions/
+#     GET  /api/v1/rules/                                 the loaded rule list
 #
 # That set is asserted by apps/core/tests/test_demo_mode_scope.py, so it cannot
 # widen without a test naming this comment failing first.
