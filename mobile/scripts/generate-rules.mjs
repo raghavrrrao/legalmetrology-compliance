@@ -3,11 +3,12 @@
  *
  *     node scripts/generate-rules.mjs
  *
- * The Rules screen names the twelve requirements from a bundled copy - see the
- * generated file's header for why, and for the backend endpoint that now lists
- * the loaded rules. This script is how the copy is made, and
- * `src/data/lmpcRules.test.ts` is what fails if somebody edits the copy by hand
- * or changes a definition without rerunning it.
+ * The Rules screen used to list the requirements from this bundled copy. It now
+ * lists what the server reports at `GET /api/v1/rules/`, and nothing in the app
+ * imports the copy - see the generated file's header for what it is kept as.
+ * This script is how the copy is made, and `src/data/lmpcRules.test.ts` is what
+ * fails if somebody edits the copy by hand or changes a definition without
+ * rerunning it.
  *
  * Only display fields are copied. The requirement's full legal wording stays in
  * the JSON, where it is reviewed; putting it in the bundle would invite treating
@@ -55,7 +56,7 @@ if (rules.length === 0) {
 const str = (value) => `'${String(value).replace(/\\/g, '\\\\').replace(/'/g, "\\'")}'`;
 
 const header = `/**
- * The rule definitions this app is built with, as a display list.
+ * The repository's rule definitions, as a display list.
  *
  * GENERATED, AND A MIRROR - NOT A SOURCE OF TRUTH
  * ----------------------------------------------
@@ -63,16 +64,15 @@ const header = `/**
  * \`rules/definitions/*.json\` at the repository root and rewrites this file.
  * \`lmpcRules.test.ts\` reads those same files and fails if the two have drifted,
  * so a rule added, renamed, deactivated or re-referenced upstream breaks the
- * mobile test run instead of quietly leaving a stale list on the Rules screen.
+ * mobile test run instead of quietly leaving a stale copy in the repository.
  *
- * **Why a mirror exists at all.** When the Rules screen was built, no endpoint
- * listed rules, so the only way for the phone to name the requirements was to
- * carry a copy - and the only safe way to carry a copy is to have a test that
- * notices when it goes stale. The backend now serves the rules it has loaded at
- * \`GET /api/v1/rules/\` (see \`docs/api.md\`). Moving the Rules screen onto that
- * endpoint is a separate follow-up task; until it lands, this file is still what
- * the screen displays, and it mirrors the repository's definition files - not
- * what any particular server has loaded.
+ * **Not what the app shows.** The Rules screen lists what the analysis server
+ * reports at \`GET /api/v1/rules/\` (see \`docs/api.md\`), and nothing in the app
+ * imports this file. It was the screen's data source before that endpoint
+ * existed. It is kept, generated and drift-tested, as a mirror of the
+ * repository's definition files only - it says what the repository ships, not
+ * what any server has loaded - and it is not an offline fallback: shown in
+ * place of the server's list it would be mistaken for it.
  *
  * **What this list is not.** It is not what was evaluated for any particular
  * package - that is the result screen's findings, which come from the server. It
@@ -83,7 +83,7 @@ const header = `/**
  * whether it ran.
  */
 
-/** One rule, as the Rules screen lists it. */
+/** One rule definition, as mirrored from \`rules/definitions/\`. */
 export interface LmpcRule {
   /** The stable identifier a finding cites, e.g. \`LM-PC-0003\`. */
   code: string;
@@ -93,10 +93,9 @@ export interface LmpcRule {
   provision: string;
   severity: string;
   /**
-   * Whether the definition is switched on. A definition that exists but is
-   * inactive is recorded and not evaluated, and the screen lists it saying so
-   * rather than leaving it out - a requirement the tool does not check is the
-   * more important of the two things to be able to see.
+   * Whether the definition is switched on in the repository. A definition that
+   * exists but is inactive is recorded and not evaluated once loaded; whether a
+   * given server has it switched on is that server's \`is_active\`.
    */
   isActive: boolean;
 }

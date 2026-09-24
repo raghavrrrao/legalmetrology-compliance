@@ -107,12 +107,14 @@ mobile/
 ├── assets/                 icons (Expo template)
 ├── tests/                  Jest setup, wire-shape fixtures, screen-test helpers
 └── src/
-    ├── api/                client.ts (the one HTTP client), extraction.ts, compliance.ts
+    ├── api/                client.ts (the one HTTP client), extraction.ts, compliance.ts,
+    │                       rules.ts (the server's rule inventory, every page)
     ├── config/env.ts       the ONLY reader of process.env; API base URL; upload limit
     ├── types/api.ts        the API contract: wire shapes and their camelCase mappings
     ├── services/           imagePicker.ts (camera/library + permissions), imageValidation.ts
     ├── hooks/              useLabelAnalysis.ts (the two-step flow), useInspectionImages.ts
-    │                       (the set being composed), useImageSelection.ts, AnalysisContext.tsx
+    │                       (the set being composed), useImageSelection.ts, AnalysisContext.tsx,
+    │                       useRuleInventory.ts (the Rules screen's request)
     ├── navigation/         RootNavigator.tsx, types.ts
     ├── screens/            HomeScreen, ScanScreen, AnalysisScreen, ResultScreen
     ├── components/         Button, StatusBadge, Card, Callout, ProgressSteps, FindingCard,
@@ -145,7 +147,10 @@ web client.
 - `src/screens/` render what came back. **No screen computes a verdict, a
   score, a count or an outcome.** The counts shown are the backend's `rules_*`
   fields; the tones in `utils/status.ts` are looked up from a value the backend
-  returned, and an unrecognised value renders neutral, never green.
+  returned, and an unrecognised value renders neutral, never green. The one
+  figure made on the phone is the Rules screen's active/inactive split: a tally,
+  in `src/api/rules.ts`, of the `is_active` flags on the complete list the
+  server returned - not a judgement about which rules apply to anything.
 
 ## Screens
 
@@ -204,6 +209,37 @@ tips            Check package · 3    requirements        findings by status
   photograph and how it fared on its own, so a submitter can see that image 2
   was unreadable while the package was still judged. Technical details (ids,
   engine versions, timings, recognised text) are behind a toggle.
+- **Rules.** The rule inventory the analysis server reports,
+  `GET /api/v1/rules/` (docs/api.md), and nothing else. **The backend is the
+  source of truth**; the screen is informational and evaluates nothing - no
+  validator, threshold or applicability exists in this app, and the endpoint
+  sends none.
+  - Shows the server's `count` as *Total*, the active and inactive tallies of
+    its `is_active` flags, and every rule in the server's order: code, `Rule`
+    and the linked clause (the label a finding card uses), title, and the legal
+    reference verbatim. An inactive rule is listed and marked *Not evaluated*;
+    a rule the server reports as unverified is marked *Not yet verified*. No
+    clause is shown when the server links none - one is never read out of the
+    reference text - and effective dates are not used to decide anything.
+  - Reads every page. `src/api/rules.ts` asks for the largest page the backend
+    serves (100) and follows `next` to the end, so the list is always the whole
+    inventory and nothing assumes how many rules there are. A response that is
+    malformed, has a malformed rule, or whose pages do not add up to its
+    `count` is refused as a whole, not shown in part.
+  - *Loading*: a spinner naming the server; no counts and no list. *Error*:
+    "The server's current rule list could not be loaded", the reason, and
+    *Try again* when a retry could help - never a list. A 401/403 (the
+    demonstration switch is off) and a 404 (a backend from before the
+    endpoint) are named as such, and a timeout is not blamed on a photograph
+    as the shared analysis message does. *Empty*: "The server reports that it has no
+    compliance rules loaded."
+  - **No fallback.** `src/data/lmpcRules.ts`, the generated mirror of
+    `rules/definitions/` the screen used to show, is no longer imported by the
+    app; it is kept, generated and drift-tested, as a repository mirror only.
+    It is not shown while loading or on failure, because it says what the
+    repository ships rather than what the server has loaded, and on this
+    screen it would be taken for the server's list. The Settings row that
+    opens this screen no longer quotes its count for the same reason.
 
 ### Which photograph a piece of evidence came from
 
@@ -467,12 +503,15 @@ photograph before deciding to keep it.
 ## Authentication - read before demoing
 
 The app sends **no credentials**. It works because the deployed backend has
-`DEMO_PUBLIC_ANALYSIS_API=True`, which opens the six analysis operations to
+`DEMO_PUBLIC_ANALYSIS_API=True`, which opens the six analysis operations - and
+the read-only rule list the Rules screen reads, `GET /api/v1/rules/` - to
 anonymous callers ([api.md → Permissions on the six analysis
 endpoints](api.md#permissions-on-the-six-analysis-endpoints),
 [deployment.md → Demonstration mode](deployment.md#demonstration-mode)).
 Verified at the time of writing: `GET /api/v1/compliance/applicability-conditions/`
-on the production host returns 200 without a session.
+on the production host returns 200 without a session, and on 2026-09-25
+`GET /api/v1/rules/` did too. With the switch off, the Rules screen says the
+server shows its rule list only to signed-in users.
 
 That is a controlled arrangement for the SIH demonstration and **not the
 final security architecture**. The backend defaults the switch to off, the
@@ -561,6 +600,7 @@ What is covered, and where:
 | The upload part run through **Expo's real multipart encoder** (`expo/fetch`): encoded with the validated filename, type and the file's bytes; the legacy `{uri}` part rejected | `src/api/uploadPart.expoFetch.test.ts` |
 | Server check: `health/` through the same client, unreachable state, re-check, dev-only target log | `src/hooks/useApiHealth.test.tsx` |
 | Compliance request body (category sent only when given), result mapping, findings absent vs empty, malformed bodies rejected | `src/api/compliance.test.ts` |
+| Rule inventory: the GET and nothing else, snake_case → camelCase verbatim, only the contract's fields, server order kept, `next` followed to the end (and refused off-server, looping or past the ceiling), pages that do not add up to `count` refused, every malformed page or rule refusing the whole inventory, network / 403 / 500 | `src/api/rules.test.ts` |
 | Format detection, size/empty/too-small rejection, filename normalisation | `src/services/imageValidation.test.ts` |
 | Camera and library permission grant / denial / permanent denial, cancellation, unavailable camera, picker errors, platform differences, multiple selection and its limit | `src/services/imagePicker.test.ts` |
 | The two-step flow over a stubbed `fetch`: phases, network failure, HTTP failure, retry without re-upload, human-confirmed re-check, duplicate evaluate dropped | `src/hooks/useLabelAnalysis.test.tsx` |
@@ -572,8 +612,9 @@ What is covered, and where:
 | Scan: thumbnails and their labels, the count on the action, empty state and disabled submission, adding from camera and gallery, the picker limit, removal, duplicate and full refusals, permission denials | `src/screens/ScanScreen.test.tsx` |
 | Analysis: loading steps, the set-aware first step, each error, retry, completion | `src/screens/AnalysisScreen.test.tsx` |
 | Result: each verdict, findings by status, extracted fields, "N images checked", per-declaration and per-finding image attribution (and where none is claimed), per-photo outcomes, classification present / absent / unknown, re-check confirmation, no percentage, technical details | `src/screens/ResultScreen.test.tsx` |
+| Rules: loading with no list, the server's rules and counts, inactive and unverified marked, server order, server data never the bundled mirror's (which the test file refuses to load), no clause invented, active flag shown as sent whatever the dates, empty, error with retry, malformed, 403 and 404 | `src/screens/RulesScreen.test.tsx` |
 | The scanning frame: reduced motion honoured, the photo count, no progress claimed | `src/components/ScanPreview.test.tsx` |
-| The whole flow through the real navigator: Home → Scan → Analysis → Result, three photos as **one** request with three `image` parts, adding and removing before submission, offline stop, retry that resends the same set, start over | `src/navigation/RootNavigator.test.tsx` |
+| The whole flow through the real navigator: Home → Scan → Analysis → Result, three photos as **one** request with three `image` parts, adding and removing before submission, offline stop, retry that resends the same set, start over, a Rules visit mid-inspection that makes only its own request | `src/navigation/RootNavigator.test.tsx` |
 
 Only three things are replaced in tests: `expo-image-picker` and
 `expo-file-system` (native modules) and `fetch`. Fixtures are in the wire shape the backend sends

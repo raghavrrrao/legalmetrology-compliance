@@ -15,7 +15,6 @@ import { SettingsScreen } from './SettingsScreen';
 import { routedFetch } from '../../tests/fixtures';
 import { PHONE_METRICS, stubNavigation } from '../../tests/render';
 import { MAX_INSPECTION_IMAGES, MAX_UPLOAD_SIZE_MB } from '../config/env';
-import { RULE_COUNTS } from '../data/lmpcRules';
 
 beforeEach(() => {
   // The screen embeds `ServerStatus`, which checks `health/` on mount;
@@ -52,17 +51,15 @@ describe('SettingsScreen', () => {
     expect(screen.getByText(/The server decides either way/)).toBeOnTheScreen();
   });
 
-  it('reports how many of the recorded rules are evaluated, and opens the rules screen', async () => {
+  it('opens the rules screen without quoting a rule count of its own', async () => {
     const { navigation } = await renderSettings();
 
     const row = screen.getByTestId('open-rules');
-    expect(row).toHaveTextContent(`${RULE_COUNTS.evaluated} of ${RULE_COUNTS.recorded} active`, {
-      exact: false,
-    });
-    // The counts are the bundled definitions; the label must not attribute them
-    // to the server.
-    expect(row).toHaveTextContent('Rule definitions', { exact: false });
-    expect(screen.queryByText(/this server checks/i)).toBeNull();
+    expect(row).toHaveTextContent('Compliance rules', { exact: false });
+    // The Rules screen lists what the server reports. A count on this row could
+    // only be the bundled repository copy's, which is not the server's.
+    expect(row).not.toHaveTextContent(/\d+ of \d+/);
+    expect(row).not.toHaveTextContent(/active/i);
 
     await fireEvent.press(row);
     expect(navigation.navigate).toHaveBeenCalledWith('Rules');

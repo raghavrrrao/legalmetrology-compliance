@@ -2,8 +2,9 @@
  * API response fixtures, in the shape the backend actually sends.
  *
  * Everything here is `snake_case` and matches the serializers in
- * `backend/apps/compliance/api/serializers.py` and
- * `backend/apps/extraction/api/serializers.py` field for field, and the
+ * `backend/apps/compliance/api/serializers.py`,
+ * `backend/apps/extraction/api/serializers.py` and
+ * `backend/apps/rules/api/serializers.py` field for field, and the
  * examples in docs/api.md. That is the point: a test that builds a camelCase
  * object skips the mapping layer, which is where a contract change would
  * actually break the app. The same fixtures exist for the web client in
@@ -18,7 +19,9 @@ import type {
   ExtractionRunWire,
   FindingWire,
   ProductClassificationWire,
+  PageWire,
   ProductImageWire,
+  RuleWire,
   RunImageWire,
 } from '../src/types/api';
 import type { SelectedImage } from '../src/services/imageValidation';
@@ -447,22 +450,87 @@ export function healthBody(overrides: Record<string, unknown> = {}) {
 }
 
 /**
- * A `fetch` stub that answers `health/` from `health` and everything else from
- * a queue, in order. The home screen checks the server on mount, so a screen
- * test that also uploads needs the two kept apart.
+ * One row of `GET /api/v1/rules/`, as `ComplianceRuleInventorySerializer`
+ * sends it. Defaults are LM-PC-0003 as the shipped framework loads it.
+ */
+export function ruleBody(overrides: Partial<RuleWire> = {}): RuleWire {
+  return {
+    code: 'LM-PC-0003',
+    title: 'Net quantity of the commodity',
+    legal_reference: 'Rule 6(1)(c) of the Legal Metrology (Packaged Commodities) Rules, 2011',
+    clause: '6(1)(c)',
+    source_status: 'verified',
+    is_active: true,
+    effective_from: '2011-04-01',
+    effective_to: null,
+    ...overrides,
+  };
+}
+
+/**
+ * A small inventory in the server's order: three active rules and LM-PC-0002,
+ * which the shipped rule files load inactive. Deliberately not all twelve - no
+ * test may depend on how many rules the repository happens to ship.
+ */
+export function ruleInventoryBody(): RuleWire[] {
+  return [
+    ruleBody({
+      code: 'LM-PC-0001',
+      title: 'Name and address of the manufacturer, packer or importer',
+      legal_reference: 'Rule 6(1)(a) of the Legal Metrology (Packaged Commodities) Rules, 2011',
+      clause: '6(1)(a)',
+      effective_from: '2018-01-01',
+    }),
+    ruleBody({
+      code: 'LM-PC-0002',
+      title: 'Common or generic name of the commodity',
+      legal_reference: 'Rule 6(1)(b) of the Legal Metrology (Packaged Commodities) Rules, 2011',
+      clause: '6(1)(b)',
+      is_active: false,
+    }),
+    ruleBody(),
+    ruleBody({
+      code: 'LM-PC-0008',
+      title: 'Net quantity in units of the International System of Units',
+      legal_reference: 'Rule 13(5) of the Legal Metrology (Packaged Commodities) Rules, 2011',
+      clause: '13(5)',
+      effective_from: '2022-10-01',
+    }),
+  ];
+}
+
+/** The paginated envelope around `rules`, one page holding all of them by default. */
+export function rulesPageBody(
+  rules: unknown[] = ruleInventoryBody(),
+  overrides: Partial<PageWire<unknown>> = {},
+): PageWire<unknown> {
+  return { count: rules.length, next: null, previous: null, results: rules, ...overrides };
+}
+
+/**
+ * A `fetch` stub that answers `health/` from `health`, `rules/` (any page) from
+ * `rules`, and everything else from a queue, in order. The home screen checks
+ * the server on mount and the Rules tab lists the rules when first opened, so a
+ * screen test that also uploads needs the three kept apart.
  */
 export function routedFetch({
   health = jsonResponse(healthBody()),
+  rules = jsonResponse(rulesPageBody()),
   queue = [],
 }: {
   health?: Response | Error;
+  rules?: Response | Error;
   queue?: (Response | Error)[];
 } = {}) {
   const pending = [...queue];
   const calls: { url: string; init: RequestInit | undefined }[] = [];
   const stub = jest.fn(async (url: string, init?: RequestInit) => {
     calls.push({ url, init });
-    const answer = /\/health\/$/.test(url) ? health : pending.shift();
+    const answer = /\/health\/$/.test(url)
+      ? health
+      : /\/rules\/(\?.*)?$/.test(url)
+        ? rules
+        : pending.shift();
     if (answer === undefined) {
       throw new Error(`routedFetch: no response queued for ${url}`);
     }

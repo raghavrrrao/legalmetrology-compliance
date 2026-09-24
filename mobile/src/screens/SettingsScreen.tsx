@@ -4,7 +4,6 @@ import { Linking, Pressable, StyleSheet, Text, View } from 'react-native';
 import { Screen } from '../components/Screen';
 import { ServerStatus } from '../components/ServerStatus';
 import { config, MAX_INSPECTION_IMAGES, MAX_UPLOAD_SIZE_MB } from '../config/env';
-import { RULE_COUNTS } from '../data/lmpcRules';
 import { useApiHealth } from '../hooks/useApiHealth';
 import type { TabScreenProps } from '../navigation/types';
 import { colors, elevation, MIN_TOUCH_TARGET, radius, spacing, typography } from '../theme';
@@ -100,14 +99,15 @@ export function SettingsScreen({ navigation }: TabScreenProps<'Settings'>) {
             </>
           ) : null}
           <Row
-            // "Rule definitions", not "rules this server checks": the numbers are
-            // the app's bundled copy of `rules/definitions`, and nothing here asks
-            // the server which rules it has loaded. The Rules screen this opens
-            // says so in its first sentence. "active" is spelled out because a bare
-            // "11 of 12" did not say what the eleven were.
-            label="Rule definitions"
-            value={`${RULE_COUNTS.evaluated} of ${RULE_COUNTS.recorded} active`}
+            // No count here. The Rules screen this opens lists what the server
+            // reports, with its own loading and error states; a figure on this row
+            // would have to come either from the app's bundled copy of
+            // `rules/definitions` - which is not what the server has loaded - or
+            // from a second request with states of its own. The chevron is the
+            // whole of what this row has to say.
+            label="Compliance rules"
             onPress={() => navigation.navigate('Rules')}
+            accessibilityHint="Opens the rules reported by the analysis server"
             testID="open-rules"
           />
         </View>

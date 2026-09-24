@@ -9,13 +9,12 @@
  * that ships in the bundle may import from `node:*`; this file never runs on a
  * phone.
  *
- * `src/data/lmpcRules.ts` is a generated mirror of `rules/definitions/*.json`,
- * and it is still what the Rules screen displays: the backend's
- * `GET /api/v1/rules/` is newer than the screen, and moving the screen onto it
- * is a separate follow-up (that file's header has the why). A
- * mirror with nothing watching it is a stale list waiting to happen: a rule
- * deactivated upstream would keep saying "evaluated" on the Rules screen, and a
- * rule added upstream would simply never appear.
+ * `src/data/lmpcRules.ts` is a generated mirror of `rules/definitions/*.json`.
+ * The Rules screen no longer reads it - it lists `GET /api/v1/rules/` - and
+ * nothing in the app imports it (that file's header says what it is kept as).
+ * While it is kept, it must not drift: a mirror with nothing watching it is a
+ * stale list waiting to happen, with a rule deactivated upstream still marked
+ * active and a rule added upstream missing.
  *
  * So this test reads the definitions off disk - the real files, not a fixture -
  * and compares them field by field. It fails if anyone edits the mirror by hand,
@@ -93,11 +92,12 @@ describe('the bundled rule list', () => {
   });
 
   it('keeps at least one recorded-but-not-evaluated rule visible', () => {
-    // Not a requirement about the law - a requirement about honesty. The list is
-    // the only place the app admits it does not check everything it records, and
-    // the inactive rule is what makes that visible. If upstream ever activates
-    // the last one this fails, and the fix is to confirm the Rules screen still
-    // says "recorded" and "evaluated" are different things before deleting it.
+    // Not a requirement about the law - a requirement about honesty. The inactive
+    // rule is what shows that recorded and evaluated are different things. The
+    // Rules screen now takes that from the server's `is_active`, so if upstream
+    // ever activates the last one this fails, and the fix is to confirm the
+    // screen still marks an inactive server rule (RulesScreen.test.tsx) before
+    // deleting this assertion.
     expect(RULE_COUNTS.inactive).toBeGreaterThan(0);
   });
 });
