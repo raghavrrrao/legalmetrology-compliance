@@ -56,9 +56,13 @@ describe('SettingsScreen', () => {
     const { navigation } = await renderSettings();
 
     const row = screen.getByTestId('open-rules');
-    expect(row).toHaveTextContent(`${RULE_COUNTS.evaluated} of ${RULE_COUNTS.recorded}`, {
+    expect(row).toHaveTextContent(`${RULE_COUNTS.evaluated} of ${RULE_COUNTS.recorded} active`, {
       exact: false,
     });
+    // The counts are the bundled definitions; the label must not attribute them
+    // to the server.
+    expect(row).toHaveTextContent('Rule definitions', { exact: false });
+    expect(screen.queryByText(/this server checks/i)).toBeNull();
 
     await fireEvent.press(row);
     expect(navigation.navigate).toHaveBeenCalledWith('Rules');

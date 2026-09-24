@@ -131,16 +131,85 @@ describe('the tab bar', () => {
 /**
  * Every rendering of one tab's label.
  *
- * There are **two**, not one: `BottomTabItem` calls `tabBarIcon` for both the
- * focused and the unfocused state and keeps both in the tree, cross-fading their
- * opacity when the selection moves. So a `getByText` here would throw "found
- * multiple elements" on a perfectly healthy bar, and asserting on only the first
- * would leave the state the user is about to see unchecked. Both copies have to
- * satisfy the contract, so both are returned and both are asserted.
+ * Returned as a list because the count has changed once already. While the
+ * label was drawn inside `tabBarIcon` there were two - `BottomTabItem` renders
+ * the icon for both the focused and unfocused state and cross-fades them - so a
+ * `getByText` threw "found multiple elements" on a healthy bar. The label now
+ * lives in the label slot and renders once, but asserting over the whole list
+ * means a future move back into the icon slot is caught by the contract below
+ * rather than by a confusing query error.
  */
 function labelsIn(tabTestID: string, label: string) {
   return within(screen.getByTestId(tabTestID)).getAllByText(label);
 }
+
+/** A style prop as one flat object. */
+function flatStyle(style: unknown): Record<string, unknown> {
+  const layers = (Array.isArray(style) ? style.flat(Infinity) : [style]).filter(Boolean);
+  return Object.assign({}, ...layers) as Record<string, unknown>;
+}
+
+/** Every host ancestor of `node`, nearest first, up to (not including) the root. */
+function ancestorsOf(node: { parent: unknown }) {
+  const chain: { props: { style?: unknown } }[] = [];
+  let current = node.parent as { parent: unknown; props: { style?: unknown } } | null;
+  while (current) {
+    chain.push(current);
+    current = current.parent as typeof current;
+  }
+  return chain;
+}
+
+/**
+ * Two defects an emulator found and Jest had passed, pinned here in the one form
+ * Jest can check: the style props that caused them.
+ */
+describe('tab bar layout found on a device', () => {
+  it.each(SHELL_WIDTHS)(
+    'adds the bottom safe-area inset to the bar height at %i pt',
+    async (width) => {
+      await renderTabs(width);
+      const inset = (width === 390 ? PHONE_METRICS : metricsFor(width)).insets.bottom;
+
+      // bottom-tabs returns a numeric `height` from `tabBarStyle` verbatim and
+      // still pads the inset inside it. A bare 56 left ~27 pt for icon and label
+      // and drew the Android gesture handle across the labels.
+      const heights = ancestorsOf(screen.getByTestId('tab-home'))
+        .map((node) => flatStyle(node.props.style).height)
+        .filter((height): height is number => typeof height === 'number');
+      expect(heights).toContain(shell.tabBarHeight + inset);
+      expect(heights).not.toContain(shell.tabBarHeight);
+    },
+  );
+
+  it('keeps each label out of any box narrower than the pill', async () => {
+    await renderTabs(360);
+
+    // The label used to sit in the icon slot, which the library sizes at 31 pt,
+    // and "History" / "Settings" rendered as "Hist…" / "Sett…" on a 390 pt
+    // phone. Nothing between the tab button and its label may be that narrow.
+    for (const destination of DESTINATIONS) {
+      const tab = screen.getByTestId(destination.testID);
+      for (const label of labelsIn(destination.testID, destination.label)) {
+        const between = ancestorsOf(label);
+        const upToTab = between.slice(0, between.indexOf(tab as never) + 1);
+        const narrow = upToTab
+          .map((node) => flatStyle(node.props.style).width)
+          .filter((w): w is number => typeof w === 'number' && w < shell.tabPill.width);
+        expect(narrow).toEqual([]);
+      }
+    }
+  });
+
+  /*
+   * Not tested here, deliberately: `tabBarLabelPosition: 'below-icon'`. Without
+   * it bottom-tabs moves labels beside the icons at 768 pt and up (five items at
+   * its default 125 pt maximum is 625, which fits). But it decides from the bar's
+   * *measured* width, which is 0 under Jest, so a test here passes with or
+   * without the option and would prove nothing. The pinned layout was checked on
+   * an Android emulator at 768 dp instead.
+   */
+});
 
 describe.each(SHELL_WIDTHS)('the tab bar at %i pt wide', (width) => {
   it('shows all five labels, spelled in full', async () => {

@@ -1,5 +1,6 @@
 import { createBottomTabNavigator } from '@react-navigation/bottom-tabs';
 import { StyleSheet, Text, View } from 'react-native';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import type { MainTabParamList } from './types';
 import { AppHeader } from '../components/AppHeader';
@@ -27,42 +28,51 @@ function tabOptions(icon: TabIconName, label: string, spoken: string) {
     title: label,
     tabBarAccessibilityLabel: spoken,
     tabBarButtonTestID: `tab-${label.toLowerCase()}`,
-    tabBarIcon: ({ focused }: { focused: boolean }) => (
-      <TabItem icon={icon} label={label} focused={focused} />
-    ),
+    tabBarIcon: ({ focused }: { focused: boolean }) => <TabPill icon={icon} focused={focused} />,
+    tabBarLabel: ({ focused }: { focused: boolean }) => <TabLabel label={label} focused={focused} />,
   };
 }
 
 /**
- * One tab item: the icon on its pill, and the label under it.
+ * The icon on its pill - the whole of the selected-state indicator.
  *
- * Both are drawn here rather than through `tabBarIcon` plus `tabBarLabel`,
- * because the selected state is a pill *behind the icon only* and the label sits
- * outside it. Splitting that across the two options would mean the pill's width
- * was decided in one place and the thing it has to centre on in another.
- *
- * `flex: 1` with `flexBasis: 0` on every item is what divides the bar evenly at
- * any width instead of sizing each item to its own label - which is what would
- * make "Settings" wider than "Scan" and the icons stop lining up.
+ * It goes in the navigator's icon slot, and `tabBarIconStyle` below sizes that
+ * slot to the pill. Left at the library default the slot is 31 x 28 - sized for a
+ * bare glyph - and anything wider is laid out inside those 31 points.
  */
-function TabItem({ icon, label, focused }: { icon: TabIconName; label: string; focused: boolean }) {
-  const ink = focused ? colors.action : colors.textMuted;
+function TabPill({ icon, focused }: { icon: TabIconName; focused: boolean }) {
   return (
-    <View style={styles.item}>
-      <View style={[styles.pill, focused && styles.pillOn]}>
-        <TabBarIcon name={icon} color={ink} />
-      </View>
-      <Text
-        numberOfLines={1}
-        // The label must never shrink to fit: at 11 pt it is already at the
-        // floor, and a bar whose labels are different sizes reads as broken.
-        // The arithmetic in `theme.shell` is what guarantees it does not have to.
-        allowFontScaling={false}
-        style={[styles.label, { color: ink }, focused && styles.labelOn]}
-      >
-        {label}
-      </Text>
+    <View style={[styles.pill, focused && styles.pillOn]}>
+      <TabBarIcon name={icon} color={focused ? colors.action : colors.textMuted} />
     </View>
+  );
+}
+
+/**
+ * The label, in the navigator's *label* slot rather than under the pill.
+ *
+ * It used to be drawn inside the icon slot together with the pill, so one
+ * component decided both. On a device that put the label inside the icon slot's
+ * 31 pt width, and "History" and "Settings" rendered as "Hist…" and "Sett…" at
+ * 390 pt - the item was 76 pt wide and the label was offered 31 of it. The label
+ * slot is the full width of the item, which is what the arithmetic in
+ * `theme.shell` assumed all along.
+ */
+function TabLabel({ label, focused }: { label: string; focused: boolean }) {
+  return (
+    <Text
+      numberOfLines={1}
+      // The label must never shrink to fit: at 11 pt it is already at the floor,
+      // and a bar whose labels are different sizes reads as broken.
+      allowFontScaling={false}
+      style={[
+        styles.label,
+        { color: focused ? colors.action : colors.textMuted },
+        focused && styles.labelOn,
+      ]}
+    >
+      {label}
+    </Text>
   );
 }
 
@@ -80,6 +90,7 @@ function TabItem({ icon, label, focused }: { icon: TabIconName; label: string; f
  * made harder to read.
  */
 export function MainTabs() {
+  const insets = useSafeAreaInsets();
   return (
     <Tab.Navigator
       initialRouteName="Home"
@@ -96,11 +107,25 @@ export function MainTabs() {
          * that touched the bar.
          */
         animation: 'none',
-        tabBarStyle: styles.bar,
+        /*
+         * `height` must include the bottom inset. The library returns a numeric
+         * `height` from this style verbatim - it adds `insets.bottom` only to its
+         * own default (`getTabBarHeight` in bottom-tabs) - while still applying
+         * `paddingBottom: insets.bottom` itself. A bare 56 therefore made the whole
+         * bar 56 with the inset padded *inside* it, leaving about 27 pt for icon and
+         * label and drawing the Android gesture handle across the labels. Found on
+         * an emulator; Jest has no layout, so no unit test saw it.
+         */
+        tabBarStyle: [styles.bar, { height: shell.tabBarHeight + insets.bottom }],
         tabBarItemStyle: styles.barItem,
-        // The pill and the label are drawn by `TabItem`; the defaults would
-        // otherwise render a second label under it.
-        tabBarShowLabel: false,
+        tabBarIconStyle: styles.iconSlot,
+        tabBarShowLabel: true,
+        /*
+         * Pinned, because the default is not "below" everywhere: at 768 pt and up
+         * the library puts labels *beside* icons, which is a different bar from
+         * the one specified and would break the equal-width items on a tablet.
+         */
+        tabBarLabelPosition: 'below-icon',
         tabBarActiveTintColor: colors.action,
         tabBarInactiveTintColor: colors.textMuted,
       }}
@@ -141,15 +166,14 @@ export function MainTabs() {
 const styles = StyleSheet.create({
   /*
    * Opaque, a hairline on top, no shadow - the same treatment as the header, and
-   * for the same reason. `height` is the content box; the navigator adds the
-   * bottom safe-area inset to it itself, and `components/Screen.tsx` is written
-   * to make sure nothing else adds it a second time.
+   * for the same reason. Its height is set inline above, because it depends on
+   * the inset; `components/Screen.tsx` is written to make sure nothing else adds
+   * the inset a second time.
    */
   bar: {
     backgroundColor: colors.surface,
     borderTopWidth: 1,
     borderTopColor: colors.border,
-    height: shell.tabBarHeight,
     elevation: 0,
     shadowOpacity: 0,
     paddingTop: 5,
@@ -159,10 +183,10 @@ const styles = StyleSheet.create({
     flexGrow: 1,
     minWidth: 0,
   },
-  item: {
-    alignItems: 'center',
-    justifyContent: 'center',
-    gap: 3,
+  /* The icon slot, sized to the pill so the pill is laid out rather than overflowing. */
+  iconSlot: {
+    width: shell.tabPill.width,
+    height: shell.tabPill.height,
   },
   pill: {
     width: shell.tabPill.width,
@@ -177,6 +201,7 @@ const styles = StyleSheet.create({
   label: {
     ...tabLabelType,
     fontWeight: '500',
+    marginTop: 3,
   },
   labelOn: {
     fontWeight: '600',

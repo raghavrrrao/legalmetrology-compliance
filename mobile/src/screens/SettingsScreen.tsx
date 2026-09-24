@@ -41,7 +41,13 @@ export function SettingsScreen({ navigation }: TabScreenProps<'Settings'>) {
         Settings
       </Text>
 
-      <Section label="ANALYSIS SERVER">
+      {/*
+        `trailingMargin` subtracts the 16 pt `ServerStatus` already leaves under
+        itself (it needs it on Home, where it is followed by a footnote). Without
+        it the gap under this section was 40 pt against 24 under every other one -
+        visible on a device at 360 pt.
+      */}
+      <Section label="ANALYSIS SERVER" trailingMargin={spacing.xl - spacing.lg}>
         {/*
           The existing component, unchanged: it already shows the address, says
           whether the address was configured or guessed, and offers "Check again".
@@ -64,9 +70,15 @@ export function SettingsScreen({ navigation }: TabScreenProps<'Settings'>) {
 
       <Section label="PERMISSIONS">
         <View style={styles.card}>
+          {/*
+            No value text. "Open system settings" beside the label wrapped the
+            label onto two lines at 360 pt; the chevron already says the row goes
+            somewhere, and where it goes is in the hint for a screen reader and in
+            the note below for everyone.
+          */}
           <Row
-            label="Camera and photos"
-            value="Open system settings"
+            label="Camera and photo access"
+            accessibilityHint="Opens this app's page in your phone's settings"
             onPress={() => {
               Linking.openSettings().catch(() => undefined);
             }}
@@ -75,7 +87,7 @@ export function SettingsScreen({ navigation }: TabScreenProps<'Settings'>) {
         </View>
         <Text style={styles.note}>
           Access is asked for the first time you take or choose a photo. This app cannot change the
-          answer, only your phone’s settings can.
+          answer — the row above opens your phone’s settings, where you can.
         </Text>
       </Section>
 
@@ -88,8 +100,13 @@ export function SettingsScreen({ navigation }: TabScreenProps<'Settings'>) {
             </>
           ) : null}
           <Row
-            label="Rules this server checks"
-            value={`${RULE_COUNTS.evaluated} of ${RULE_COUNTS.recorded}`}
+            // "Rule definitions", not "rules this server checks": the numbers are
+            // the app's bundled copy of `rules/definitions`, and nothing here asks
+            // the server which rules it has loaded. The Rules screen this opens
+            // says so in its first sentence. "active" is spelled out because a bare
+            // "11 of 12" did not say what the eleven were.
+            label="Rule definitions"
+            value={`${RULE_COUNTS.evaluated} of ${RULE_COUNTS.recorded} active`}
             onPress={() => navigation.navigate('Rules')}
             testID="open-rules"
           />
@@ -104,9 +121,18 @@ export function SettingsScreen({ navigation }: TabScreenProps<'Settings'>) {
   );
 }
 
-function Section({ label, children }: { label: string; children: React.ReactNode }) {
+function Section({
+  label,
+  children,
+  trailingMargin,
+}: {
+  label: string;
+  children: React.ReactNode;
+  /** Overrides the gap under the section, for content that already leaves one. */
+  trailingMargin?: number;
+}) {
   return (
-    <View style={styles.section}>
+    <View style={[styles.section, trailingMargin !== undefined && { marginBottom: trailingMargin }]}>
       <Text accessibilityRole="header" style={styles.sectionLabel}>
         {label}
       </Text>
@@ -123,24 +149,33 @@ function Row({
   label,
   value,
   onPress,
+  accessibilityHint,
   testID,
 }: {
   label: string;
-  value: string;
+  /** Omitted for a row whose chevron is the whole of what there is to say. */
+  value?: string;
   onPress?: () => void;
+  accessibilityHint?: string;
   testID?: string;
 }) {
   const body = (
     <>
       <Text style={styles.rowLabel}>{label}</Text>
-      <Text style={styles.rowValue}>{value}</Text>
+      {value ? <Text style={styles.rowValue}>{value}</Text> : null}
       {onPress ? <Text style={styles.chevron}>›</Text> : null}
     </>
   );
+  const spoken = value ? `${label}. ${value}` : label;
 
   if (!onPress) {
     return (
-      <View style={styles.row} accessible accessibilityLabel={`${label}: ${value}`} testID={testID}>
+      <View
+        style={styles.row}
+        accessible
+        accessibilityLabel={value ? `${label}: ${value}` : label}
+        testID={testID}
+      >
         {body}
       </View>
     );
@@ -148,7 +183,8 @@ function Row({
   return (
     <Pressable
       accessibilityRole="button"
-      accessibilityLabel={`${label}. ${value}`}
+      accessibilityLabel={spoken}
+      accessibilityHint={accessibilityHint}
       onPress={onPress}
       style={({ pressed }) => [styles.row, pressed && styles.rowPressed]}
       testID={testID}

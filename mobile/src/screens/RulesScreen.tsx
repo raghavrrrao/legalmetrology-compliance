@@ -36,8 +36,8 @@ export function RulesScreen() {
         Rules &amp; information
       </Text>
       <Text style={styles.lede}>
-        The requirements this server checks, from rules 6 and 13 of the Legal Metrology (Packaged
-        Commodities) Rules, 2011.
+        The rule definitions this version of the app was built with, from rules 6 and 13 of the
+        Legal Metrology (Packaged Commodities) Rules, 2011. The analysis server applies its own copy.
       </Text>
 
       <View style={styles.counts} testID="rule-counts-summary">

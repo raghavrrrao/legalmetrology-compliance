@@ -54,7 +54,7 @@ if (rules.length === 0) {
 const str = (value) => `'${String(value).replace(/\\/g, '\\\\').replace(/'/g, "\\'")}'`;
 
 const header = `/**
- * The compliance rules this build's server ships, as a display list.
+ * The rule definitions this app is built with, as a display list.
  *
  * GENERATED, AND A MIRROR - NOT A SOURCE OF TRUTH
  * ----------------------------------------------
@@ -107,7 +107,7 @@ const body = rules
   .join('\n');
 
 const footer = `
-/** How many rules are recorded, and how many of them this server evaluates. */
+/** How many definitions are recorded, and how many are active - as bundled, not as any server has loaded them. */
 export const RULE_COUNTS = Object.freeze({
   recorded: LMPC_RULES.length,
   evaluated: LMPC_RULES.filter((rule) => rule.isActive).length,

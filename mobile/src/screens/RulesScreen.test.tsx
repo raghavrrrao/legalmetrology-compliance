@@ -67,6 +67,18 @@ describe('RulesScreen', () => {
     expect(footnote).toHaveTextContent('more narrowly than its clause requires', { exact: false });
   });
 
+  it('presents the list as the app’s bundled copy, not as what the server checks', async () => {
+    await renderRules();
+
+    // The list is generated from `rules/definitions` at build time. Nothing asks
+    // the server which rules it has loaded, so the screen must not say it did -
+    // the first version read "The requirements this server checks", which a
+    // device review caught.
+    expect(screen.queryByText(/this server checks/i)).toBeNull();
+    expect(screen.getByText(/this version of the app was built with/i)).toBeOnTheScreen();
+    expect(screen.getByText(/The analysis server applies its own copy/i)).toBeOnTheScreen();
+  });
+
   it('names the instrument the rules come from', async () => {
     await renderRules();
 

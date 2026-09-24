@@ -497,6 +497,34 @@ the `Inspections` route is labelled "History" and `Rules` is labelled "Rules" �
 and both carry their full name as the accessibility label, because truncating a
 tab label is not an option.
 
+### How the shell was verified, and what that did and did not cover
+
+**Jest** checks the layout *contract* — equal item division, one-line labels, no
+font scaling, the safe-area split — at 360, 390, 430 and 768. It has no layout
+engine, so it cannot measure a rendered label or a bar height.
+
+**One Android emulator** — Pixel 7 profile, Android 15 (API 35), 1080×2400,
+driven at 360, 390 and 430 dp by overriding the display density, and at 768 dp by
+overriding size and density together — rendered the screens and ran the flows
+against a local API. That found two tab-bar defects Jest had passed, both now
+fixed and pinned by tests that fail on the old code:
+
+- **The inset was not cleared.** A numeric `height` in `tabBarStyle` is used
+  verbatim by bottom-tabs, which still pads `insets.bottom` inside it; a bare 56
+  left ~27 pt for icon and label and drew the gesture handle across the labels.
+  The bar's height is now `56 + insets.bottom`.
+- **Labels truncated to "Hist…" and "Sett…" at 390 dp.** They were drawn inside
+  the icon slot, which the library sizes at 31 pt. They are now in the label
+  slot, the full width of the item.
+
+A third change is verified on the device only: `tabBarLabelPosition` is pinned to
+`below-icon`, because at ≥768 pt bottom-tabs otherwise moves labels beside the
+icons. Jest cannot exercise that path — the library decides from the bar's
+measured width, which is 0 there.
+
+**Not covered:** iOS, any physical device, Android versions other than 15,
+system font scaling, TalkBack walked end to end, and a release (non-debug) build.
+
 ### 7a. Where the two clients now disagree
 
 Mobile moved its accent from green to blue; the web has not. This is a real
