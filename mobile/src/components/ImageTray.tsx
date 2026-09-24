@@ -150,7 +150,7 @@ const styles = StyleSheet.create({
     // The selected state: a hairline in the accent, so a tile reads as part of
     // the set at a glance rather than as a picture that happens to be nearby.
     borderWidth: 1.5,
-    borderColor: colors.primary,
+    borderColor: colors.action,
     ...elevation.card,
   },
   thumbnail: {
@@ -198,25 +198,25 @@ const styles = StyleSheet.create({
     color: colors.text,
   },
   addTile: {
-    backgroundColor: colors.primarySofter,
+    backgroundColor: colors.actionSofter,
     borderStyle: 'dashed',
     alignItems: 'center',
     justifyContent: 'center',
     minHeight: MIN_TOUCH_TARGET,
   },
   addTilePressed: {
-    backgroundColor: colors.primarySoft,
+    backgroundColor: colors.actionSoft,
   },
   addGlyph: {
     fontSize: 26,
     lineHeight: 30,
     fontWeight: '300',
-    color: colors.primary,
+    color: colors.action,
   },
   addLabel: {
     ...typography.caption,
     fontWeight: '600',
-    color: colors.primary,
+    color: colors.action,
   },
   dim: {
     opacity: 0.5,

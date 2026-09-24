@@ -22,12 +22,45 @@ export const PHONE_METRICS: Metrics = {
   insets: { top: 47, left: 0, right: 0, bottom: 34 },
 };
 
+/**
+ * The widths the shell is required to hold, with a plausible inset set for each.
+ *
+ * 360 is the one that matters: it is the narrowest Android phone still in wide
+ * use and the width at which five labelled tabs either fit or do not. 768 is a
+ * tablet - `app.json` sets `supportsTablet`, so the bar has to survive it even
+ * though the handoff only drew phones.
+ *
+ * The insets are the platform's own conventions rather than measurements: a
+ * notched iPhone's 47/34, an Android gesture bar's 24/16, a tablet's 24/20.
+ * Nothing asserts the numbers; they are here so a test at 360 exercises a
+ * different inset pair from one at 390 and cannot pass by accident.
+ */
+export const SHELL_WIDTHS = [360, 390, 430, 768] as const;
+
+export function metricsFor(width: (typeof SHELL_WIDTHS)[number]): Metrics {
+  const insets =
+    width === 360
+      ? { top: 24, left: 0, right: 0, bottom: 16 }
+      : width === 768
+        ? { top: 24, left: 0, right: 0, bottom: 20 }
+        : { top: 47, left: 0, right: 0, bottom: 34 };
+  return { frame: { x: 0, y: 0, width, height: width >= 768 ? 1024 : 844 }, insets };
+}
+
+/**
+ * The navigation object a screen receives, with every method a spy.
+ *
+ * Deliberately **no `popToTop`**. The five destinations are bottom tabs now, and
+ * a tab navigator has no `popToTop` - offering one here would let a screen pass
+ * its test by calling a method the real prop does not have. Getting back to the
+ * beginning is `navigate('MainTabs', { screen: 'Home' })` from a pushed screen
+ * and `navigate('Home')` from a sibling tab; both are `navigate`.
+ */
 export function stubNavigation() {
   return {
     navigate: jest.fn(),
     replace: jest.fn(),
     goBack: jest.fn(),
-    popToTop: jest.fn(),
     addListener: jest.fn((_event: string, _listener: (event: { preventDefault: () => void }) => void) => () => undefined),
     setOptions: jest.fn(),
   };

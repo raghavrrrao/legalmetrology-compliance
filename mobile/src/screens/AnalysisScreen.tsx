@@ -9,7 +9,7 @@ import { ProgressSteps, type ProgressStep } from '../components/ProgressSteps';
 import { Screen } from '../components/Screen';
 import { useAnalysis, useStartOver } from '../hooks/AnalysisContext';
 import type { AnalysisPhase } from '../hooks/useLabelAnalysis';
-import type { RootScreenProps } from '../navigation/types';
+import { HOME_TAB, type RootScreenProps } from '../navigation/types';
 import { colors, spacing, typography } from '../theme';
 import { describeError } from '../utils/errors';
 
@@ -112,7 +112,9 @@ export function AnalysisScreen({ navigation }: RootScreenProps<'Analysis'>) {
     // Clears the photographs as well as the result. The other way out of a
     // failure is "Try again", which keeps them - see `retry`.
     startOver();
-    navigation.popToTop();
+    // Back to the beginning, which is now two facts: leave this pushed screen,
+    // and show Home rather than whichever tab the inspection was started from.
+    navigation.navigate('MainTabs', HOME_TAB);
   };
 
   if (!image && !isBusy) {

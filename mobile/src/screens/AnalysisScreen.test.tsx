@@ -99,7 +99,7 @@ describe('AnalysisScreen', () => {
     // Abandoning discards the photographs as well as the result - the other
     // way out of a failure is "Try again", which keeps them.
     expect(mockStartOver).toHaveBeenCalled();
-    expect(navigation.popToTop).toHaveBeenCalled();
+    expect(navigation.navigate).toHaveBeenCalledWith('MainTabs', { screen: 'Home' });
   });
 
   it.each([
@@ -150,6 +150,6 @@ describe('AnalysisScreen', () => {
 
     expect(screen.getByText('Nothing to analyse')).toBeOnTheScreen();
     await fireEvent.press(screen.getByText('Scan a package'));
-    expect(navigation.popToTop).toHaveBeenCalled();
+    expect(navigation.navigate).toHaveBeenCalledWith('MainTabs', { screen: 'Home' });
   });
 });

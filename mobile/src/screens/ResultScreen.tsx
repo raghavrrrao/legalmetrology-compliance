@@ -12,7 +12,7 @@ import { Screen } from '../components/Screen';
 import { StatusBadge } from '../components/StatusBadge';
 import { VerdictPanel } from '../components/VerdictPanel';
 import { useAnalysis, useStartOver } from '../hooks/AnalysisContext';
-import type { RootScreenProps } from '../navigation/types';
+import { HOME_TAB, type RootScreenProps } from '../navigation/types';
 import { colors, MIN_TOUCH_TARGET, spacing, typography } from '../theme';
 import type { ComplianceResult, Finding } from '../types/api';
 import { describeError } from '../utils/errors';
@@ -54,7 +54,9 @@ export function ResultScreen({ navigation }: RootScreenProps<'Result'>) {
 
   const scanAnother = () => {
     startOver();
-    navigation.popToTop();
+    // Leaves this pushed screen and shows Home, rather than whichever tab the
+    // finished inspection happened to be started from.
+    navigation.navigate('MainTabs', HOME_TAB);
   };
 
   if (!result) {
@@ -408,7 +410,7 @@ const styles = StyleSheet.create({
   },
   disclosureText: {
     ...typography.body,
-    color: colors.primary,
+    color: colors.action,
     fontWeight: '600',
   },
 });

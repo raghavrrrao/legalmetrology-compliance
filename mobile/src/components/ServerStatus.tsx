@@ -59,7 +59,7 @@ export function ServerStatus({ state, source, onCheckAgain }: ServerStatusProps)
     >
       <View style={styles.marker}>
         {state.phase === 'checking' ? (
-          <ActivityIndicator size="small" color={colors.primary} />
+          <ActivityIndicator size="small" color={colors.action} />
         ) : (
           <Text style={[styles.symbol, { color: palette.text }]}>{SYMBOL_BY_TONE[tone]}</Text>
         )}

@@ -51,7 +51,7 @@ export function Button({
     >
       {loading ? (
         <ActivityIndicator
-          color={variant === 'primary' ? colors.onPrimary : colors.primary}
+          color={variant === 'primary' ? colors.onAction : colors.action}
           style={styles.spinner}
           accessibilityElementsHidden
         />
@@ -73,13 +73,13 @@ const styles = StyleSheet.create({
     alignSelf: 'stretch',
   },
   primary: {
-    backgroundColor: colors.primary,
+    backgroundColor: colors.action,
     ...elevation.card,
   },
   secondary: {
     backgroundColor: colors.surface,
     borderWidth: 1.5,
-    borderColor: colors.primary,
+    borderColor: colors.action,
   },
   text: {
     backgroundColor: 'transparent',
@@ -98,13 +98,13 @@ const styles = StyleSheet.create({
 });
 
 const pressedStyles = StyleSheet.create({
-  primary: { backgroundColor: colors.primaryPressed },
-  secondary: { backgroundColor: colors.primarySoft },
-  text: { backgroundColor: colors.primarySoft },
+  primary: { backgroundColor: colors.actionPressed },
+  secondary: { backgroundColor: colors.actionSoft },
+  text: { backgroundColor: colors.actionSoft },
 });
 
 const labelStyles = StyleSheet.create({
-  primary: { color: colors.onPrimary },
-  secondary: { color: colors.primary },
-  text: { color: colors.primary },
+  primary: { color: colors.onAction },
+  secondary: { color: colors.action },
+  text: { color: colors.action },
 });

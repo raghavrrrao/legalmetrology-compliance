@@ -277,7 +277,7 @@ describe('ResultScreen', () => {
     // Both the result and the photographs it was made from, so the next
     // inspection starts empty rather than inheriting a package.
     expect(mockStartOver).toHaveBeenCalled();
-    expect(navigation.popToTop).toHaveBeenCalled();
+    expect(navigation.navigate).toHaveBeenCalledWith('MainTabs', { screen: 'Home' });
   });
 
   it('handles having no result at all', async () => {

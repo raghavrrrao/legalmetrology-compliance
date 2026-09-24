@@ -24,10 +24,17 @@ this shape prevents.
 
 **2. The accent is never a verdict.**
 
-`--colour-primary` (`#0E7C50`) means "this is the primary action". It is a
-*different green* from `--tone-success` (`#10693A`) on purpose. If a primary
+On the web, `--colour-primary` (`#0E7C50`) means "this is the primary action". It
+is a *different green* from `--tone-success` (`#10693A`) on purpose. If a primary
 button and a passing check were the same colour, the button would start reading
 as a result.
+
+**Mobile now satisfies this rule differently, and the two clients disagree.** On
+mobile the accent is blue — `colors.action` (`#1B5FC1`) — so the collision cannot
+happen at all rather than being managed by holding two greens a shade apart. The
+rule there is stated as one sentence: *blue is anything you can press or are
+currently on; green is a state the server reported.* See §7a for the full table
+and for what it means for the web.
 
 Colour is never the only carrier of a status either. Every verdict, finding and
 callout also carries its status in words and a symbol, so the interface reads
@@ -104,11 +111,15 @@ is the vocabulary; layout stays native** — which is why the mobile theme has
 | `text` | `#1C1C1E` | body |
 | `muted` / `textSecondary` | `#5B5F66` | secondary prose |
 | `faint` / `textMuted` | `#6E7076` | metadata, captions |
-| `primary` | `#0E7C50` | primary action fill |
-| `primary-hover` / `primaryPressed` | `#0A6640` | pressed/hover, and the accent as text |
-| `primary-soft` | `#E8F4EE` | active nav pill, selected tint |
-| `primary-softer` | `#F3FAF6` | dropzone hover ground |
-| `accent` | `#0A6640` | the accent used *as text* on light |
+| `primary` | `#0E7C50` | **web only** — primary action fill |
+| `primary-hover` | `#0A6640` | **web only** — pressed/hover, and the accent as text |
+| `primary-soft` | `#E8F4EE` | **web only** — active nav pill, selected tint |
+| `primary-softer` | `#F3FAF6` | **web only** — dropzone hover ground |
+| `accent` | `#0A6640` | **web only** — the accent used *as text* on light |
+
+The five accent rows above are the web's. Mobile deleted them and uses a blue
+`action` family instead; §7a has the mapping, the measured contrast and why. Every
+other row in this table is shared by both clients, unchanged.
 
 There is deliberately no `accent-soft`: it used to be a second name for
 `primary-soft` with the same hex, which is how two tokens drift into two
@@ -439,17 +450,82 @@ phone, or in a browser with device emulation, before a demonstration.**
 
 ## 7. Mobile behaviour
 
-Same language, native layout. The flow is unchanged:
+Same language, native layout. The analysis flow is unchanged:
 
     camera / gallery → preview → upload → extraction → compliance → result
 
 - `Screen` gives every screen a 16px gutter plus safe-area insets, with an
   optional pinned footer for the primary action.
-- Navigation is the native stack; the header takes the accent for its back
-  chevron and actions, and leaves the title text-coloured, so the accent means
-  "you can press this".
 - Nothing in the compliance path is duplicated on the device. The phone
   uploads, the server decides, the screen renders what came back.
+
+### The application shell
+
+Mobile has five application destinations in a bottom tab bar, with one
+inspection pushed over them:
+
+    MainTabs ─ Home · Scan · Inspections · Rules · Settings
+       │
+       └─ Scan ──▶ Analysis ──▶ Result        (pushed over the tabs)
+
+Analysis and Result are **not** tabs. They are steps inside one inspection, and
+`Analysis` refuses to be left while a request is in flight — a tab that sometimes
+cannot be left is not a tab.
+
+| | |
+|---|---|
+| Header | 56 + `insets.top`, opaque, hairline below, no shadow. Brand mark, wordmark, tagline. **No right-hand action** — there is no account system, and Settings is already a tab. |
+| Tab bar | 56 + `insets.bottom`, opaque, hairline above, no shadow, no transition between tabs |
+| Tab item | five items at `flexGrow: 1 / flexBasis: 0`; 22px icon on a 44×26 pill; 11/14 label, one line, font scaling off |
+| Selected | icon and label `action`, label weight 600, pill filled `actionSoft` |
+| Unselected | icon and label `textMuted`, label weight 500 |
+
+**Who pays the bottom inset.** The tab bar, for the five destinations; `Screen`,
+for the two pushed screens. `Screen` reads `BottomTabBarHeightContext` to tell
+which case it is in, because adding the inset in both places leaves 34px of dead
+space above a bar that has already cleared the home indicator.
+
+**Icons are drawn from `View`s**, on a 24-unit grid, in `TabBarIcon.tsx` and
+`BrandMark.tsx`. `react-native-svg` is not a dependency of this project and five
+shapes did not justify making it one; a glyph font was rejected because system
+emoji fall back differently per platform.
+
+**Widths.** The bar is checked at 360, 390, 430 and 768. 360 is the binding
+case: each item is `(360 − 8) / 5 = 70.4pt` with a 64.4pt label box, against
+roughly 47pt for "Settings", the longest label. Two labels are shortened to fit —
+the `Inspections` route is labelled "History" and `Rules` is labelled "Rules" —
+and both carry their full name as the accessibility label, because truncating a
+tab label is not an option.
+
+### 7a. Where the two clients now disagree
+
+Mobile moved its accent from green to blue; the web has not. This is a real
+divergence, recorded rather than resolved.
+
+| Role | Mobile (`mobile/src/theme.ts`) | Web (`frontend/src/styles/index.css`) |
+|---|---|---|
+| action fill | `action` `#1B5FC1` | `--colour-primary` `#0E7C50` |
+| action pressed | `actionPressed` `#154C9B` | `--colour-primary-hover` `#0A6640` |
+| selected tint | `actionSoft` `#E8EFFA` | `--colour-primary-soft` `#E8F4EE` |
+| dashed target ground | `actionSofter` `#F3F7FD` | `--colour-primary-softer` `#F3FAF6` |
+| brand mark / wordmark | `brandInk` `#17253B` | — |
+| tones | unchanged | unchanged |
+| neutrals, type, radius, elevation | unchanged | unchanged |
+
+Mobile has **no** `primary`, `primarySoft`, `primarySofter`, `primaryPressed` or
+`onPrimary` any more. Every caller of them was a control — the button fills, the
+image tray's add tile, the result screen's disclosure toggle, two spinners — and
+each moved to `action`. The tokens were deleted rather than kept as aliases,
+because a green named `primary` beside a blue named `action` is how a button ends
+up green again.
+
+Contrast, measured on white: `action` 6.1:1 (and white on `action` is the same
+6.1:1, so the fill and outline variants of one button are both legible),
+`actionPressed` 8.3:1, `action` on `actionSoft` 5.3:1, `brandInk` 14.2:1.
+
+Bringing the web across is a separate change and is deliberately not bundled with
+the mobile shell. Until it happens, §3's colour table describes the web only for
+the accent rows.
 
 ---
 
