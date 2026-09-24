@@ -39,16 +39,26 @@ import { AnalysisProvider } from '../hooks/AnalysisContext';
 
 const picker = ImagePicker as jest.Mocked<typeof ImagePicker>;
 
-/** Answers health/ with "ok" and the analysis requests from the queue given. */
+/** Answers health/ with "ok", rules/ with a list, and the analysis requests from the queue given. */
 function serve(...queue: (Response | Error)[]) {
   const stub = routedFetch({ queue });
   (globalThis as unknown as { fetch: unknown }).fetch = stub;
   return stub;
 }
 
-/** The analysis requests only - the home screen's health check is not one. */
+/** The rule-list requests the Rules tab makes. */
+function ruleListCalls(stub: ReturnType<typeof routedFetch>) {
+  return stub.calls.filter((call) => /\/rules\/(\?.*)?$/.test(call.url));
+}
+
+/**
+ * The analysis requests only - neither the home screen's health check nor the
+ * Rules tab's rule list is one.
+ */
 function analysisCalls(stub: ReturnType<typeof routedFetch>) {
-  return stub.calls.filter((call) => !/\/health\/$/.test(call.url));
+  return stub.calls.filter(
+    (call) => !/\/health\/$/.test(call.url) && !/\/rules\/(\?.*)?$/.test(call.url),
+  );
 }
 
 /**
@@ -436,6 +446,11 @@ describe('the scan flow through the tab shell', () => {
     // this cannot lose it.
     await fireEvent.press(screen.getByTestId('tab-rules'));
     await screen.findByTestId('rules-screen');
+    // The Rules tab lists what the server reports, with one request of its own
+    // that touches neither the photographs nor the analysis queue.
+    await screen.findByTestId('rules-list');
+    expect(ruleListCalls(stub)).toHaveLength(1);
+    expect(analysisCalls(stub)).toHaveLength(0);
     await fireEvent.press(screen.getByTestId('tab-scan'));
     await screen.findByTestId('scan-screen');
 

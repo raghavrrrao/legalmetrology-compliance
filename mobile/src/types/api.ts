@@ -3,8 +3,9 @@
  *
  * Everything in the first half of this file is `snake_case` and matches the
  * serializers in `backend/apps/compliance/api/serializers.py`,
- * `backend/apps/extraction/api/serializers.py` and
- * `backend/apps/images/api/serializers.py` field for field. The `src/api/`
+ * `backend/apps/extraction/api/serializers.py`,
+ * `backend/apps/images/api/serializers.py` and
+ * `backend/apps/rules/api/serializers.py` field for field. The `src/api/`
  * modules map these onto the camelCase shapes in the second half at the
  * boundary, so a change to the wire format is contained in one place.
  *
@@ -267,6 +268,40 @@ export interface ComplianceEvaluationRequestWire {
   applicability_declarations?: Record<string, 'yes' | 'no' | 'unknown'>;
 }
 
+/**
+ * The standard paginated envelope (`DefaultPageNumberPagination`,
+ * docs/api.md "Pagination"). `count` is the total across every page; `next`
+ * and `previous` are absolute URLs or null.
+ */
+export interface PageWire<T> {
+  count: number;
+  next: string | null;
+  previous: string | null;
+  results: T[];
+}
+
+/**
+ * One row of `GET /api/v1/rules/` - `ComplianceRuleInventorySerializer` in
+ * `backend/apps/rules/api/serializers.py`, field for field.
+ *
+ * The backend deliberately sends nothing a client could evaluate a package
+ * with - no `check_type`, `parameters`, categories or applicability - and this
+ * type has no place to put them either.
+ */
+export interface RuleWire {
+  code: string;
+  title: string;
+  /** "" when the source has not established one - never null. */
+  legal_reference: string;
+  /** The linked clause of the Rules, or null when the rule is not linked to one. */
+  clause: string | null;
+  source_status: 'verified' | 'unverified';
+  is_active: boolean;
+  /** ISO dates, `YYYY-MM-DD`, or null. */
+  effective_from: string | null;
+  effective_to: string | null;
+}
+
 // ---------------------------------------------------------------------------
 // Mapped shapes - what the screens render
 // ---------------------------------------------------------------------------
@@ -508,4 +543,39 @@ export interface ComplianceResult {
    * the backend computed.
    */
   images: InspectionImage[];
+}
+
+/**
+ * One rule from the server's rule inventory, as the Rules screen shows it.
+ *
+ * The eight fields `GET /api/v1/rules/` sends, renamed, and nothing else. It
+ * describes a rule; it carries nothing that would let the app apply one.
+ */
+export interface RuleInventoryEntry {
+  /** The stable identifier a finding cites, e.g. `LM-PC-0003`. */
+  code: string;
+  title: string;
+  /** Verbatim from the server; "" when not established. */
+  legalReference: string;
+  /** The linked clause, e.g. `6(1)(c)`, or null - never derived from `legalReference`. */
+  clause: string | null;
+  sourceStatus: 'verified' | 'unverified';
+  /** The server's flag, passed through. Not a judgement about any package. */
+  isActive: boolean;
+  effectiveFrom: string | null;
+  effectiveTo: string | null;
+}
+
+/**
+ * The server's complete rule inventory - every page, in the server's order.
+ *
+ * `total` is the server's `count`. `active` and `inactive` are a tally of the
+ * `is_active` flags on the rows the server returned, over a list checked to be
+ * complete; they are not a computation of which rules apply to anything.
+ */
+export interface RuleInventory {
+  rules: RuleInventoryEntry[];
+  total: number;
+  active: number;
+  inactive: number;
 }
