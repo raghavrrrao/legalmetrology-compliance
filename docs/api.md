@@ -58,7 +58,7 @@ Adding tokens changed nothing for a client that sends none.
 | Request | Response when the endpoint requires authentication |
 |---|---|
 | No credentials | **403** `not_authenticated`, no `WWW-Authenticate` header — unchanged. |
-| A Bearer token that is malformed, unknown, revoked, expired, or belongs to a deactivated account | **401** `authentication_failed`, message `Invalid or expired token.`, and `WWW-Authenticate: Bearer realm="api", error="invalid_token"`. The same response for every reason, so it says nothing about which. |
+| A Bearer token that is malformed, unknown, revoked, expired, belongs to a deactivated account, or was issued before the account's password last changed | **401** `authentication_failed`, message `Invalid or expired token.`, and `WWW-Authenticate: Bearer realm="api", error="invalid_token"`. The same response for every reason, so it says nothing about which. |
 | A valid token or session, but not permitted | **403** `permission_denied`. |
 
 A rejected Bearer token is a 401 **even on endpoints that allow anonymous
@@ -314,13 +314,27 @@ model and is not accepted in its place.
   seven days by default. Use does not extend it. After it, sign in again.
 - **One token per login.** Signing in on a second device issues a second token;
   each can be logged out on its own.
+- **A password change ends it.** Every token issued before the account's
+  password changes is refused from then on with the usual 401 — including if
+  the password is later set back to the old one — and the client must sign in
+  with the new password. The token is not marked revoked; it simply no longer
+  matches the account (see [security.md](security.md#authentication--api-tokens)).
 
 **401** `authentication_failed`, message `Unable to sign in with the credentials
 provided.`, for a wrong password, an unknown username **or** a deactivated
 account — one response for all three, so it cannot be used to discover which
-usernames exist. **400** `validation_error` for a missing or non-string field;
-**400** `parse_error` for a body that is not JSON. **429** `rate_limited` past
-either login rate.
+usernames exist. **400** `parse_error` for a body that is not JSON. **429**
+`rate_limited` past either login rate.
+
+**400** `validation_error`, with the field named in `details`, when either field
+is missing, `null`, blank (`""`), a boolean, an array or an object, when
+`username` is longer than 150 characters, or when `password` is longer than 4096
+characters. `username` has surrounding whitespace trimmed before it is checked,
+so a whitespace-only username is blank too; `password` is used exactly as sent,
+so only an empty password is blank. A JSON **number** is not an error: both
+fields accept one and use its string form, so `{"username": 12345}` signs in as
+the account `12345` - and counts against that account's login limit exactly as
+`"12345"` does.
 
 A stale token already in the `Authorization` header is ignored here, so a
 client whose token expired can always sign in again.

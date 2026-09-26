@@ -49,6 +49,13 @@ class LoginAccountRateThrottle(SimpleRateThrottle):
     new allowance, and hashed, so the cache key is fixed-length and carries no
     username. A body without a usable username is not throttled here; it fails
     validation without reaching the password check.
+
+    A JSON number is a usable username. `LoginRequestSerializer`'s `CharField`
+    accepts an int or a float and signs in with `str()` of it, so `12345` and
+    `"12345"` are the same account and must be the same bucket - otherwise
+    sending the number would sidestep this limit entirely. A boolean is not:
+    `bool` is a subclass of `int`, but the `CharField` rejects it, so it can
+    never reach the password check and gets no bucket.
     """
 
     scope = "auth_login_account"
@@ -56,6 +63,10 @@ class LoginAccountRateThrottle(SimpleRateThrottle):
     def get_cache_key(self, request, view):
         data = request.data
         username = data.get("username") if hasattr(data, "get") else None
+        if isinstance(username, bool):
+            return None
+        if isinstance(username, (int, float)):
+            username = str(username)
         if not isinstance(username, str) or not username.strip():
             return None
         digest = hashlib.sha256(username.strip().casefold().encode("utf-8")).hexdigest()

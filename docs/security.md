@@ -162,11 +162,38 @@ for the admin site and same-origin use.
 - **Revocation** is immediate: `POST /api/v1/auth/logout/` revokes the calling
   token and no other, and an operator can revoke any token from the admin site.
   Deactivating an account (`is_active = False`) stops all of its tokens at once.
+- **A password change ends every earlier token** — the same way, and by the same
+  check, as it ends the user's Django sessions. Each token records the user's
+  `get_session_auth_hash()` when it is issued: an HMAC of the stored password
+  hash, keyed with `SECRET_KEY` (`ApiToken.password_auth_hash`; not the
+  password). Every request compares it, in constant time, with the user's
+  current value; after `set_password()` they differ and the token is refused.
+  This is a **comparison, not a revocation**: the rows are not updated and
+  `revoked_at` stays empty — they simply never match again. Setting the password
+  back to the old one does not revive them, because the new hash has a new salt.
+  Anything else that rewrites the stored hash has the same effect, including
+  Django re-hashing it at login after a hasher upgrade (which also ends that
+  user's other sessions).
+- **Manually rolling back migration `accounts 0003` undoes that protection.**
+  The recorded hash lives only in the column `0003` adds, which it fills with
+  each existing token's user's hash at the time it runs. Un-applying `0003`
+  (`manage.py migrate accounts 0002`) drops that column; re-applying it rebuilds
+  the value from each user's password *as it is then* — so a token that an
+  earlier password change had ended authenticates again. Rolling back an
+  application deployment does not do this: it does not un-apply database
+  migrations (see [deployment.md → Rollback and redeploy](deployment.md#rollback-and-redeploy)).
+  If `0003` is ever rolled back and re-applied by hand, revoke the affected
+  users' tokens in the admin afterwards, or change their passwords again.
+- **Rotating `SECRET_KEY`** changes every session-auth hash, so it ends every
+  token as it ends every session — unless the old key is kept in
+  `SECRET_KEY_FALLBACKS` (not configured today), which the token check honours as
+  Django's session check does, moving each token onto the new key as it is used.
 - **Validation** is in the database, so it holds across workers and instances.
   Nothing about a token is cached in process memory.
 
-**Failure says nothing.** A malformed, unknown, revoked or expired token, or one
-belonging to a deactivated account, gets one response: 401
+**Failure says nothing.** A malformed, unknown, revoked or expired token, one
+belonging to a deactivated account, or one issued before the account's password
+last changed, gets one response: 401
 `authentication_failed`, `Invalid or expired token.` Login failures are
 likewise one response whether the password was wrong, the username unknown or
 the account inactive, and Django's `ModelBackend` runs the password hasher even
@@ -185,15 +212,17 @@ thinks it is signed in is never quietly treated as anonymous.
 client address, one per username. The per-client one keys on DRF's `get_ident`,
 which reads `X-Forwarded-For` as sent, so a client can sidestep it by varying
 that header; the per-username one cannot be sidestepped that way and is what
-bounds guessing against any one account. Its cost: someone who knows a username
+bounds guessing against any one account. A username sent as a JSON number
+(`12345`) signs in as the string `"12345"` and shares that account's allowance,
+so switching between the two forms buys nothing. Its cost: someone who knows a username
 can exhaust its allowance and delay the owner's login until the window passes.
 Both live in the per-process cache — see *Throttling is per-process* below.
 
 **Browser storage — the remaining risk.** A web client has to keep the token
 somewhere script can reach it: in memory (lost on reload) or in web storage
 (persisted, and readable by any script that runs on the page). Either way, an
-XSS on the frontend can read the token and use it until it expires or is
-revoked. There is **no Content Security Policy** yet (see *Known gaps*), which
+XSS on the frontend can read the token and use it until it expires, is
+revoked, or the account's password is changed. There is **no Content Security Policy** yet (see *Known gaps*), which
 makes that XSS risk the thing to close before the web client stores tokens. On
 mobile the token belongs in the platform's secure storage (Keychain /
 Keystore), which the app does not use yet.
@@ -320,7 +349,7 @@ commitment; it is a statement of current behaviour.
 | Stated applicability facts | `catalog.ProductApplicabilityDeclaration` | What a submitter asserted about the goods, with its source. |
 | The verdict and its trace | `compliance.ComplianceCheck`, `ComplianceFinding`, `ComplianceViolation`, evidence rows | Snapshotted, so a result keeps meaning what it meant. `requested_by` is null for anonymous. |
 | User accounts | `accounts.User` | Only if accounts are created. There is no sign-up flow. |
-| API tokens | `accounts.ApiToken` | A SHA-256 hash of each token, never the token; its user, issue and expiry times, revocation time and approximate last use. Kept after expiry or revocation; nothing purges them yet. |
+| API tokens | `accounts.ApiToken` | A SHA-256 hash of each token, never the token; its user, issue and expiry times, revocation time and approximate last use; and the user's session-auth hash at issue (an HMAC of the stored password hash, keyed with `SECRET_KEY` — not the password), which ends the token when the password changes. Kept after expiry, revocation or a password change; nothing purges them yet. |
 
 **Retention: indefinite.** Nothing expires, and no scheduled job deletes
 anything. A stored image, its reading and its verdicts remain until a person

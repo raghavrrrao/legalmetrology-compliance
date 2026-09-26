@@ -28,6 +28,7 @@ import re
 
 import pytest
 from django.contrib.auth import get_user_model
+from django.core.cache import cache
 from django.core.files.uploadedfile import SimpleUploadedFile
 from django.test import Client
 from django.urls import reverse
@@ -381,6 +382,131 @@ def test_logout_does_not_accept_a_session_as_a_token(client, account):
     assert _logout(client).status_code == 403
 
 
+# --- password changes -------------------------------------------------------------
+
+NEW_PASSWORD = "a-different-password-entirely-4"
+
+
+def _change_password(user, password: str) -> None:
+    """How an administrator or a future reset flow changes it: set_password, save."""
+    user.set_password(password)
+    user.save()
+
+
+def test_a_token_works_before_any_password_change(client, account):
+    token = _token_for(client)
+
+    assert _me(client, **_bearer(token)).status_code == 200
+
+
+def test_changing_the_password_ends_a_token_issued_before_it(client, account):
+    token = _token_for(client)
+    assert _me(client, **_bearer(token)).status_code == 200
+
+    _change_password(account, NEW_PASSWORD)
+
+    # The same generic rejection as any other bad token - nothing says why.
+    _assert_token_rejected(_me(client, **_bearer(token)))
+    _assert_token_rejected(_logout(client, **_bearer(token)))
+
+
+def test_the_token_is_refused_not_revoked(client, account):
+    """The row is untouched: it stops matching the password, it is not rewritten."""
+    token = _token_for(client)
+    before = ApiToken.objects.values("revoked_at", "expires_at", "password_auth_hash").get()
+
+    _change_password(account, NEW_PASSWORD)
+    _assert_token_rejected(_me(client, **_bearer(token)))
+
+    assert ApiToken.objects.values("revoked_at", "expires_at", "password_auth_hash").get() == before
+    assert before["revoked_at"] is None
+
+
+def test_a_token_issued_after_the_change_works(client, account):
+    old = _token_for(client)
+    _change_password(account, NEW_PASSWORD)
+
+    assert _login(client).status_code == 401
+    new = _login(client, password=NEW_PASSWORD).json()["token"]
+
+    assert _me(client, **_bearer(new)).status_code == 200
+    _assert_token_rejected(_me(client, **_bearer(old)))
+
+
+def test_changing_the_password_back_does_not_revive_an_old_token(client, account):
+    """Each stored password hash has a fresh salt, so the same password is a new hash."""
+    token = _token_for(client)
+
+    _change_password(account, NEW_PASSWORD)
+    _assert_token_rejected(_me(client, **_bearer(token)))
+    _change_password(account, PASSWORD)
+
+    _assert_token_rejected(_me(client, **_bearer(token)))
+    assert _me(client, **_bearer(_token_for(client))).status_code == 200
+
+
+def test_a_password_change_ends_every_earlier_token_of_that_user_only(
+    client, account, other_account
+):
+    phone = _token_for(client)
+    laptop = _token_for(client)
+    someone_else = _token_for(client, "other-inspector")
+
+    _change_password(account, NEW_PASSWORD)
+
+    _assert_token_rejected(_me(client, **_bearer(phone)))
+    _assert_token_rejected(_me(client, **_bearer(laptop)))
+    assert _me(client, **_bearer(someone_else)).status_code == 200
+
+
+def test_the_recorded_hash_is_the_session_auth_hash_and_never_leaves_the_server(client, account):
+    login = _login(client)
+    token = login.json()["token"]
+    stored = ApiToken.objects.get().password_auth_hash
+
+    assert stored == account.get_session_auth_hash()
+    assert PASSWORD not in stored and account.password not in stored
+    assert stored not in login.content.decode()
+    assert stored not in _me(client, **_bearer(token)).content.decode()
+
+
+def test_rotating_secret_key_with_a_fallback_keeps_tokens_and_moves_them_on(
+    client, account, settings
+):
+    """As with sessions: a key in SECRET_KEY_FALLBACKS still verifies the token."""
+    token = _token_for(client)
+    old_key = settings.SECRET_KEY
+    settings.SECRET_KEY = "rotated-" + old_key
+    settings.SECRET_KEY_FALLBACKS = [old_key]
+
+    assert _me(client, **_bearer(token)).status_code == 200
+    # Moved onto the current key, so the fallback can later be dropped.
+    assert ApiToken.objects.get().password_auth_hash == account.get_session_auth_hash()
+    settings.SECRET_KEY_FALLBACKS = []
+    assert _me(client, **_bearer(token)).status_code == 200
+
+
+def test_rotating_secret_key_without_a_fallback_ends_tokens(client, account, settings):
+    """The session-auth hash is keyed with SECRET_KEY; a new key is a new hash."""
+    token = _token_for(client)
+    settings.SECRET_KEY = "rotated-" + settings.SECRET_KEY
+    settings.SECRET_KEY_FALLBACKS = []
+
+    _assert_token_rejected(_me(client, **_bearer(token)))
+
+
+def test_sessions_still_end_on_a_password_change_as_django_makes_them(client, account):
+    """Session authentication is unchanged, including its own invalidation."""
+    client.force_login(account)
+    assert _me(client).status_code == 200
+
+    _change_password(account, NEW_PASSWORD)
+
+    response = _me(client)
+    assert response.status_code == 403
+    assert response.json()["error"]["code"] == "not_authenticated"
+
+
 # --- storage ----------------------------------------------------------------------
 
 
@@ -531,6 +657,100 @@ def test_the_account_throttle_does_not_affect_another_account(
 
     assert _login(client).status_code == 429
     assert _login(client, username="other-inspector").status_code == 201
+
+
+def _account_bucket(username: str) -> str:
+    """The cache key the per-account throttle would use for `username`."""
+    digest = hashlib.sha256(username.strip().casefold().encode("utf-8")).hexdigest()
+    return LoginAccountRateThrottle.cache_format % {
+        "scope": LoginAccountRateThrottle.scope,
+        "ident": digest,
+    }
+
+
+@pytest.fixture
+def numeric_account(db):
+    """A real account whose username is all digits - an employee number, say."""
+    return get_user_model().objects.create_user(username="12345", password=PASSWORD)
+
+
+def test_a_numeric_json_username_is_throttled_per_account(client, numeric_account, monkeypatch):
+    """`{"username": 12345}` signs in as "12345", so it must count against it.
+
+    It used to be skipped by the per-account throttle - which keyed only on a
+    string - while the serializer still accepted the number and checked the
+    password: unlimited guessing, with the address varied as well.
+    """
+    monkeypatch.setitem(LoginAccountRateThrottle.THROTTLE_RATES, "auth_login_account", "3/hour")
+
+    statuses = [
+        _login(
+            client,
+            username=12345,
+            password="wrong",
+            REMOTE_ADDR=f"203.0.113.{n}",
+            HTTP_X_FORWARDED_FOR=f"198.51.100.{n}",
+        ).status_code
+        for n in range(1, 4)
+    ]
+    blocked = _login(
+        client, username=12345, REMOTE_ADDR="203.0.113.99", HTTP_X_FORWARDED_FOR="198.51.100.99"
+    )
+
+    assert statuses == [401, 401, 401]
+    assert blocked.status_code == 429
+    assert blocked.json()["error"]["code"] == "rate_limited"
+    assert not ApiToken.objects.exists()
+
+
+def test_a_numeric_and_a_string_username_share_one_bucket(client, numeric_account, monkeypatch):
+    """12345 and "12345" are one account, so alternating them buys nothing."""
+    monkeypatch.setitem(LoginAccountRateThrottle.THROTTLE_RATES, "auth_login_account", "3/hour")
+
+    statuses = [
+        _login(client, username=username, password="wrong", REMOTE_ADDR=f"203.0.113.{n}").status_code
+        for n, username in enumerate([12345, "12345", 12345], start=1)
+    ]
+
+    assert statuses == [401, 401, 401]
+    assert _login(client, username="12345", REMOTE_ADDR="203.0.113.50").status_code == 429
+    assert _login(client, username=12345, REMOTE_ADDR="203.0.113.51").status_code == 429
+    assert not ApiToken.objects.exists()
+
+
+def test_a_numeric_username_still_signs_in_under_the_limit(client, numeric_account):
+    """Counting numbers is not refusing them: under the limit, 12345 logs in."""
+    response = _login(client, username=12345)
+
+    assert response.status_code == 201
+    assert response.json()["user"]["username"] == "12345"
+
+
+@pytest.mark.parametrize("value", [True, False])
+def test_a_boolean_username_gets_no_bucket_and_is_a_validation_error(
+    client, account, monkeypatch, value
+):
+    """`bool` is an `int` in Python, but not a username: no bucket, just a 400.
+
+    With the account rate at 1/hour, a boolean that were given a bucket would
+    be refused by the second attempt; each one is instead answered as the
+    serializer answers it, and no key is written for any spelling a boolean
+    could have been turned into.
+    """
+    monkeypatch.setitem(LoginAccountRateThrottle.THROTTLE_RATES, "auth_login_account", "1/hour")
+
+    responses = [_login(client, username=value, password="wrong") for _ in range(3)]
+
+    for response in responses:
+        assert response.status_code == 400
+        error = response.json()["error"]
+        assert error["code"] == "validation_error"
+        assert "username" in error["details"]
+    for spelling in (str(value), str(int(value)), str(value).lower()):
+        assert cache.get(_account_bucket(spelling)) is None
+    assert not ApiToken.objects.exists()
+    # A real account is untouched by the boolean attempts.
+    assert _login(client).status_code == 201
 
 
 # --- what did not change ----------------------------------------------------------

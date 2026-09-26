@@ -313,6 +313,10 @@ the Tesseract binary go back exactly.
   crosses a destructive migration (a dropped or renamed column), the old code
   breaks and the fix is forward, not backward. Check `git log` on
   `backend/apps/*/migrations/` before assuming a rollback is clean.
+  Un-applying a migration by hand is a separate operation with its own
+  effects: rolling back and re-applying `accounts 0003`, for one, restores API
+  tokens that a password change had ended — see
+  [security.md](security.md#authentication--api-tokens).
 - **Uploaded images.** They are on an ephemeral filesystem, so a redeploy
   discards them whether or not it is a rollback. See the media section.
 - **Rules and framework rows.** Both loaders are upserts, not replacements. A

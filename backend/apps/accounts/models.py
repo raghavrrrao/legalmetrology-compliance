@@ -68,6 +68,10 @@ class ApiToken(TimeStampedModel):
     expiry rather than deleted, so an operator can see what was issued; purging
     them belongs with the retention work, not here.
 
+    Changing the password ends every token issued before it, through
+    `password_auth_hash` rather than `revoked_at`: the rows are not rewritten,
+    they simply stop matching the user's new password hash and are refused.
+
     The primary key is the token's identifier - safe to show and to log, and
     the only thing that should ever be logged about a token.
     """
@@ -83,6 +87,19 @@ class ApiToken(TimeStampedModel):
         unique=True,
         editable=False,
         help_text="SHA-256 of the token, hex. The token itself is not stored.",
+    )
+    password_auth_hash = models.CharField(
+        max_length=128,
+        editable=False,
+        help_text=(
+            "The user's `get_session_auth_hash()` when the token was issued: an "
+            "HMAC of their stored password hash, keyed with SECRET_KEY. The token "
+            "authenticates only while it still matches, so changing the password "
+            "stops every earlier token - the same check Django uses to end a "
+            "user's sessions. Not the password, and not usable as one. 128 "
+            "characters because Django's HMAC-SHA256 hex digest is 64 and a "
+            "SHA-512 one would be 128."
+        ),
     )
     expires_at = models.DateTimeField(
         db_index=True,

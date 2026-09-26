@@ -58,11 +58,18 @@ def issue_token(user) -> tuple[ApiToken, str]:
 
     The raw token is the only copy that will ever exist. The caller returns it
     to the client and keeps nothing.
+
+    `password_auth_hash` records the user's password as it stands now - as
+    Django's session-auth HMAC, never the password - so the token stops
+    authenticating once the password changes. Call this after authentication:
+    `authenticate()` may rehash the stored password (an upgraded hasher), and the
+    token must record the hash the user now has.
     """
     raw = TOKEN_PREFIX + secrets.token_urlsafe(32)
     token = ApiToken.objects.create(
         user=user,
         token_hash=hash_token(raw),
+        password_auth_hash=user.get_session_auth_hash(),
         expires_at=timezone.now() + token_lifetime(),
     )
     logger.info("Issued API token %s for user %s", token.pk, user.pk)
