@@ -245,7 +245,7 @@ would be unexplainable in a tool whose output is meant to be evidence.
 | Declaration | `LabelFieldKey` | Normalised to |
 |---|---|---|
 | Net quantity | `net_quantity` | `{quantity, unit, base_quantity, base_unit, measure, pack_count?}` |
-| MRP / retail sale price | `retail_sale_price` | `{amount (exact decimal string), currency, inclusive_of_all_taxes?}` — read from the text the MRP keyword introduces, skipping quantities |
+| MRP / retail sale price | `retail_sale_price` | `{amount (exact decimal string), currency, inclusive_of_all_taxes?}` — read from the text the MRP keyword introduces, skipping quantities; or, **uncertain**, as the first amount of a combined MRP/USP pair (`350.00/23.33`) on a line whose only legend is `USP` or a one-letter misreading of it |
 | Unit sale price | `unit_sale_price` | `{amount (exact decimal string), currency, per_unit, per_measure}` — the unit **as printed**; no base conversion. **Recall 1/6 on `our-eval-v0.3-usp-partial` — see below** |
 | Batch / lot number | `batch_number` | `{batch_number}` — the keyword's own `No.` / `Number` / `Code` is never taken as the value; a named batch declaration with no readable code is reported unread instead |
 | Date of manufacture | `date_of_manufacture` | `{date}` or `{year_month}` |
@@ -410,6 +410,9 @@ a declaration" are different answers:
 | `MRP ₹200/kg` | emitted as a retail sale price only. One declaration written as a rate, not two |
 | `Ascorbic Acid USP` | **not emitted, and not reported unread** — on a supplement label `USP` is *United States Pharmacopeia* |
 | `MRP incl. of all taxes` (price on another line) | **not emitted** — no guess is made |
+| `USP (Per Tablet) ₹: 350.00/23.33` (the `MRP` half of the legend on another line) | `350.00` emitted as the retail sale price, **uncertain** — the first amount of a combined MRP/USP pair is the MRP by position, which is an inference. `23.33` is not emitted as anything: no unit was read beside it |
+| `NSP oertatiey, —-:350.00/23.33` (OCR of the line above) | the same — `NSP` is `USP` with one letter misread, and a pair printed to the paisa follows it |
+| `350.00/23.33` alone, `NSP 350.00`, `MFD/EXP 09.24/08.26` | **not emitted** — a pair with no legend, a garbled legend beside one amount, and a date-shaped pair are not price declarations |
 | `Best Before 25/12/2026` | emitted, certain |
 | `Best Before` / `25/12/2026` on two lines | emitted, **uncertain** — adjacency is an inference, not a reading |
 | `MFG. DT. :` / `BEST BEFORE 2 YEARS FROM MFG. DT-` | manufacture date **not emitted, reported unread** — the next line is a whole best-before declaration, and a package is manufactured on a day, not "two years from" anything |

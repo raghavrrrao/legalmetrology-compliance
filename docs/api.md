@@ -28,15 +28,54 @@ consistently, so this only bites hand-written requests.
 
 ## Authentication
 
-Session authentication. Permissions **deny by default** — every endpoint
-requires an authenticated user unless it explicitly opts out with
-`permission_classes = [AllowAny]`. Forgetting to think about permissions
-therefore fails closed.
+Permissions **deny by default** — every endpoint requires an authenticated
+user unless it explicitly opts out with `permission_classes = [AllowAny]`.
+Forgetting to think about permissions therefore fails closed.
 
-`/api/v1/health/` is the only public endpoint today.
+Two ways to be authenticated, tried in this order:
 
-Unsafe methods need Django's CSRF token in an `X-CSRFToken` header. The
-frontend `apiClient` reads the cookie and attaches it automatically.
+1. **A Bearer token** — how the web and mobile clients sign in. Obtain one from
+   [`POST /api/v1/auth/login/`](#post-apiv1authlogin) and send it on every
+   request:
+
+   ```
+   Authorization: Bearer lmt_<43 characters>
+   ```
+
+   Tokens are opaque: the server stores only a hash, and they carry no data a
+   client can read. Never put one in a URL. A token-authenticated request needs
+   **no CSRF token** — CSRF protects credentials a browser attaches by itself,
+   and this header is not one.
+2. **A Django session** — for the admin site's browser and same-origin use.
+   Unsafe methods then need Django's CSRF token in `X-CSRFToken`; the web
+   `apiClient` still attaches it when the cookie is readable.
+
+A request with neither is **anonymous**, and is judged by the endpoint's
+permission as before — including the demo switch on the analysis endpoints
+(see [Permissions on the six analysis endpoints](#permissions-on-the-six-analysis-endpoints)).
+Adding tokens changed nothing for a client that sends none.
+
+| Request | Response when the endpoint requires authentication |
+|---|---|
+| No credentials | **403** `not_authenticated`, no `WWW-Authenticate` header — unchanged. |
+| A Bearer token that is malformed, unknown, revoked, expired, belongs to a deactivated account, or was issued before the account's password last changed | **401** `authentication_failed`, message `Invalid or expired token.`, and `WWW-Authenticate: Bearer realm="api", error="invalid_token"`. The same response for every reason, so it says nothing about which. |
+| A valid token or session, but not permitted | **403** `permission_denied`. |
+
+A rejected Bearer token is a 401 **even on endpoints that allow anonymous
+callers** (the demo endpoints, rules). A client that believes it is signed in
+must be told otherwise rather than served — and have its work stored — as
+anonymous. `GET /api/v1/health/` is the exception: it consults no credentials,
+so a stale token cannot make the server look down.
+
+Public endpoints, reachable with no credentials whatever the demo switch says:
+`GET /api/v1/health/` and `POST /api/v1/auth/login/`.
+
+**What authentication does not do yet.** It identifies the caller; it does not
+yet make inspections private. Analysis endpoints still record `uploaded_by` /
+`requested_by` and scope results and readings to the caller as before, and a
+private inspection history, per-inspection ownership (`ExtractionRun.owner`),
+sign-up and password reset are later work. The web and mobile clients do not
+sign in yet.
 
 ## Error envelope
 
@@ -70,8 +109,8 @@ Implemented by `apps/core/api/exceptions.py`, wired in via DRF's
 |---|---|---|
 | `validation_error` | 400 | Request data failed validation. `details` holds field errors. |
 | `parse_error` | 400 | Body was not parseable. |
-| `not_authenticated` | 401 | No credentials supplied. |
-| `authentication_failed` | 401 | Credentials were rejected. |
+| `not_authenticated` | 403 | No credentials supplied. 403 rather than 401 because no challenge applies — see [Authentication](#authentication). |
+| `authentication_failed` | 401 | A Bearer token or login credentials were rejected. Carries a `WWW-Authenticate: Bearer` header. |
 | `permission_denied` | 403 | Authenticated, but not allowed. |
 | `not_found` | 404 | No such resource, or no such route. |
 | `method_not_allowed` | 405 | Wrong HTTP method for this endpoint. |
@@ -93,9 +132,19 @@ DRF's built-in rate limiting, using the local-memory cache — no Redis.
 |---|---|---|
 | Anonymous | 30/min | `API_THROTTLE_ANON` |
 | Authenticated | 120/min | `API_THROTTLE_USER` |
+| Login, per client address | 10/min | `API_THROTTLE_LOGIN` |
+| Login, per username tried | 10/hour | `API_THROTTLE_LOGIN_ACCOUNT` |
 
 `/api/v1/health/` is exempt: a health check that gets throttled reports a false
 outage, and polling is the point of it.
+
+The two login rates apply only to `POST /api/v1/auth/login/` and replace the
+anonymous rate there. Both count every attempt, successful or not. The
+per-username rate is the one that bounds password guessing: the client address
+is read from `X-Forwarded-For` as it arrives (`NUM_PROXIES` is unset), so a
+client that varies that header can sidestep the per-client rate but not the
+per-username one. Anyone who knows a username can use up its allowance, which
+delays that account's own login until the window passes.
 
 > Local-memory throttling is **per process**. With multiple workers the
 > effective limit multiplies. That is fine for development and for a
@@ -149,6 +198,11 @@ into a deployment by accident.
 
 `CORS_ALLOW_CREDENTIALS` is on so the session cookie travels from the Vite dev
 server on port 5173.
+
+The `Authorization` header is in django-cors-headers' default allowed-headers
+list, so a Bearer token passes an allowed origin's preflight with no extra
+configuration. An origin not on the list still cannot read any response,
+token or not.
 
 ## Endpoints
 
@@ -219,6 +273,94 @@ so it stays useful to the team without being useful to a scanner.
 exempts this one path from the HTTPS redirect so a platform probe arriving over
 plain HTTP on an internal network is answered rather than sent a 301. Every
 other path still redirects. See [deployment.md](deployment.md).
+
+It consults no credentials at all, so a client sending an expired token with
+every request still sees the server's real status.
+
+### `POST /api/v1/auth/login/`
+
+Exchange a username and password for a Bearer token. Public, rate-limited
+(see [Throttling](#throttling)). There is no sign-up: accounts are created by
+an administrator.
+
+```json
+{ "username": "inspector", "password": "…" }
+```
+
+`username` is the account model's login field. E-mail is not unique on this
+model and is not accepted in its place.
+
+**201**, because every successful login creates a new token:
+
+```json
+{
+  "token": "lmt_…",
+  "token_type": "Bearer",
+  "expires_at": "2026-10-02T09:30:00.123456Z",
+  "user": {
+    "id": 7,
+    "username": "inspector",
+    "email": "inspector@example.test",
+    "first_name": "Asha",
+    "last_name": "Rao"
+  }
+}
+```
+
+- **`token` is shown once**, here, and never again — the server keeps only its
+  hash. Store it the way the platform stores secrets (secure storage on mobile)
+  and send it as `Authorization: Bearer <token>`.
+- **`expires_at`** is fixed at issue: `API_TOKEN_LIFETIME_HOURS` after login,
+  seven days by default. Use does not extend it. After it, sign in again.
+- **One token per login.** Signing in on a second device issues a second token;
+  each can be logged out on its own.
+- **A password change ends it.** Every token issued before the account's
+  password changes is refused from then on with the usual 401 — including if
+  the password is later set back to the old one — and the client must sign in
+  with the new password. The token is not marked revoked; it simply no longer
+  matches the account (see [security.md](security.md#authentication--api-tokens)).
+
+**401** `authentication_failed`, message `Unable to sign in with the credentials
+provided.`, for a wrong password, an unknown username **or** a deactivated
+account — one response for all three, so it cannot be used to discover which
+usernames exist. **400** `parse_error` for a body that is not JSON. **429**
+`rate_limited` past either login rate.
+
+**400** `validation_error`, with the field named in `details`, when either field
+is missing, `null`, blank (`""`), a boolean, an array or an object, when
+`username` is longer than 150 characters, or when `password` is longer than 4096
+characters. `username` has surrounding whitespace trimmed before it is checked,
+so a whitespace-only username is blank too; `password` is used exactly as sent,
+so only an empty password is blank. A JSON **number** is not an error: both
+fields accept one and use its string form, so `{"username": 12345}` signs in as
+the account `12345` - and counts against that account's login limit exactly as
+`"12345"` does.
+
+A stale token already in the `Authorization` header is ignored here, so a
+client whose token expired can always sign in again.
+
+### `POST /api/v1/auth/logout/`
+
+Revoke the token that authenticated this request. **Only that token**: the same
+account signed in elsewhere stays signed in. Requires a Bearer token; a session
+is not accepted, because it has no token to revoke.
+
+**204** on success, with no body. Calling it again with the same token is a
+**401** — a revoked token authenticates nothing, not even a second logout — and
+the token remains revoked, so repeating the call changes nothing.
+
+### `GET /api/v1/auth/me/`
+
+The account the request is authenticated as, by token or session:
+
+```json
+{ "id": 7, "username": "inspector", "email": "inspector@example.test", "first_name": "Asha", "last_name": "Rao" }
+```
+
+No password hash, staff or superuser flag, group, permission or login history is
+returned. **403** `not_authenticated` for an anonymous request, with the demo
+switch on or off — there is no account to describe. **401** for a rejected
+token.
 
 ### `POST /api/v1/images/`
 

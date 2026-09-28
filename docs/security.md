@@ -129,8 +129,109 @@ the pattern cannot be widened without a test failing.
 
 - Permissions **deny by default**; public endpoints opt in explicitly.
 - Throttling: 30/min anonymous, 120/min authenticated, configurable.
+- Login: 10/min per client address and 10/hour per username tried, both
+  configurable (`API_THROTTLE_LOGIN`, `API_THROTTLE_LOGIN_ACCOUNT`). See
+  *Authentication* below for why there are two.
 - Health is exempt from throttling — a throttled health check reports a false
   outage.
+
+## Authentication — API tokens
+
+**Why tokens.** The production API is on `*.up.railway.app` and the web
+frontend is hosted separately; `up.railway.app` is on the Public Suffix List, so
+the two are different sites. A `SameSite=Lax` session cookie is not sent on a
+cross-site request, and the frontend's script cannot read the API site's CSRF
+cookie either. The mobile app sends no cookies at all. An `Authorization: Bearer`
+header works for both clients without a hosting change. Django sessions remain
+for the admin site and same-origin use.
+
+**The token** (`apps/accounts/models.py` `ApiToken`, `apps/accounts/tokens.py`):
+
+- **Opaque and random**: `lmt_` followed by 32 bytes from `secrets` (256 bits),
+  URL-safe base64. It encodes nothing; the server looks it up.
+- **Stored only as a hash**: SHA-256, hex, in a unique indexed column. The raw
+  token exists in the login response and on the client, nowhere else — not in
+  the database, not in a log, not in an error. A fast hash is correct here:
+  with 256 bits of randomness there is nothing for a slow password hash to slow
+  down. Passwords stay with Django's own hashers.
+- **One per login, per device**, each with its own `expires_at`, `revoked_at`
+  and `last_used_at` (refreshed at most every five minutes, not on every
+  request).
+- **Expiry** is fixed at issue by `API_TOKEN_LIFETIME_HOURS` (default 168 —
+  seven days) and not extended by use. It bounds a token nobody knew to revoke.
+- **Revocation** is immediate: `POST /api/v1/auth/logout/` revokes the calling
+  token and no other, and an operator can revoke any token from the admin site.
+  Deactivating an account (`is_active = False`) stops all of its tokens at once.
+- **A password change ends every earlier token** — the same way, and by the same
+  check, as it ends the user's Django sessions. Each token records the user's
+  `get_session_auth_hash()` when it is issued: an HMAC of the stored password
+  hash, keyed with `SECRET_KEY` (`ApiToken.password_auth_hash`; not the
+  password). Every request compares it, in constant time, with the user's
+  current value; after `set_password()` they differ and the token is refused.
+  This is a **comparison, not a revocation**: the rows are not updated and
+  `revoked_at` stays empty — they simply never match again. Setting the password
+  back to the old one does not revive them, because the new hash has a new salt.
+  Anything else that rewrites the stored hash has the same effect, including
+  Django re-hashing it at login after a hasher upgrade (which also ends that
+  user's other sessions).
+- **Manually rolling back migration `accounts 0003` undoes that protection.**
+  The recorded hash lives only in the column `0003` adds, which it fills with
+  each existing token's user's hash at the time it runs. Un-applying `0003`
+  (`manage.py migrate accounts 0002`) drops that column; re-applying it rebuilds
+  the value from each user's password *as it is then* — so a token that an
+  earlier password change had ended authenticates again. Rolling back an
+  application deployment does not do this: it does not un-apply database
+  migrations (see [deployment.md → Rollback and redeploy](deployment.md#rollback-and-redeploy)).
+  If `0003` is ever rolled back and re-applied by hand, revoke the affected
+  users' tokens in the admin afterwards, or change their passwords again.
+- **Rotating `SECRET_KEY`** changes every session-auth hash, so it ends every
+  token as it ends every session — unless the old key is kept in
+  `SECRET_KEY_FALLBACKS` (not configured today), which the token check honours as
+  Django's session check does, moving each token onto the new key as it is used.
+- **Validation** is in the database, so it holds across workers and instances.
+  Nothing about a token is cached in process memory.
+
+**Failure says nothing.** A malformed, unknown, revoked or expired token, one
+belonging to a deactivated account, or one issued before the account's password
+last changed, gets one response: 401
+`authentication_failed`, `Invalid or expired token.` Login failures are
+likewise one response whether the password was wrong, the username unknown or
+the account inactive, and Django's `ModelBackend` runs the password hasher even
+for an unknown username, so timing does not separate them either.
+
+**Order of authentication.** Bearer is tried first, then the session. A request
+carrying a Bearer token is authenticated by it and never goes through the
+session's CSRF check — correct, because CSRF protects credentials a browser
+sends on its own. A request with no Bearer token is handled exactly as before
+tokens existed: session with CSRF, or anonymous, and the demo switch decides for
+anonymous callers as it always has. A request that *presents* a token and has it
+rejected gets a 401 even where anonymous access is allowed, so a client that
+thinks it is signed in is never quietly treated as anonymous.
+
+**Brute force.** Every login attempt counts against two throttles: one per
+client address, one per username. The per-client one keys on DRF's `get_ident`,
+which reads `X-Forwarded-For` as sent, so a client can sidestep it by varying
+that header; the per-username one cannot be sidestepped that way and is what
+bounds guessing against any one account. A username sent as a JSON number
+(`12345`) signs in as the string `"12345"` and shares that account's allowance,
+so switching between the two forms buys nothing. Its cost: someone who knows a username
+can exhaust its allowance and delay the owner's login until the window passes.
+Both live in the per-process cache — see *Throttling is per-process* below.
+
+**Browser storage — the remaining risk.** A web client has to keep the token
+somewhere script can reach it: in memory (lost on reload) or in web storage
+(persisted, and readable by any script that runs on the page). Either way, an
+XSS on the frontend can read the token and use it until it expires, is
+revoked, or the account's password is changed. There is **no Content Security Policy** yet (see *Known gaps*), which
+makes that XSS risk the thing to close before the web client stores tokens. On
+mobile the token belongs in the platform's secure storage (Keychain /
+Keystore), which the app does not use yet.
+
+**Not in this phase.** Sign-up, password reset (no e-mail is configured), guest
+users, and making inspections private. Analysis endpoints still scope results
+and readings to the caller exactly as described below; per-inspection ownership
+(`ExtractionRun.owner`) and a private inspection history are a later phase. The
+web and mobile clients do not sign in yet — only the API supports it.
 
 ## Authorisation — who may read a stored result
 
@@ -248,6 +349,7 @@ commitment; it is a statement of current behaviour.
 | Stated applicability facts | `catalog.ProductApplicabilityDeclaration` | What a submitter asserted about the goods, with its source. |
 | The verdict and its trace | `compliance.ComplianceCheck`, `ComplianceFinding`, `ComplianceViolation`, evidence rows | Snapshotted, so a result keeps meaning what it meant. `requested_by` is null for anonymous. |
 | User accounts | `accounts.User` | Only if accounts are created. There is no sign-up flow. |
+| API tokens | `accounts.ApiToken` | A SHA-256 hash of each token, never the token; its user, issue and expiry times, revocation time and approximate last use; and the user's session-auth hash at issue (an HMAC of the stored password hash, keyed with `SECRET_KEY` — not the password), which ends the token when the password changes. Kept after expiry, revocation or a password change; nothing purges them yet. |
 
 **Retention: indefinite.** Nothing expires, and no scheduled job deletes
 anything. A stored image, its reading and its verdicts remain until a person
@@ -298,13 +400,15 @@ are covered.
 |---|---|
 | **Throttling is per-process** | DRF's counters live in `LocMemCache`, which is per-process, so N workers means N counters and roughly N x the configured rate. Mitigated rather than fixed: `backend/gunicorn.conf.py` runs **one worker** by default, which makes the configured rate the real rate. Raising `WEB_CONCURRENCY` reintroduces the gap and needs a shared cache (Redis/Memcached) first. |
 | **No antivirus scanning** | Format validation is not malware scanning. Consider ClamAV if uploads are ever re-served to other users. |
-| **No login screen** | Session authentication and deny-by-default permissions exist; there is no sign-in UI, so a demonstration uses `DEMO_PUBLIC_ANALYSIS_API` — anonymous analysis, rate-limited, and never a substitute for authentication on a service holding real submissions. `feature/authentication` owns this. |
+| **No login screen** | The API supports sign-in (`POST /api/v1/auth/login/`, Bearer tokens), but neither the web nor the mobile client has a sign-in screen yet, and there is no sign-up or password reset. So a demonstration still uses `DEMO_PUBLIC_ANALYSIS_API` — anonymous analysis, rate-limited, and never a substitute for authentication on a service holding real submissions. |
+| **Login throttle can be partly sidestepped** | The per-client login limit keys on `X-Forwarded-For` as sent (`NUM_PROXIES` unset), so it can be dodged by varying that header. The per-username limit still bounds guessing against any one account. Setting `NUM_PROXIES` correctly needs the proxy chain in front of the deployment confirmed first. |
+| **Expired and revoked tokens are never purged** | The rows hold only a hash and are harmless, but they accumulate. Purging belongs with the retention work. |
 | **Anonymous results are a shared pool** | Compliance results *are* scoped to the caller (see above), but an anonymous caller has no identity to scope to, so anonymous checks - and anonymous readings, which any anonymous caller may evaluate - are visible to every anonymous caller of the same deployment. Only reachable with `DEMO_PUBLIC_ANALYSIS_API` on, which defaults to off. |
 | **No per-object authorisation on images** | `ProductImage.uploaded_by` is now enforced for one purpose: which readings a caller may evaluate (see *Who may evaluate a stored reading*). No endpoint returns an image or its file today; any endpoint that does must scope by the same column. |
 | **Uploaded images are unencrypted at rest** | Filesystem permissions only (`FILE_UPLOAD_PERMISSIONS = 0o640`). |
 | **No audit log** | Who viewed which compliance result is not recorded. |
 | **No dependency scanning in CI** | `npm audit` reports 0 vulnerabilities at time of writing; nothing runs it automatically. |
-| **No security headers beyond Django's** | No CSP. Relevant once the frontend is deployed. |
+| **No security headers beyond Django's** | No CSP. Relevant once the frontend is deployed, and required before the web client stores a Bearer token: without it, an XSS can read the token (see *Authentication — API tokens*). |
 
 `feature/security-hardening` owns closing these.
 

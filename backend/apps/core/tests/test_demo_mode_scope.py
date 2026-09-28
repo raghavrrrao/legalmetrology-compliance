@@ -18,7 +18,8 @@ from __future__ import annotations
 
 import pytest
 from django.urls import get_resolver, reverse
-from rest_framework.permissions import AllowAny
+from rest_framework.permissions import AllowAny, IsAuthenticated
+from rest_framework.settings import api_settings
 from rest_framework.throttling import AnonRateThrottle
 
 from apps.core.api.permissions import IsAuthenticatedOrDemoPublic
@@ -40,10 +41,14 @@ DEMO_ROUTES = {
 
 #: Deliberately public whether the switch is on or off. The health endpoint is
 #: what a frontend and a platform health check call before anything else; the
-#: catch-all turns an unmatched API path into the JSON error envelope.
+#: catch-all turns an unmatched API path into the JSON error envelope; login is
+#: how a caller without credentials obtains some, so it cannot require them. It
+#: returns nothing but a token for valid credentials, and is rate-limited per
+#: client and per account (apps/accounts/api/throttles.py).
 ALWAYS_PUBLIC_ROUTES = {
     "api/v1/health/",
     "api/v1/^.*$",
+    "api/v1/auth/login/",
 }
 
 
@@ -98,10 +103,20 @@ def test_every_other_api_endpoint_denies_by_default():
     endpoint that opted out via neither list has opted out of nothing, which is
     what this asserts rather than assumes.
     """
-    for path, view in _api_views().items():
-        if path in DEMO_ROUTES or path in ALWAYS_PUBLIC_ROUTES:
-            continue
-        assert _permissions(view) == set(), (
+    default = set(api_settings.DEFAULT_PERMISSION_CLASSES)
+    assert default == {IsAuthenticated}, "the API no longer denies by default"
+    others = {
+        path: view
+        for path, view in _api_views().items()
+        if path not in DEMO_ROUTES and path not in ALWAYS_PUBLIC_ROUTES
+    }
+    # Not vacuous: `auth/me/` and `auth/logout/` are routed and fall here.
+    assert others, "no endpoint relies on the default - this test checks nothing"
+    for path, view in others.items():
+        # A view that sets nothing inherits DRF's default list, which is
+        # `IsAuthenticated` - not an empty set. This used to compare against
+        # set() and passed only because no endpoint reached it.
+        assert _permissions(view) == default, (
             f"{path} sets its own permission_classes; if that is deliberate, "
             f"add it to one of the lists in this module and to the demo "
             f"documentation."

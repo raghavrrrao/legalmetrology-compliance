@@ -149,8 +149,9 @@ python -c "from django.core.management.utils import get_random_secret_key as k; 
 
 #### The complete variable list
 
-All 32 variables the code reads, checked against `config/settings.py` and
-`gunicorn.conf.py` on 2026-09-09. `.env.example` documents every one of them and
+All 35 variables the code reads, checked against `config/settings.py` and
+`gunicorn.conf.py` on 2026-09-09, with the three token-authentication
+variables added since. `.env.example` documents every one of them and
 documents nothing that is not read. **Required** means the deployment is wrong
 without it — either it will not start, or it will start and be quietly useless.
 
@@ -188,6 +189,9 @@ database: `DATABASE_NAME`, `DATABASE_USER`, `DATABASE_PASSWORD` (no defaults),
 | `DATABASE_CONN_HEALTH_CHECKS` | `True` | Leave on behind a managed proxy. |
 | `API_THROTTLE_ANON` | `30/min` | Also the ceiling on a public demo. |
 | `API_THROTTLE_USER` | `120/min` | |
+| `API_THROTTLE_LOGIN` | `10/min` | Login attempts per client address. |
+| `API_THROTTLE_LOGIN_ACCOUNT` | `10/hour` | Login attempts per username - the brute-force bound. |
+| `API_TOKEN_LIFETIME_HOURS` | `168` | Bearer token lifetime. Must be at least 1. |
 | `MAX_IMAGE_UPLOAD_SIZE_MB` | `10` | |
 | `MAX_IMAGE_PIXELS` | `50000000` | Decompression-bomb guard. |
 | `RULES_DEFINITIONS_DIR` | `<root>/rules/definitions` | The image puts these at `/app/rules`. |
@@ -309,6 +313,10 @@ the Tesseract binary go back exactly.
   crosses a destructive migration (a dropped or renamed column), the old code
   breaks and the fix is forward, not backward. Check `git log` on
   `backend/apps/*/migrations/` before assuming a rollback is clean.
+  Un-applying a migration by hand is a separate operation with its own
+  effects: rolling back and re-applying `accounts 0003`, for one, restores API
+  tokens that a password change had ended — see
+  [security.md](security.md#authentication--api-tokens).
 - **Uploaded images.** They are on an ephemeral filesystem, so a redeploy
   discards them whether or not it is a rollback. See the media section.
 - **Rules and framework rows.** Both loaders are upserts, not replacements. A
