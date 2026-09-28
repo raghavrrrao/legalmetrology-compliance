@@ -161,6 +161,48 @@ NON_MRP_CONTEXT = re.compile(
     _I,
 )
 
+#: An amount printed to the paisa. Stricter than `_NUMBER` on purpose: it is
+#: only used where no MRP keyword was read, and two decimal places is what
+#: separates money from `09/2024`, `4 x 125` or `15N`.
+_PAISE_AMOUNT = r"\d{1,3}(?:,\d{2,3})*\.\d{2}|\d+\.\d{2}"
+
+#: The value of the combined retail-sale-price / unit-sale-price declaration:
+#: two amounts printed as one pair, the retail sale price first.
+#:
+#:     MRP ₹ (Incl. of all taxes) / USP (Per Tablet) ₹: 350.00/23.33
+#:
+#: That is the Plix tablet tube's sticker as transcribed in the classifier's
+#: seed dataset. When the `MRP` half of the legend is recognised on the same
+#: line as the pair, `MRP_KEYWORD` anchors it and `BARE_AMOUNT` takes the first
+#: number after the keyword. When the sticker wraps, or OCR loses that half, the
+#: pair arrives on a line whose only legend is the `USP` half - recognised on a
+#: 2D composite of that face as `NSP oertatiey, —-:350.00/23.33` - and nothing
+#: was read at all, including from a perfect recognition of the same half.
+#:
+#: The guards are what keep this from being "any number that looks like a
+#: price": both amounts carry exactly two decimals; neither may start or end
+#: part-way through a longer number, and a third slash-joined element (the
+#: shape of a date) disqualifies the pair; and the second amount may not be
+#: followed by a unit, because `35.00/100.00 g` is a rate against a quantity.
+#: `/-` after the pair is the Indian price suffix and is allowed.
+PRICE_PAIR = re.compile(
+    rf"(?<!\d)(?<!\d[.,/])"
+    rf"(?P<amount>{_PAISE_AMOUNT})\s*/\s*(?P<second>{_PAISE_AMOUNT})"
+    rf"(?!\d|[.,/]\d)(?!\s*(?:{_UNITS})\b)",
+    _I,
+)
+
+#: `MRP` or `USP` as OCR returns them with at most one letter misrecognised and
+#: the closing `P` kept: `NSP` for `USP`, `NRP` or `MKP` for `MRP`.
+#:
+#: This is **not** a keyword and never stands in for one. Three capitals ending
+#: in `P` are also `MAP` and `ESP`, so on its own it proves nothing, and it is
+#: consulted only by `rule_based._legend_price_pair`, which additionally
+#: requires a `PRICE_PAIR` after it on the same line and emits what it reads
+#: uncertain. Uppercase only, and the `P` must survive: without either
+#: condition `USE` (as in `USE BY`), `Mrs` and ordinary prose would qualify.
+PRICE_LEGEND_MISREAD = re.compile(r"\b(?:[A-Z]RP|M[A-Z]P|[A-Z]SP|U[A-Z]P)\b")
+
 
 # --- unit sale price --------------------------------------------------------
 

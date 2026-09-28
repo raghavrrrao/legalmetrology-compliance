@@ -82,7 +82,12 @@ NAME = "rule-based-fields"
 #: `labelextract.fields` - every registered pipeline imports these patterns from
 #: one module, so a correction here reaches 0.1.0 as well. This constant is how
 #: that correction is named; the commit is what reproduces a reading exactly.
-VERSION = "0.2.0"
+#:
+#: 0.3.0 reads the combined MRP/USP price pair (`350.00/23.33`) when its line
+#: carries only the USP half of the legend, or a one-letter misreading of either
+#: abbreviation, emitting the first amount as an uncertain retail sale price.
+#: See `patterns.PRICE_PAIR` and `_legend_price_pair`.
+VERSION = "0.3.0"
 
 #: How a candidate was located. Recorded on every field so a reviewer can tell
 #: "the label said MRP" from "this line merely looked like a price".
@@ -441,9 +446,17 @@ class RuleBasedFieldExtractor(FieldExtractor):
 
             keyword = P.MRP_KEYWORD.search(line.text)
             has_keyword = keyword is not None
+            pair = None if has_keyword else _legend_price_pair(line.text)
 
             if has_keyword:
                 amount = _amount_near(line.text, keyword)
+            elif pair is not None:
+                # The combined MRP/USP declaration's value on a line whose
+                # legend is only the USP half, or was not recognised as either.
+                # Tried before the unit-price guard below because that guard
+                # is for a line carrying *one* amount, and this one carries
+                # two, the first of which is the retail sale price.
+                amount = pair.group("amount")
             elif P.UNIT_SALE_PRICE_KEYWORD.search(line.text):
                 # `USP: Rs.0.93/g` names a *different* declaration and carries
                 # exactly one amount. Without this, that one amount produced
@@ -479,6 +492,13 @@ class RuleBasedFieldExtractor(FieldExtractor):
                     normalized,
                     "a price was read but no MRP or retail-sale-price keyword "
                     "was found on this line",
+                )
+            if pair is not None:
+                normalized = _mark_uncertain(
+                    normalized,
+                    "read as the first amount of a combined MRP/USP price "
+                    "pair; the price legend on this line was not recognised "
+                    "as MRP",
                 )
             found.append(
                 _candidate(
@@ -1017,6 +1037,34 @@ def _amount_near(text: str, keyword: re.Match[str]) -> str | None:
     if match is None:
         match = P.PRICE.search(text[: keyword.start()])
     return _price_amount(match)
+
+
+def _legend_price_pair(text: str) -> re.Match[str] | None:
+    """The combined MRP/USP price pair on a line that names no MRP, or None.
+
+    Two things must be on the line, in this order, because neither is evidence
+    of a retail sale price by itself: a price legend - the `USP` keyword, or
+    `patterns.PRICE_LEGEND_MISREAD` - and after it a `patterns.PRICE_PAIR`. So
+    a bare `350.00/23.33` is not read, and neither is `NSP 350.00`: a garbled
+    three-letter token beside one number is not a declaration. A nutrition or
+    serving line is refused outright, as `_net_quantity` and `_unit_sale_price`
+    refuse it.
+
+    Only the pair's first amount becomes the retail sale price. The second is
+    the unit sale price, and it is not recorded here or anywhere: with no unit
+    read beside it there is no rate `normalise_unit_price` could state.
+    """
+    if P.NON_DECLARATION_CONTEXT.search(text):
+        return None
+    pair = P.PRICE_PAIR.search(text)
+    if pair is None:
+        return None
+    before = text[: pair.start()]
+    if P.PRICE_LEGEND_MISREAD.search(before) or P.UNIT_SALE_PRICE_KEYWORD.search(
+        before
+    ):
+        return pair
+    return None
 
 
 def _per_unit_price_near(text: str, keyword: re.Match[str]) -> re.Match[str] | None:

@@ -57,7 +57,7 @@ listed there changes its outcome when the reading changes.
 | `importer_name` | same | same | same | `LM-PC-0001` |
 | `common_or_generic_name` | **not attempted** | — | — | `LM-PC-0002`, deactivated for exactly this reason |
 | `net_quantity` | `NET_QUANTITY_KEYWORD` + `QUANTITY` on the same line | `{quantity, unit, measure, base_quantity, base_unit, pack_count}` | OCR line mean | `LM-PC-0003` `field_presence`, `LM-PC-0008` `si_unit`, `LM-PC-0009` `prohibited_counting_unit` |
-| `retail_sale_price` | `MRP_KEYWORD` then `PRICE`/`BARE_AMOUNT` **after** the keyword | `{amount (string), currency, inclusive_of_all_taxes?}` | OCR line mean | `LM-PC-0005` `field_presence`, `LM-PC-0012` `retail_price_tax_declaration` |
+| `retail_sale_price` | `MRP_KEYWORD` then `PRICE`/`BARE_AMOUNT` **after** the keyword; with no keyword, a currency-anchored `PRICE`, or (0.3.0, see §11) the first amount of a `PRICE_PAIR` after a USP legend — both uncertain | `{amount (string), currency, inclusive_of_all_taxes?}` | OCR line mean | `LM-PC-0005` `field_presence`, `LM-PC-0012` `retail_price_tax_declaration` |
 | `unit_sale_price` | `UNIT_SALE_PRICE_KEYWORD` + `PER_UNIT_PRICE` | `{amount, currency, per_unit, per_measure}` | OCR line mean | none active |
 | `date_of_manufacture` | `DATE_KEYWORDS` + a date on the line or the one below | `{date}` or `{year_month}` | OCR line mean | `LM-PC-0004` `field_presence`, `LM-PC-0011` `month_year_declaration` |
 | `date_of_packing` | same | same | same | none active |
@@ -447,3 +447,80 @@ been making.
   partially verified artefact.
 - **No compliance-verdict quality is measured** by this work, and none is
   claimed.
+
+---
+
+## 11. Follow-up: the combined MRP/USP price pair (`rule-based-fields` 0.3.0)
+
+**Branch:** `fix/mrp-ocr-extraction`. **Pipeline:** `tesseract` 0.4.0, unchanged.
+
+### The regression
+
+The Plix tablet tube prints both prices on one sticker, transcribed in the seed
+dataset as `MRP ₹ (Incl. of all taxes) / USP (Per Tablet) ₹: 350.00/23.33`. A
+2D composite of that face was recognised as:
+
+```
+NSP oertatiey, —-:350.00/23.33
+```
+
+No retail sale price was extracted, so `LM-PC-0005` reported the MRP missing
+from a label that prints it. The line is most plausibly the `USP (Per Tablet)
+₹:` half of the legend (`U`→`N`, `(Per Tablet)`→`oertatiey,`, `₹`→`—-`)
+followed by the pair; the `MRP` half is not on it. The composite image is not
+in this repository, so that reading of the corruption is an inference from the
+transcription, not something checked against the pixels.
+
+### Root cause
+
+An extraction gap, not only an OCR one: a *perfect* recognition of the same
+half-line also produced nothing. The MRP detector skipped any line carrying a
+unit-sale-price keyword and no MRP keyword (the guard written for `USP:
+Rs.0.93/g`, a line with one amount), and the unit-price detector cannot read
+`/23.33` because no unit follows it. The combined pair was only ever read when
+`MRP` itself was recognised on the same line.
+
+### What changed
+
+- `patterns.PRICE_PAIR`: two amounts **to the paisa** joined by a slash, not
+  part of a longer number or a three-element chain, the second not followed by
+  a unit.
+- `patterns.PRICE_LEGEND_MISREAD`: `MRP`/`USP` with at most one letter misread
+  and the closing `P` kept; uppercase only. It is not a keyword and never
+  stands in for one.
+- `rule_based._legend_price_pair`: on a line with no MRP keyword and no
+  nutrition/serving context, a pair preceded by a USP legend (exact or
+  misread) yields its **first** amount as the retail sale price, emitted
+  `uncertain`, `matched_by: pattern`, with a reason naming the pair. The
+  frozen set's human-verification record flags "first label ↔ first value" as
+  an inference, which is why this is never committed. Any keyword-anchored MRP
+  elsewhere on the label outranks it, and a disagreement is listed under
+  `candidates`.
+
+Unchanged: an MRP keyword on the line takes the existing path and is committed;
+a bare `350.00/23.33`, `NSP 350.00`, and `NSP` alone produce nothing (and `NSP`
+is not an unread-MRP anchor); `23.33` is not emitted as a unit sale price; tax
+words on an adjacent line are not attributed.
+
+### Measured
+
+Field extraction replayed with 0.2.0 and 0.3.0 over all 56 stored readings
+under `ml/data/evaluation/ocr_runs/{before,after}/` (1,348 recognised lines):
+**byte-identical output.** No two-decimal slash pair occurs anywhere in that
+corpus, so on the frozen set this change moves no metric in either direction.
+Its only evidence is the one reported composite reading, pinned in
+`ml/tests/test_mrp_price_pair.py` alongside the negative cases.
+
+### Limitations
+
+- One real reading motivates it. The one-letter legend tolerance is a design
+  choice, not a measured one.
+- A pair not printed to the paisa (`350/23.33`) is not read on this path.
+- `field_presence` passes on an uncertain field, so this reading turns
+  `LM-PC-0005` from FAILED to PASSED on the regression label, and that
+  finding's details carry only the OCR confidence. The `uncertain` flag and
+  its reasons stay on the stored extracted field, and appear in `LM-PC-0012`'s
+  evidence details, which now examines the price (no tax wording is on the
+  line, so it records `not_observed`) instead of returning INCONCLUSIVE.
+- The per-tablet unit sale price is still not extracted (`tablet` is not in the
+  unit vocabulary, and here no unit was recognised at all).
